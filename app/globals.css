@@ -3913,3 +3913,23 @@ td code {
     height: 72px;
   }
 }
+
+/* Keep native mobile date controls inside their own delivery field. */
+.delivery-schedule {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+  min-width: 0;
+}
+.delivery-schedule input,
+.delivery-schedule select {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 46px;
+}
+@media (max-width: 700px) {
+  .delivery-schedule {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

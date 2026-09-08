@@ -736,26 +736,28 @@ export function Checkout({ data }: { data: Catalog }) {
                   defaultValue={user?.address}
                 />
               </label>
-              <Field
-                label="Ngày giao hoa"
-                name="deliveryDate"
-                type="date"
-                min={today}
-                max={new Date(Date.now() + 89 * 86400000)
-                  .toISOString()
-                  .slice(0, 10)}
-                defaultValue={today}
-                required
-              />
-              <label className="field">
-                Khung giờ
-                <select name="deliverySlot">
-                  <option>09:00–12:00</option>
-                  <option>12:00–15:00</option>
-                  <option>15:00–18:00</option>
-                  <option>18:00–20:00</option>
-                </select>
-              </label>
+              <div className="delivery-schedule span-2">
+                <Field
+                  label="Ngày giao hoa"
+                  name="deliveryDate"
+                  type="date"
+                  min={today}
+                  max={new Date(Date.now() + 89 * 86400000)
+                    .toISOString()
+                    .slice(0, 10)}
+                  defaultValue={today}
+                  required
+                />
+                <label className="field">
+                  Khung giờ
+                  <select name="deliverySlot">
+                    <option>09:00–12:00</option>
+                    <option>12:00–15:00</option>
+                    <option>15:00–18:00</option>
+                    <option>18:00–20:00</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </section>
           <section className="form-section">
