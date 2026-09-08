@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Provider } from "@/components/context";
 import SectionReveal from "@/components/section-reveal";
+import { sectionMotionStyles } from "@/lib/section-motion";
 export const metadata: Metadata = {
   title: {
     default: "Fleur — Hoa cho những điều không thể nói",
@@ -14,6 +15,9 @@ export const metadata: Metadata = {
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi">
+      <head>
+        <style id="section-motion">{sectionMotionStyles}</style>
+      </head>
       <body>
         <Provider>
           {children}

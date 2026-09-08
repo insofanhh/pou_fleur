@@ -1,87 +1,65 @@
 "use client";
 
-import { useEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-
-// Content blocks only: navigation, individual fields and table rows stay steady.
-const sectionSelector = [
-  "section",
-  "[data-fade-in]",
-  ".section",
-  ".benefits",
-  ".page-heading",
-  ".shop-tools",
-  ".product-grid",
-  ".detail-photo",
-  ".detail-info",
-  ".auth-art",
-  ".auth-panel",
-  ".account-nav",
-  ".journal-grid",
-  ".event-list",
-  ".contact-layout > div",
-  ".contact-layout > form",
-  ".panel",
-  ".order-card",
-  ".order-summary",
-  ".checkout-layout > div:not(.checkout-form)",
-  ".success-card",
-  ".empty",
-  ".article",
-  ".admin-gate",
-  ".admin-heading",
-  ".stat-grid",
-  ".admin-table-panel",
-  ".role-explainer",
-  ".crm-summary",
-  ".email-stats",
-  ".email-tabs",
-  ".faq-item",
-  "footer",
-].join(", ");
-const excludedSelector = "dialog, [role='dialog'], [data-no-fade-in]";
-const revealClass = "section-fade-in";
+import { sectionSelector, excludedSelector } from "@/lib/section-motion";
 
 export default function SectionReveal() {
   const pathname = usePathname();
+  const previousPath = useRef<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const newPage =
+      previousPath.current !== null && previousPath.current !== pathname;
+    previousPath.current = pathname;
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (!("IntersectionObserver" in window)) return;
 
-    const seen = new WeakSet<Element>();
     const tracked = new Set<HTMLElement>();
-    const reveal = (element: HTMLElement) => {
-      observer.unobserve(element);
-      if (!element.isConnected || preference.matches) return;
-      element.classList.add(revealClass);
+    const setState = (element: HTMLElement, state: "waiting" | "visible") => {
+      if (element.dataset.fadeState !== state)
+        element.dataset.fadeState = state;
     };
     const observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries)
-          if (entry.isIntersecting) reveal(entry.target as HTMLElement);
+        for (const entry of entries) {
+          const element = entry.target as HTMLElement;
+          if (!element.isConnected || preference.matches) continue;
+          if (entry.isIntersecting) {
+            setState(element, "visible");
+          } else if (!element.matches(":focus-within")) {
+            // Re-arm only completely outside the viewport + buffer.
+            // Hovering near the screen edge never resets a visible section.
+            setState(element, "waiting");
+          }
+        }
       },
-      { threshold: 0 },
+      { threshold: 0, rootMargin: "64px 0px" },
     );
-    const register = (element: HTMLElement) => {
-      if (seen.has(element) || element.closest(excludedSelector)) return;
-      // Avoid fading a section and its child blocks at the same time.
+    const register = (element: HTMLElement, routeEntry = false) => {
+      if (tracked.has(element) || element.closest(excludedSelector)) return;
       if (element.parentElement?.closest(sectionSelector)) return;
-      seen.add(element);
       tracked.add(element);
-      if (!preference.matches) observer.observe(element);
+      if (preference.matches) return;
+      const rect = element.getBoundingClientRect();
+      const outside = rect.bottom <= 0 || rect.top >= window.innerHeight;
+      if (outside || routeEntry) setState(element, "waiting");
+      // For initial, already-visible content, retain the CSS animation's
+      // existing timeline. Never restart it after hydration.
+      else setState(element, "visible");
+      observer.observe(element);
     };
-    const scan = (root: Element) => {
+    const scan = (root: Element, routeEntry = false) => {
       if (root instanceof HTMLElement && root.matches(sectionSelector))
-        register(root);
-      root.querySelectorAll<HTMLElement>(sectionSelector).forEach(register);
+        register(root, routeEntry);
+      root
+        .querySelectorAll<HTMLElement>(sectionSelector)
+        .forEach((el) => register(el, routeEntry));
     };
     const changes = new MutationObserver((records) => {
-      for (const record of records) {
+      for (const record of records)
         for (const added of record.addedNodes)
           if (added instanceof Element) scan(added);
-      }
-      // Release removed admin panels and route content instead of retaining them.
       for (const element of tracked)
         if (!element.isConnected) {
           observer.unobserve(element);
@@ -89,18 +67,21 @@ export default function SectionReveal() {
         }
     });
     const onPreferenceChange = () => {
-      if (preference.matches) {
-        observer.disconnect();
-        for (const element of tracked) element.classList.remove(revealClass);
+      observer.disconnect();
+      for (const element of tracked) {
+        delete element.dataset.fadeState;
+        if (!preference.matches) observer.observe(element);
       }
-      // Do not replay content already seen when the preference changes back.
     };
     const onFocus = (event: FocusEvent) => {
       if (!(event.target instanceof Element)) return;
-      event.target.closest("." + revealClass)?.classList.remove(revealClass);
+      const element = event.target.closest<HTMLElement>("[data-fade-state]");
+      if (element) setState(element, "visible");
     };
 
-    scan(document.body);
+    // Layout effect prepares new routes before paint. The first page is
+    // already animated by server-rendered CSS, not an effect-added class.
+    scan(document.body, newPage);
     changes.observe(document.body, { childList: true, subtree: true });
     preference.addEventListener("change", onPreferenceChange);
     document.addEventListener("focusin", onFocus);
@@ -110,7 +91,7 @@ export default function SectionReveal() {
       changes.disconnect();
       preference.removeEventListener("change", onPreferenceChange);
       document.removeEventListener("focusin", onFocus);
-      for (const element of tracked) element.classList.remove(revealClass);
+      for (const element of tracked) delete element.dataset.fadeState;
     };
   }, [pathname]);
 
