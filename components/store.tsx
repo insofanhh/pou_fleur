@@ -54,17 +54,29 @@ export default function Store({ data }: { data: Catalog }) {
   return (
     <>
       <WebTools products={data.products} />
-      <div className="announcement">
-        Một chút hoa. Một ngày thật khác.{" "}
-        <span>
-          Miễn phí giao hàng cho đơn từ 1.000.000 ₫ <ArrowUpRight size={12} />
-        </span>
+      <div className="announcement" aria-label="Thông báo cửa hàng">
+        <div className="announcement-track">
+          <span className="announcement-message">
+            Một chút hoa. Một ngày thật khác.
+          </span>
+          <span className="announcement-message">
+            Miễn phí giao hàng cho đơn từ 1.000.000 ₫ <ArrowUpRight size={12} />
+          </span>
+          <span className="announcement-message" aria-hidden="true">
+            Một chút hoa. Một ngày thật khác.
+          </span>
+        </div>
       </div>
       <header className="header">
         <Link className="logo" href="/" onClick={navigate}>
           fleur<span>®</span>
         </Link>
-        <nav className={menu ? "nav open" : "nav"} onClick={navigate}>
+        <nav
+          id="store-navigation"
+          className={menu ? "nav open" : "nav"}
+          onClick={navigate}
+          aria-label="Điều hướng chính"
+        >
           <Link className={path === "/shop" ? "selected" : ""} href="/shop">
             Khám phá hoa
           </Link>
@@ -91,6 +103,7 @@ export default function Store({ data }: { data: Catalog }) {
             onClick={() => setMenu(!menu)}
             aria-label="Menu"
             aria-expanded={menu}
+            aria-controls="store-navigation"
           >
             {menu ? <X /> : <Menu />}
           </button>

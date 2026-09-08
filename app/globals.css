@@ -95,21 +95,65 @@ svg {
   stroke-width: 1.5;
   flex-shrink: 0;
 }
+/* Two messages, one step every 500ms; the final copy makes the loop seamless. */
 .announcement {
   height: 34px;
+  overflow: hidden;
   background: #171717;
   color: #fff;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 6%;
+  padding: 0 12px;
   font-size: 12px;
   letter-spacing: 0.1px;
 }
-.announcement span {
+.announcement-track {
+  animation: announcement-scroll 5s linear infinite;
+}
+.announcement-message {
+  height: 34px;
   display: flex;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
   align-items: center;
+  white-space: nowrap;
+}
+.announcement-message svg {
+  width: 12px;
+  height: 12px;
+}
+.announcement:hover .announcement-track,
+.announcement:focus-within .announcement-track {
+  animation-play-state: paused;
+}
+@keyframes announcement-scroll {
+  0%,
+  32% {
+    transform: translateY(0);
+  }
+  50%,
+  82% {
+    transform: translateY(-33.333333%);
+  }
+  100% {
+    transform: translateY(-66.666667%);
+  }
+}
+@keyframes mobile-menu-open {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes mobile-menu-item {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .header {
   height: 94px;
@@ -530,14 +574,6 @@ h2 {
   }
 }
 @media (max-width: 700px) {
-  .announcement {
-    justify-content: center;
-    padding: 0 12px;
-    font-size: 12px;
-  }
-  .announcement > span {
-    display: none;
-  }
   .header {
     height: 76px;
   }
@@ -558,6 +594,27 @@ h2 {
     background: white;
     border-bottom: 1px solid #ddd;
     font-size: 16px;
+  }
+  .nav.open {
+    animation: mobile-menu-open 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .nav.open > a {
+    animation: mobile-menu-item 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .nav.open > a:nth-child(2) {
+    animation-delay: 70ms;
+  }
+  .nav.open > a:nth-child(3) {
+    animation-delay: 140ms;
+  }
+  .nav.open > a:nth-child(4) {
+    animation-delay: 210ms;
+  }
+  .nav.open > a:nth-child(5) {
+    animation-delay: 280ms;
+  }
+  .nav.open > a:focus-visible {
+    animation: none;
   }
   .mobile-menu {
     display: flex;
@@ -3224,5 +3281,25 @@ td code {
   }
   to {
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), print {
+  .nav.open,
+  .nav.open > a,
+  .announcement-track {
+    animation: none;
+  }
+  .announcement {
+    height: auto;
+  }
+  .announcement-message {
+    min-height: 34px;
+    height: auto;
+    white-space: normal;
+    text-align: center;
+  }
+  .announcement-message[aria-hidden="true"] {
+    display: none;
   }
 }
