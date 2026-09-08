@@ -14,7 +14,7 @@ MySQL fleur_store đã được tạo trên máy hiện tại. Dữ liệu ban �
 
 ## Chạy trên máy
 
-Yêu cầu Node.js >=20.9 và MySQL >=8.
+Yêu cầu Node.js 22.x hoặc mới hơn và MySQL >=8.
 
 1. Cài thư viện: npm ci
 2. Copy .env.example thành .env.local; đặt tài khoản MySQL và ADMIN_PASSWORD ít nhất 12 ký tự.
@@ -66,7 +66,7 @@ Quyền được kiểm tra tại API, không chỉ ẩn menu. Phiên đăng nh�
 
 Bộ kiểm tra tích hợp tạo các bản ghi QA riêng, xác thực HTTP/API, phân quyền, checkout, tranh chấp tồn kho, huỷ đơn, CRM và phiên đăng nhập, sau đó dọn dữ liệu thử theo ID/email riêng. Không chạy bộ này trên database kinh doanh nếu không muốn có thao tác QA trong nhật ký.
 
-Chưa thực hiện kiểm thử tương tác/ảnh chụp trong trình duyệt. Bố cục có CSS responsive cho desktop/tablet/mobile. Có các WebMCP tool tìm hoa/thêm giỏ khi trình duyệt hỗ trợ; chưa xác minh bằng context WebMCP thực tế.
+Đã kiểm tra giao diện email admin trong trình duyệt desktop; chưa kiểm thử toàn bộ giao diện cửa hàng. Bố cục có CSS responsive cho desktop/tablet/mobile. Có các WebMCP tool tìm hoa/thêm giỏ khi trình duyệt hỗ trợ; chưa xác minh bằng context WebMCP thực tế.
 
 ## Vercel + TiDB Cloud
 
@@ -94,7 +94,7 @@ npm run db:verify:tidb
 
 Lệnh setup kiểm tra cấu hình trước khi kết nối, không cho phép fallback sang MySQL cục bộ hoặc ghi vào database hệ thống (sys/mysql/information_schema/performance_schema/metrics_schema). Script tạo schema bằng CREATE TABLE IF NOT EXISTS; dữ liệu mẫu và admin được ghi trong transaction. Khi seed một database trống, ID danh mục được tra theo slug thay vì giả định bắt đầu từ 1. Chạy lại không đặt lại mật khẩu admin đã tồn tại.
 
-Lệnh verify kiểm tra đúng TiDB, chứng chỉ TLS, 16 bảng, các bộ đếm dữ liệu mẫu, mật khẩu admin, JSON aggregation và khóa bản ghi trong transaction. Không in host, username hay mật khẩu.
+Lệnh verify kiểm tra đúng TiDB, chứng chỉ TLS, 20 bảng, các bộ đếm dữ liệu mẫu, mật khẩu admin, JSON aggregation và khóa bản ghi trong transaction. Không in host, username hay mật khẩu.
 
 Trên Vercel, import repository, chọn Next.js, Node.js 22.x, nhánh main, Install Command npm ci, Build Command npm run build và để Output Directory mặc định. Khi VERCEL=1, build dùng .next; production cục bộ vẫn dùng .next-production. Không chạy seed trong Build Command.
 
@@ -145,3 +145,74 @@ Chạy docker compose up --build -d. Website ở cổng 3000. Đặt reverse pro
 - scripts/smoke.mjs: kiểm thử tích hợp.
 - public/images/: ảnh minh hoạ đã tải.
 - storage/uploads/: ảnh do quản trị viên tải lên, được phục vụ qua route /uploads/.
+
+## Email đơn hàng & chương trình CRM (Gmail SMTP)
+
+Mở /admin/emails hoặc chọn **Email & chương trình** trong Workspace.
+
+- Đơn mới: tự xếp hàng email xác nhận với mã đơn, danh sách hoa, số tiền, người nhận và lịch giao.
+- Chuyển trạng thái hợp lệ: tự xếp hàng email báo trạng thái trước/sau, gồm cả khách tự hủy đơn.
+- Admin và Manager được tạo/chỉnh sửa/bật/tắt mẫu. Support xem lịch sử và gửi chương trình CRM nhưng không sửa mẫu; Editor và Customer không có quyền truy cập.
+- Có 6 mẫu ban đầu: xác nhận đơn, trạng thái đơn, hậu mãi, sinh nhật, sự kiện, ưu đãi/tri ân. Có thể thêm mẫu CRM riêng, sửa tên/tiêu đề/nội dung và xem trước dữ liệu minh họa. Nội dung là văn bản có biến, được escape khi tạo HTML.
+- CRM gửi theo nhóm, một khách cụ thể hoặc tháng sinh nhật, tối đa 500 khách/chương trình. Xem trước nội dung và danh sách người nhận trước khi gửi; thay đổi mẫu/danh sách làm mất hiệu lực bản xem trước.
+- Các chương trình CRM được nhân viên chủ động gửi. Chưa tự gửi vào ngày sinh nhật hoặc khi hoàn thành công việc CRM.
+- Mỗi email CRM gửi riêng đến khách đồng ý nhận tin và có liên kết hủy đăng ký. Danh sách hủy được kiểm tra lại ngay trước khi gửi; checkbox tại checkout không tự xóa danh sách hủy. Thông báo giao dịch không phụ thuộc consent tiếp thị.
+- Hàng đợi lưu trong cùng transaction với đơn hàng; checkout không chờ SMTP. Nội dung email đã xếp hàng được giữ nguyên khi sửa mẫu sau đó. SMTP từ chối tạm thời được thử lại sau 5 phút, tối đa 5 lần; lỗi không xác định sau khi gửi hoặc worker bị gián đoạn được đánh dấu **Cần kiểm tra SMTP**, không tự gửi lại để tránh trùng.
+- “SMTP đã tiếp nhận” nghĩa là máy chủ SMTP chấp nhận thư, chưa xác nhận khách đã nhận trong inbox. Chưa tích hợp theo dõi mở thư, bounce hoặc delivery webhook.
+- Nhật ký hiện 200 email và 50 chương trình gần nhất. Có nút thử lại thư thất bại, xử lý hàng đợi và hủy phần chương trình chưa gửi. Thư đang gửi có thể đã được SMTP tiếp nhận trước khi thao tác hủy hoàn tất.
+
+### Migration
+
+Với database đang có dữ liệu, chạy migration bổ sung trước khi deploy code:
+
+```sh
+npm run db:email
+# Hoặc TiDB với .env.tidb.local:
+npm run db:email:tidb
+```
+
+Migration thêm email_templates, email_campaigns, email_outbox, email_suppressions; không gửi email và không ghi đè mẫu đã sửa. Tổng schema hiện có 20 bảng. Lệnh db:setup cũng tạo các bảng email cho cài đặt mới.
+
+### Bật Gmail trên Vercel
+
+1. Bật xác minh 2 bước cho Gmail, tạo [Mật khẩu ứng dụng](https://myaccount.google.com/apppasswords). Dùng mật khẩu ứng dụng, không dùng mật khẩu đăng nhập Gmail. Một số tài khoản tổ chức có thể không cho phép tạo mật khẩu ứng dụng; xem [hướng dẫn Google](https://support.google.com/mail/answer/185833?hl=vi).
+2. Điền cấu hình dưới đây vào **Vercel → Settings → Environment Variables → Production**:
+
+```dotenv
+EMAIL_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=<địa chỉ Gmail gửi>
+SMTP_PASSWORD=<mật khẩu ứng dụng>
+SMTP_FROM_EMAIL=<cùng địa chỉ Gmail gửi>
+SMTP_FROM_NAME=Fleur
+APP_ORIGIN=https://poufleur.vercel.app
+CRON_SECRET=<chuỗi ngẫu nhiên ít nhất 32 ký tự>
+```
+
+3. Redeploy. Vào **Email & chương trình → Kiểm tra kết nối** để kiểm tra DNS/TLS/xác thực mà không gửi thư. Việc kiểm tra kết nối thành công không đảm bảo mọi địa chỉ From được Gmail chấp nhận.
+4. Đặt một đơn thử bằng địa chỉ bạn kiểm soát; kiểm tra **Lịch sử gửi**, hộp thư đến và spam. Khi bật gửi, các email đang chờ cũng sẽ được xử lý.
+5. Preview và Development nên giữ EMAIL_ENABLED=false, hoặc dùng tài khoản/hộp thư thử riêng. Không đặt mật khẩu vào code hay biến NEXT_PUBLIC_.
+
+File .env.smtp.local riêng đã được chuẩn bị trên máy hiện tại, bị loại khỏi Git. Có thể điền SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL để kiểm tra kết nối bằng:
+
+```sh
+npm run smtp:verify
+```
+
+File này không tự được Next.js hoặc Vercel nạp. Để chạy app cục bộ, chép các biến SMTP sang .env.local và khởi động lại server; để deploy, đặt biến trong Vercel như trên. Giữ APP_ORIGIN đúng URL đang chạy; Vercel yêu cầu HTTPS. Nội dung file riêng và mật khẩu không được in trong API hay log lỗi SMTP.
+
+### Xử lý hàng đợi
+
+Next.js after() xử lý tối đa 20 email sau thao tác đặt hàng, đổi trạng thái, gửi chương trình hoặc thử lại. Mỗi lượt có giới hạn thời gian; chương trình lớn có thể còn email chờ.
+
+vercel.json khai báo một cron mỗi ngày tại /api/email/worker, phù hợp gói Hobby, với tối đa 100 email trong giới hạn thời gian của một lượt. Endpoint cần Authorization: Bearer <CRON_SECRET>; Vercel tự gửi header khi cấu hình CRON_SECRET. Trên Hobby, cron không đảm bảo chạy đúng phút. Có thể nhấn **Xử lý hàng đợi** trong admin để tiếp tục ngay; muốn retry tự động thường xuyên cần scheduler gọi endpoint này hoặc lịch cron thường xuyên hơn trên gói hỗ trợ. Không xem nút gửi chương trình là bảo đảm toàn bộ 500 email được gửi tức thì.
+
+Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
+
+### Kiểm thử email
+
+- npm run test:email: 21 kiểm tra renderer, nội dung MIME, transaction, chống trùng khi nhiều worker, consent, suppression, SMTP lỗi và retry trên database QA cục bộ tự tạo/dọn. Dùng transport giả lập, không gửi thư ra ngoài.
+- npm test: có kiểm tra phân quyền email, mẫu và xem trước CRM.
+- TEST_EMAIL_CAMPAIGNS=1 bật thêm kiểm tra gửi chương trình/hủy đăng ký. Chỉ chạy với server QA đã cấu hình SMTP_HOST=fleur-mail-test.invalid, SMTP_FROM_EMAIL=qa-sender@example.test và tài khoản thử; không dùng SMTP thật. Đã chạy đủ 100 kiểm tra tích hợp trên MySQL local và TiDB bằng SMTP giả lập.
+- Đã kiểm tra màn hình mẫu, bản xem trước và form chương trình trong trình duyệt desktop. Chưa xác minh giao diện email bên trong Gmail/Outlook hoặc gửi Gmail thật do chưa có mật khẩu ứng dụng.

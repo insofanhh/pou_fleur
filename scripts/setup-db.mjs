@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import { setupEmail } from "./email-schema.mjs";
 import { scryptSync, randomBytes } from "node:crypto";
 
 const tidbSetup = process.argv.includes("--tidb");
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS audit_logs(id INT AUTO_INCREMENT PRIMARY KEY,user_id 
 CREATE TABLE IF NOT EXISTS login_attempts(attempt_key CHAR(64) PRIMARY KEY,attempts INT NOT NULL DEFAULT 1,expires_at DATETIME NOT NULL);
 CREATE TABLE IF NOT EXISTS password_resets(token_hash CHAR(64) PRIMARY KEY,user_id INT NOT NULL,expires_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
+  await setupEmail(c);
   await c.beginTransaction();
   try {
     const [[count]] = await c.query("SELECT COUNT(*) n FROM categories");

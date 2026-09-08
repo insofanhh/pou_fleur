@@ -1,0 +1,44 @@
+[
+  {
+    "key": "order_confirmation",
+    "name": "Xác nhận đặt hoa",
+    "kind": "transactional",
+    "subject": "Fleur đã nhận đơn {{order_reference}}",
+    "body": "Chào {{customer_name}},\n\nCảm ơn bạn đã chọn Fleur. Chúng mình đã nhận đơn {{order_reference}} và sẽ sớm xác nhận với bạn.\n\n{{order_items}}\n\nTổng thanh toán: {{order_total}}\nHình thức: thanh toán khi nhận hàng (COD)\nNgười nhận: {{recipient_name}}\nĐịa chỉ: {{delivery_address}}\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTrạng thái: {{order_status}}\n\nBạn có thể tra cứu đơn tại {{tracking_url}} bằng mã đơn và email đặt hàng.\n\nThân mến,\nFleur"
+  },
+  {
+    "key": "order_status",
+    "name": "Cập nhật trạng thái đơn",
+    "kind": "transactional",
+    "subject": "Đơn {{order_reference}} · {{order_status}}",
+    "body": "Chào {{customer_name}},\n\nĐơn hoa {{order_reference}} đã chuyển từ “{{previous_status}}” sang “{{order_status}}”.\n\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTổng thanh toán: {{order_total}}\n\nTra cứu đơn tại {{tracking_url}}.\nCảm ơn bạn đã chọn Fleur."
+  },
+  {
+    "key": "crm_aftercare",
+    "name": "Chăm sóc hoa & hậu mãi",
+    "kind": "marketing",
+    "subject": "{{customer_name}}, một chút chăm sóc từ Fleur",
+    "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nCắt chéo gốc hoa, thay nước sạch mỗi ngày và đặt hoa ở nơi thoáng mát để giữ hoa tươi lâu hơn.\n\nFleur luôn sẵn lòng lắng nghe bạn."
+  },
+  {
+    "key": "crm_birthday",
+    "name": "Chúc mừng sinh nhật",
+    "kind": "marketing",
+    "subject": "Một ngày thật đẹp dành cho {{customer_name}}",
+    "body": "Chào {{customer_name}},\n\nFleur chúc bạn một sinh nhật đầy niềm vui và những điều dịu dàng.\n\n{{campaign_message}}\nMã ưu đãi: {{promotion_code}}\n\nThân mến,\nFleur"
+  },
+  {
+    "key": "crm_event",
+    "name": "Lời mời sự kiện",
+    "kind": "marketing",
+    "subject": "Fleur mời bạn đến {{campaign_name}}",
+    "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThời gian: {{event_date}}\nMong được gặp bạn tại {{campaign_name}}."
+  },
+  {
+    "key": "crm_promotion",
+    "name": "Ưu đãi & tri ân",
+    "kind": "marketing",
+    "subject": "{{campaign_name}} · dành cho {{customer_name}}",
+    "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nMã ưu đãi: {{promotion_code}}\nCảm ơn bạn đã đồng hành cùng Fleur."
+  }
+]

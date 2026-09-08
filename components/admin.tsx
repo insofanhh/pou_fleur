@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import EmailWorkspace from "./email-admin";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -30,6 +31,7 @@ import {
   TrendingUp,
   Wallet,
   ClipboardList,
+  Mail,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
@@ -44,6 +46,7 @@ const nav = [
   ["events", "Sự kiện", CalendarDays],
   ["posts", "Tin tức", Newspaper],
   ["crm", "Khách hàng & CRM", ContactRound],
+  ["emails", "Email & chương trình", Mail],
   ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
   ["users", "Người dùng & quyền", Users],
   ["audit", "Nhật ký hoạt động", History],
@@ -59,9 +62,10 @@ const rights: Record<string, string[]> = {
     "events",
     "crm",
     "inquiries",
+    "emails",
   ],
   editor: ["posts", "events"],
-  support: ["orders", "crm", "inquiries"],
+  support: ["orders", "crm", "inquiries", "emails"],
 };
 const roleNames: Record<string, string> = {
   admin: "Quản trị viên",
@@ -401,6 +405,12 @@ export default function Admin({ data }: { data: Catalog }) {
             </div>
           ) : area === "overview" ? (
             <Overview payload={payload} />
+          ) : area === "emails" ? (
+            <EmailWorkspace
+              payload={payload}
+              refresh={refresh}
+              canEdit={["admin", "manager"].includes(user.role)}
+            />
           ) : area === "crm" ? (
             <CRM payload={payload} refresh={refresh} />
           ) : (

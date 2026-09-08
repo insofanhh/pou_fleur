@@ -11,21 +11,28 @@
     "test": "node --env-file=.env.local scripts/smoke.mjs",
     "db:setup:tidb": "node --env-file=.env.tidb.local scripts/setup-db.mjs --tidb",
     "test:setup": "node --env-file=.env.local scripts/test-setup.mjs",
-    "db:verify:tidb": "node --env-file=.env.tidb.local scripts/verify-tidb.mjs"
+    "db:verify:tidb": "node --env-file=.env.tidb.local scripts/verify-tidb.mjs",
+    "db:email": "node --env-file=.env.local scripts/setup-email.mjs",
+    "db:email:tidb": "node --env-file=.env.tidb.local scripts/setup-email.mjs --tidb",
+    "test:email": "node --env-file=.env.local --import tsx scripts/test-email.ts",
+    "smtp:verify": "node --env-file=.env.smtp.local --import tsx scripts/verify-smtp.ts"
   },
   "dependencies": {
     "lucide-react": "^1.42.0",
     "mysql2": "^3.24.4",
     "next": "^16.3.4",
+    "nodemailer": "^10.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
 }

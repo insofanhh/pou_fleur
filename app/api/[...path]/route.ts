@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { emailAdminRead, emailAdminAction } from "@/lib/email-admin";
+import { safelyProcessEmails } from "@/lib/email";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { query, mutate, pool } from "@/lib/db";
@@ -24,6 +26,7 @@ import {
 import { adminRead, adminWrite } from "@/lib/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 async function handle(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -282,6 +285,11 @@ async function handle(
           "/reset-password?token=" +
           token,
       };
+    } else if (path[0] === "admin" && path[1] === "emails") {
+      result =
+        method === "GET"
+          ? await emailAdminRead()
+          : await emailAdminAction(path.slice(2), method, body);
     } else if (path[0] === "admin") {
       const area = path[1];
       if (method === "GET") result = await adminRead(area);
@@ -363,6 +371,16 @@ async function handle(
           method === "DELETE",
         );
     } else throw new HttpError(404, "Không tìm thấy chức năng.");
+    if (
+      method !== "GET" &&
+      (key === "checkout" ||
+        path[0] === "orders" ||
+        (path[0] === "admin" &&
+          (path[1] === "orders" ||
+            (path[1] === "emails" &&
+              ["campaigns", "retry"].includes(path[2])))))
+    )
+      after(safelyProcessEmails);
     return NextResponse.json(result, {
       headers: { "Cache-Control": "no-store" },
     });

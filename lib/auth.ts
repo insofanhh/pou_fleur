@@ -73,6 +73,8 @@ export const permissions: Record<string, string[]> = {
     "crm",
     "inquiries",
     "audit",
+    "emails",
+    "email_templates",
   ],
   manager: [
     "overview",
@@ -83,9 +85,11 @@ export const permissions: Record<string, string[]> = {
     "events",
     "crm",
     "inquiries",
+    "emails",
+    "email_templates",
   ],
   editor: ["posts", "events"],
-  support: ["orders", "crm", "inquiries"],
+  support: ["orders", "crm", "inquiries", "emails"],
 };
 export async function requirePermission(area: string) {
   const user = await currentUser();

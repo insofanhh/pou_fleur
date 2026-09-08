@@ -1,5 +1,6 @@
 import type { PoolConnection } from "mysql2/promise";
 import { pool } from "./db";
+import { enqueueOrderEmail } from "./email";
 import { HttpError } from "./auth";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
@@ -200,6 +201,7 @@ export async function createOrder(
       await c.execute("UPDATE users SET marketing_consent=1 WHERE id=?", [
         userId,
       ]);
+    await enqueueOrderEmail(c, id, "order_confirmation");
     await c.commit();
     return { reference, total: quote.total };
   } catch (e) {
@@ -285,6 +287,7 @@ export async function changeOrder(
       "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
       [actor, status, "orders", String(id)],
     );
+    await enqueueOrderEmail(c, id, "order_status", o.status);
     await c.commit();
     return { ok: true };
   } catch (e) {

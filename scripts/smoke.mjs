@@ -8,7 +8,13 @@ let checks = 0;
 const userIds = [],
   orderIds = [],
   customerIds = [];
-let categoryId, productId, promoId, postId, uploadedPath;
+let categoryId,
+  productId,
+  promoId,
+  postId,
+  uploadedPath,
+  emailTemplateId,
+  emailCampaignId;
 function client() {
   let cookie = "";
   return async (path, method = "GET", body, originOverride) => {
@@ -286,7 +292,7 @@ try {
     customerName: "Kiểm thử Fleur",
     email,
     phone: "0901234567",
-    address: "123 Đường Kiểm Thử, TP. Hồ Chí Minh",
+    address: "123 Đường Kiểm Thử, TP. Hà Nội",
     recipientName: "Người nhận kiểm thử",
     recipientPhone: "0901234567",
     deliveryDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
@@ -434,6 +440,243 @@ try {
     "Save profile and consent",
   );
   check(
+    (await guest("admin/emails")).status === 401,
+    "Guest cannot read email history",
+  );
+  check(
+    (await customer("admin/emails")).status === 403,
+    "Customer cannot read email history",
+  );
+  check(
+    (await editor("admin/emails")).status === 403,
+    "Editor cannot read email history",
+  );
+  const emailAdmin = await admin("admin/emails");
+  check(
+    emailAdmin.status === 200 &&
+      emailAdmin.data.templates.length >= 6 &&
+      !JSON.stringify(emailAdmin.data).includes("SMTP_PASSWORD="),
+    "Admin reads templates and safe configuration",
+  );
+  const [confirmations] = await connection.execute(
+    "SELECT * FROM email_outbox WHERE order_id=? AND template_key='order_confirmation'",
+    [orderId],
+  );
+  check(
+    confirmations.length === 1 && confirmations[0].body.includes(ref),
+    "Checkout creates one confirmation with order reference",
+  );
+  const [statusEmails] = await connection.execute(
+    "SELECT * FROM email_outbox WHERE order_id=? AND template_key='order_status'",
+    [active.id],
+  );
+  check(
+    statusEmails.length === 4,
+    "Valid order transitions each create one email",
+  );
+  check(
+    (
+      await admin(
+        "admin/emails/templates/" +
+          emailAdmin.data.templates.find(
+            (t) => t.template_key === "order_confirmation",
+          ).id,
+        "PATCH",
+        {
+          name: "Invalid",
+          subject: "No reference",
+          body: "Missing required order reference",
+          active: 1,
+        },
+      )
+    ).status === 400,
+    "Transactional template cannot remove order reference",
+  );
+  let mailTemplate = await admin("admin/emails/templates", "POST", {
+    name: tag + " CRM",
+    subject: "Chào {{customer_name}}",
+    body: "{{campaign_message}}\nChương trình {{campaign_name}}",
+    active: 1,
+  });
+  check(mailTemplate.status === 200, "Create editable CRM template");
+  emailTemplateId = mailTemplate.data.id;
+  check(
+    (
+      await admin("admin/emails/templates/" + emailTemplateId, "PATCH", {
+        name: "Invalid",
+        subject: "{{unknown}}",
+        body: "Unrecognized variables are rejected",
+        active: 1,
+      })
+    ).status === 400,
+    "Unknown template variables rejected",
+  );
+  const previewSafe = await admin("admin/emails/preview-template", "POST", {
+    name: "Preview",
+    subject: "Chào {{customer_name}}",
+    body: "<script>alert(1)</script> {{customer_name}}",
+    active: 1,
+  });
+  check(
+    previewSafe.status === 200 &&
+      !previewSafe.data.html.includes("<script>") &&
+      previewSafe.data.html.includes("&lt;script&gt;"),
+    "Template preview safely escapes HTML",
+  );
+  const crmEmail = {
+    requestKey: randomUUID(),
+    name: tag + " Campaign",
+    templateId: emailTemplateId,
+    segment: "all",
+    customerId: crm.id,
+    birthdayMonth: 9,
+    message: "Cảm ơn bạn đã chọn Fleur.",
+    promotionCode: "QA",
+    eventDate: "20/10",
+  };
+  let emailPreview = await admin(
+    "admin/emails/preview-campaign",
+    "POST",
+    crmEmail,
+  );
+  check(
+    emailPreview.status === 200 && emailPreview.data.count === 1,
+    "CRM preview filters consent, customer and birthday",
+  );
+  const excluded = await admin("admin/emails/preview-campaign", "POST", {
+    ...crmEmail,
+    birthdayMonth: 8,
+  });
+  check(
+    excluded.status === 200 && excluded.data.count === 0,
+    "CRM birthday filter excludes other months",
+  );
+  await admin("admin/users/" + editorId, "PATCH", {
+    name: "QA Support",
+    email: "editor-" + email,
+    phone: "",
+    role: "support",
+    active: 1,
+  });
+  check(
+    (await editor("admin/emails")).status === 200,
+    "Support can view email workspace",
+  );
+  check(
+    (
+      await editor("admin/emails/templates/" + emailTemplateId, "PATCH", {
+        name: "Denied",
+        subject: "Chào {{customer_name}}",
+        body: "Cannot change templates",
+        active: 1,
+      })
+    ).status === 403,
+    "Support cannot modify templates",
+  );
+  await admin("admin/users/" + editorId, "PATCH", {
+    name: "QA Editor",
+    email: "editor-" + email,
+    phone: "",
+    role: "editor",
+    active: 1,
+  });
+  if (process.env.TEST_EMAIL_CAMPAIGNS === "1") {
+    check(
+      emailAdmin.data.configuration.from === "qa-sender@example.test",
+      "Campaign tests target isolated SMTP configuration",
+    );
+    const approval = () => ({
+      ...crmEmail,
+      recipientIds: emailPreview.data.recipients.map((c) => c.id),
+      templateVersion: emailPreview.data.templateVersion,
+      audienceVersion: emailPreview.data.audienceVersion,
+    });
+    check(
+      (
+        await admin("admin/emails/campaigns", "POST", {
+          ...approval(),
+          recipientIds: [],
+        })
+      ).status === 409,
+      "Cannot send to an unreviewed audience",
+    );
+    await admin("admin/emails/templates/" + emailTemplateId, "PATCH", {
+      name: tag + " CRM",
+      subject: "Chào {{customer_name}}",
+      body: "{{campaign_message}}\nUpdated {{campaign_name}}",
+      active: 1,
+    });
+    check(
+      (await admin("admin/emails/campaigns", "POST", approval())).status ===
+        409,
+      "Template changes invalidate reviewed campaign even in same second",
+    );
+    emailPreview = await admin(
+      "admin/emails/preview-campaign",
+      "POST",
+      crmEmail,
+    );
+    const campaignResult = await admin(
+      "admin/emails/campaigns",
+      "POST",
+      approval(),
+    );
+    check(
+      campaignResult.status === 200 && campaignResult.data.queued === 1,
+      "Reviewed CRM campaign queues exactly eligible recipients",
+    );
+    emailCampaignId = campaignResult.data.id;
+    const duplicateCampaign = await admin(
+      "admin/emails/campaigns",
+      "POST",
+      approval(),
+    );
+    check(
+      duplicateCampaign.status === 200 &&
+        duplicateCampaign.data.id === emailCampaignId,
+      "Campaign request retry does not duplicate campaign",
+    );
+    const [messages] = await connection.execute(
+      "SELECT * FROM email_outbox WHERE campaign_id=?",
+      [emailCampaignId],
+    );
+    check(
+      messages.length === 1 &&
+        messages[0].recipient === email &&
+        messages[0].body.includes("Updated"),
+      "Campaign stores personalized frozen email",
+    );
+    const u =
+      origin + "/api/email/unsubscribe?token=" + messages[0].unsubscribe_token;
+    const getUnsub = await fetch(u);
+    const [[stillConsented]] = await connection.execute(
+      "SELECT marketing_consent FROM customers WHERE id=?",
+      [crm.id],
+    );
+    check(
+      getUnsub.status === 200 && stillConsented.marketing_consent === 1,
+      "Email scanner GET does not unsubscribe",
+    );
+    check(
+      (await fetch(u, { method: "POST" })).status === 200,
+      "Customer can unsubscribe without account login",
+    );
+    emailPreview = await admin(
+      "admin/emails/preview-campaign",
+      "POST",
+      crmEmail,
+    );
+    check(
+      emailPreview.data.count === 0,
+      "Unsubscribed customer excluded from future campaigns",
+    );
+    check(
+      (await fetch(origin + "/api/email/worker")).status === 401,
+      "Worker rejects unauthenticated calls",
+    );
+  }
+
+  check(
     (
       await customer("account/password", "POST", {
         currentPassword: password,
@@ -497,12 +740,32 @@ try {
   );
   console.log("All " + checks + " integration checks passed.");
 } finally {
+  if (emailCampaignId) {
+    await connection.execute("DELETE FROM email_outbox WHERE campaign_id=?", [
+      emailCampaignId,
+    ]);
+    await connection.execute("DELETE FROM email_campaigns WHERE id=?", [
+      emailCampaignId,
+    ]);
+  }
+  if (emailTemplateId)
+    await connection.execute("DELETE FROM email_templates WHERE id=?", [
+      emailTemplateId,
+    ]);
   const [foundOrders] = await connection.execute(
     "SELECT id FROM orders WHERE email=?",
     [email],
   );
   const [foundCustomers] = await connection.execute(
     "SELECT id FROM customers WHERE email IN (?,?)",
+    [email, "editor-" + email],
+  );
+  await connection.execute(
+    "DELETE FROM email_outbox WHERE recipient IN (?,?)",
+    [email, "editor-" + email],
+  );
+  await connection.execute(
+    "DELETE FROM email_suppressions WHERE email IN (?,?)",
     [email, "editor-" + email],
   );
   for (const c of foundCustomers) {

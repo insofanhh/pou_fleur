@@ -51,6 +51,10 @@ try {
     "audit_logs",
     "login_attempts",
     "password_resets",
+    "email_templates",
+    "email_campaigns",
+    "email_outbox",
+    "email_suppressions",
   ];
   const names = new Set(tables.flatMap((row) => Object.values(row)));
   for (const table of expected)
