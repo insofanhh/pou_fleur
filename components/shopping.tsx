@@ -311,7 +311,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
           <details>
             <summary>Giao hàng & cam kết</summary>
             <p>
-              Giao hàng trong khu vực TP. Hồ Chí Minh, phí 35.000 ₫; miễn phí từ
+              Giao hàng trong khu vực TP. Hà Nội, phí 35.000 ₫; miễn phí từ
               1.000.000 ₫. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
               hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleur hỗ trợ.
             </p>
@@ -723,7 +723,7 @@ export function Checkout({ data }: { data: Catalog }) {
                 pattern="[+0-9 ()-]{9,20}"
               />
               <label className="field span-2">
-                Địa chỉ tại TP. Hồ Chí Minh
+                Địa chỉ tại TP. Hà Nội
                 <input
                   name="address"
                   required

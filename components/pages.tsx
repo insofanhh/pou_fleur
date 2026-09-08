@@ -565,7 +565,7 @@ export function Contact() {
           </p>
           <div className="contact-feature">
             <MapPin />
-            Phục vụ tại TP. Hồ Chí Minh
+            Phục vụ tại TP. Hà Nội
           </div>
           <div className="contact-feature">
             <CalendarDays />
@@ -823,7 +823,7 @@ const content: Record<
     sections: [
       [
         "Phạm vi & phí giao hàng",
-        "Giao trong khu vực TP. Hồ Chí Minh với phí 35.000 ₫. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 ₫ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
+        "Giao trong khu vực TP. Hà Nội với phí 35.000 ₫. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 ₫ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
       ],
       [
         "Chuẩn bị & thay thế hoa",
