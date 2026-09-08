@@ -95,7 +95,7 @@ svg {
   stroke-width: 1.5;
   flex-shrink: 0;
 }
-/* Two messages, one step every 500ms; the final copy makes the loop seamless. */
+/* Two messages in a seven-second loop; the final copy makes it seamless. */
 .announcement {
   height: 34px;
   overflow: hidden;
@@ -106,7 +106,7 @@ svg {
   letter-spacing: 0.1px;
 }
 .announcement-track {
-  animation: announcement-scroll 5s linear infinite;
+  animation: announcement-scroll 6s linear infinite;
 }
 .announcement-message {
   height: 34px;
