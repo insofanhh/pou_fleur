@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { emailAdminRead, emailAdminAction } from "@/lib/email-admin";
 import { safelyProcessEmails } from "@/lib/email";
 import { z } from "zod";
+import { adminNotifications } from "@/lib/notifications";
 import { publicProducts, invalidateCatalog } from "@/lib/catalog";
 import { randomBytes } from "node:crypto";
 import { query, mutate, pool } from "@/lib/db";
@@ -288,6 +289,8 @@ async function handle(
           "/reset-password?token=" +
           token,
       };
+    } else if (key === "admin/notifications" && method === "GET") {
+      result = await adminNotifications();
     } else if (path[0] === "admin" && path[1] === "emails") {
       result =
         method === "GET"

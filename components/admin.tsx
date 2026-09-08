@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import AdminNotifications from "./admin-notifications";
 import EmailWorkspace from "./email-admin";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
@@ -299,10 +300,6 @@ export default function Admin({ data }: { data: Catalog }) {
             ))}
         </nav>
         <div className="sidebar-bottom">
-          <Link href="/" target="_blank">
-            <ArrowUpRight size={17} />
-            Xem cửa hàng
-          </Link>
           <div className="admin-user">
             <span className="avatar">{user.name.charAt(0)}</span>
             <div>
@@ -337,11 +334,18 @@ export default function Admin({ data }: { data: Catalog }) {
             <strong>{currentNav?.[1] || "Không tìm thấy"}</strong>
           </span>
           <div>
-            <span className="live-dot" />
-            Cửa hàng đang hoạt động
-            <Link href="/account" className="avatar">
-              {user.name.charAt(0)}
+            <Link
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="admin-store-link"
+            >
+              <ArrowUpRight size={17} /> Xem cửa hàng
             </Link>
+            <AdminNotifications
+              key={`${user.id}:${user.role}`}
+              userId={user.id}
+            />
           </div>
         </header>
         <main className="admin-content">

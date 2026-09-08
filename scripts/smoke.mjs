@@ -98,6 +98,10 @@ try {
       "Unknown route renders no-index 404 UI: " + path,
     );
   }
+  check(
+    (await guest("admin/notifications")).status === 401,
+    "Guest cannot read admin notifications",
+  );
   const aboutHtml = await (await fetch(origin + "/about")).text();
   check(
     !aboutHtml.includes("category_id"),
@@ -192,6 +196,16 @@ try {
   );
   userIds.push(r.data.user.id);
   check(
+    (await customer("admin/notifications")).status === 403,
+    "Customer cannot read admin notifications",
+  );
+  check(
+    (await admin("admin/notifications")).data.items.some(
+      (n) => n.key === "users:" + r.data.user.id,
+    ),
+    "New registration appears in admin notifications",
+  );
+  check(
     (await customer("admin/products")).status === 403,
     "Customer cannot modify store",
   );
@@ -212,6 +226,39 @@ try {
     active: 1,
   });
   check(r.status === 200, "Admin can assign editor");
+  const editorNotifications = await editor("admin/notifications");
+  check(
+    editorNotifications.status === 200 &&
+      editorNotifications.data.items.length === 0,
+    "Editor cannot see order, user or support notifications",
+  );
+  check(
+    (
+      await guest("contact", "POST", {
+        name: tag,
+        email,
+        message: "Kiểm thử thông báo hỗ trợ mới.",
+      })
+    ).status === 200,
+    "Create support notification fixture",
+  );
+  const adminNotices = await admin("admin/notifications");
+  check(
+    adminNotices.status === 200 &&
+      adminNotices.data.items.some(
+        (n) => n.type === "inquiries" && n.detail === tag,
+      ),
+    "Support request appears in admin notifications",
+  );
+  check(
+    adminNotices.data.items.every(
+      (n) =>
+        Number.isFinite(n.createdAt) &&
+        !("email" in n) &&
+        !("password_hash" in n),
+    ),
+    "Notification feed contains only minimal display fields",
+  );
   check(
     (await editor("admin/products")).status === 403,
     "Editor cannot access products",
@@ -356,6 +403,12 @@ try {
   r = await customer("checkout", "POST", order);
   check(r.status === 200 && r.data.total === 485000, "Create order");
   const ref = r.data.reference;
+  check(
+    (await admin("admin/notifications")).data.items.some(
+      (n) => n.type === "orders" && n.detail.includes(ref),
+    ),
+    "New order appears in admin notifications",
+  );
   r = await customer("checkout", "POST", order);
   check(
     r.status === 200 && r.data.reference === ref,
@@ -612,6 +665,14 @@ try {
     (await editor("admin/emails")).status === 200,
     "Support can view email workspace",
   );
+  const supportFeed = await editor("admin/notifications");
+  check(
+    supportFeed.status === 200 &&
+      supportFeed.data.items.some((n) => n.type === "orders") &&
+      supportFeed.data.items.some((n) => n.type === "inquiries") &&
+      supportFeed.data.items.every((n) => n.type !== "users"),
+    "Support receives order and inquiry notifications without user data",
+  );
   check(
     (
       await editor("admin/emails/templates/" + emailTemplateId, "PATCH", {
@@ -795,6 +856,7 @@ try {
   );
   console.log("All " + checks + " integration checks passed.");
 } finally {
+  await connection.execute("DELETE FROM inquiries WHERE email=?", [email]);
   if (emailCampaignId) {
     await connection.execute("DELETE FROM email_outbox WHERE campaign_id=?", [
       emailCampaignId,
