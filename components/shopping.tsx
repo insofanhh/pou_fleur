@@ -778,24 +778,26 @@ export function Checkout({ data }: { data: Catalog }) {
               </p>
             )}
             <div className="form-grid">
-              <Field
-                label="Tên người nhận"
-                name="recipientName"
-                required
-                readOnly={receivingSelf}
-                value={receivingSelf ? customerName : giftName}
-                onChange={(e) => setGiftName(e.target.value)}
-              />
-              <Field
-                label="Số điện thoại người nhận"
-                type="tel"
-                name="recipientPhone"
-                value={receivingSelf ? customerPhone : giftPhone}
-                readOnly={receivingSelf}
-                onChange={(e) => setGiftPhone(e.target.value)}
-                required
-                pattern="[+0-9 ()-]{9,20}"
-              />
+              {!receivingSelf && (
+                <>
+                  <Field
+                    label="Tên người nhận"
+                    name="recipientName"
+                    required
+                    value={giftName}
+                    onChange={(e) => setGiftName(e.target.value)}
+                  />
+                  <Field
+                    label="Số điện thoại người nhận"
+                    type="tel"
+                    name="recipientPhone"
+                    value={giftPhone}
+                    onChange={(e) => setGiftPhone(e.target.value)}
+                    required
+                    pattern="[+0-9 ()-]{9,20}"
+                  />
+                </>
+              )}
               <label className="field span-2">
                 Địa chỉ tại TP. Hà Nội
                 <input
