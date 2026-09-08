@@ -1127,7 +1127,7 @@ function Editor({
     [resetUrl, setResetUrl] = useState("");
   const [designName, setDesignName] = useState(record.name || "");
   const [designSlug, setDesignSlug] = useState(record.slug || "");
-  const manualSlug = useRef(!!record.id);
+  const manualSlug = useRef(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;

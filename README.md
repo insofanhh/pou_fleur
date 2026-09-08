@@ -220,7 +220,7 @@ Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https
 ### Album ảnh sản phẩm
 
 - Admin hỗ trợ 1 ảnh đại diện và tối đa 11 ảnh album, tải nhiều file cùng lúc, đổi thứ tự, chọn ảnh làm đại diện và xóa khỏi album. File JPG/PNG/WebP tối đa 4 MB; mỗi file được gửi riêng để nằm dưới giới hạn request của Vercel Functions. [Tài liệu upload Vercel Blob](https://vercel.com/docs/vercel-blob/server-upload).
-- Tên thiết kế tự tạo slug không dấu khi thêm mới. Slug của sản phẩm cũ được giữ nguyên khi đổi tên; có nút tạo lại hoặc sửa thủ công.
+- Tên thiết kế tự tạo slug không dấu khi thêm mới và khi đổi tên trong form chỉnh sửa. Nếu sửa đường dẫn thủ công, tự động cập nhật tạm dừng trong phiên chỉnh sửa đó; nút tạo lại từ tên thiết kế bật lại tự động cập nhật.
 - Chạy `npm run db:gallery` cho database local, `npm run db:gallery:tidb` cho TiDB trước khi deploy code mới. Migration chỉ thêm cột JSON gallery nếu chưa có, không ghi đè ảnh cũ. Lệnh setup database cũng tích hợp migration này.
 - Trang chi tiết có ảnh chính, hàng thumbnail, nút trước/sau, phím trái/phải và vuốt ngang trên điện thoại. Sản phẩm một ảnh không hiện điều khiển thừa.
 - Xóa ảnh trong form chỉ bỏ liên kết khỏi sản phẩm, không xóa file khỏi kho Blob để tránh ảnh đang được dùng ở nơi khác.
