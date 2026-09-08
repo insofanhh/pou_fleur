@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Provider } from "@/components/context";
+import StoreShell from "@/components/store-shell";
 import SectionReveal from "@/components/section-reveal";
 import { sectionMotionStyles } from "@/lib/section-motion";
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <Provider>
-          {children}
+          <StoreShell>{children}</StoreShell>
           <SectionReveal />
         </Provider>
       </body>

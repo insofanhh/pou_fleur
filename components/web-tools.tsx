@@ -2,8 +2,8 @@
 import { useEffect } from "react";
 import { flushSync } from "react-dom";
 import type { Product } from "@/lib/types";
-import { useShop } from "./context";
-export function WebTools({ products }: { products: Product[] }) {
+import { api, useShop } from "./context";
+export function WebTools() {
   const { add, cart } = useShop();
   useEffect(() => {
     const context = (document as any).modelContext;
@@ -30,7 +30,7 @@ export function WebTools({ products }: { products: Product[] }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute(input: unknown) {
+      async execute(input: unknown) {
         if (!input || typeof input !== "object")
           throw Error("Đầu vào phải là object.");
         const i = input as any;
@@ -42,6 +42,7 @@ export function WebTools({ products }: { products: Product[] }) {
               i.maxPrice < 0))
         )
           throw Error("Điều kiện tìm kiếm không hợp lệ.");
+        const products: Product[] = await api("catalog/products");
         return products
           .filter(
             (p) =>
@@ -76,7 +77,7 @@ export function WebTools({ products }: { products: Product[] }) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input: unknown) {
+      async execute(input: unknown) {
         if (!input || typeof input !== "object")
           throw Error("Đầu vào không hợp lệ.");
         const i = input as any;
@@ -88,6 +89,7 @@ export function WebTools({ products }: { products: Product[] }) {
           !["S", "M", "L"].includes(i.size)
         )
           throw Error("Thiết kế hoặc số lượng không hợp lệ.");
+        const products: Product[] = await api("catalog/products");
         const p = products.find((p) => p.id === i.productId);
         const count = cart
           .filter((c) => c.productId === i.productId)
@@ -105,6 +107,6 @@ export function WebTools({ products }: { products: Product[] }) {
       },
     });
     return () => lifecycle.abort();
-  }, [products, cart, add]);
+  }, [cart, add]);
   return null;
 }

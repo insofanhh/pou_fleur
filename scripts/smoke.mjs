@@ -87,13 +87,30 @@ try {
     const r = await fetch(origin + path);
     check(r.status === 200, "Route " + path);
   }
+  for (const path of ["/product/does-not-exist", "/page-not-found"]) {
+    const response = await fetch(origin + path);
+    const html = await response.text();
+    // A loading boundary can flush headers before notFound() resolves.
+    check(
+      [200, 404].includes(response.status) &&
+        html.includes("404 — A LITTLE DETOUR") &&
+        html.includes("noindex"),
+      "Unknown route renders no-index 404 UI: " + path,
+    );
+  }
+  const aboutHtml = await (await fetch(origin + "/about")).text();
   check(
-    (await fetch(origin + "/product/does-not-exist")).status === 404,
-    "Unknown product returns 404",
+    !aboutHtml.includes("category_id"),
+    "Information page omits product catalog payload",
+  );
+  const optimizedImage = await fetch(
+    origin + "/_next/image?url=%2Fimages%2Ftulips.jpg&w=640&q=75",
+    { headers: { Accept: "image/webp" } },
   );
   check(
-    (await fetch(origin + "/page-not-found")).status === 404,
-    "Unknown route returns 404",
+    optimizedImage.status === 200 &&
+      optimizedImage.headers.get("content-type").startsWith("image/"),
+    "Responsive image optimizer serves local images",
   );
   for (const name of [
     "hero",
@@ -233,6 +250,39 @@ try {
   r = await admin("admin/products", "POST", product);
   check(r.status === 200, "Create product");
   productId = r.data.id;
+  const cachedProducts = await guest("catalog/products");
+  check(
+    cachedProducts.status === 200 &&
+      cachedProducts.data.some((p) => p.id === productId),
+    "Public catalog invalidated after product creation",
+  );
+  await connection.execute("UPDATE products SET stock=1 WHERE id=?", [
+    productId,
+  ]);
+  check(
+    (await guest("catalog/products")).data.find((p) => p.id === productId)
+      .stock === 2,
+    "Repeated public request uses cached catalog",
+  );
+  const liveQuote = await guest("checkout/quote", "POST", {
+    items: [{ productId, quantity: 2, size: "S" }],
+    code: "",
+  });
+  check(
+    liveQuote.status === 409 &&
+      liveQuote.data.error.includes("không đủ số lượng"),
+    "Checkout reads live stock while public catalog is cached",
+  );
+  const edited = await admin("admin/products/" + productId, "PATCH", {
+    ...product,
+    name: "Hoa kiểm thử cập nhật",
+  });
+  check(
+    edited.status === 200 &&
+      (await guest("catalog/products")).data.find((p) => p.id === productId)
+        .name === "Hoa kiểm thử cập nhật",
+    "Admin edit immediately expires public product cache",
+  );
   r = await admin("admin/promotions", "POST", {
     name: tag,
     code: tag,
@@ -737,6 +787,11 @@ try {
   check(
     (await editor("auth/me")).data.user === null,
     "Password reset invalidates previous sessions",
+  );
+  check(
+    (await admin("admin/products/" + productId, "DELETE", {})).status === 200 &&
+      !(await guest("catalog/products")).data.some((p) => p.id === productId),
+    "Hidden product disappears from cached public catalog",
   );
   console.log("All " + checks + " integration checks passed.");
 } finally {

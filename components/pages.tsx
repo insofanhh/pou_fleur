@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import FlowerImage from "./flower-image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -336,7 +337,7 @@ export function Account() {
                       : o.items
                     )?.map((i: any, n: number) => (
                       <div className="mini-product" key={n}>
-                        <img src={i.image} alt={i.name} />
+                        <FlowerImage src={i.image} alt={i.name} sizes="64px" />
                         <div>
                           <strong>{i.name}</strong>
                           <small>
@@ -472,7 +473,12 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
           <span className="eyebrow">THE FLEUR JOURNAL</span>
           <h1>{post.title}</h1>
           <p className="lead">{post.excerpt}</p>
-          <img src={post.image} alt={post.title} />
+          <FlowerImage
+            src={post.image}
+            alt={post.title}
+            sizes="(max-width: 700px) 90vw, 800px"
+            eager
+          />
           <div className="article-body">
             {post.content
               .split("\n")
@@ -499,7 +505,11 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
                 className="journal-card"
                 key={p.id}
               >
-                <img src={p.image} alt={p.title} />
+                <FlowerImage
+                  src={p.image}
+                  alt={p.title}
+                  sizes="(max-width: 700px) 90vw, 30vw"
+                />
                 <span className="eyebrow">CHUYỆN VỀ HOA</span>
                 <h2>{p.title}</h2>
                 <p>{p.excerpt}</p>

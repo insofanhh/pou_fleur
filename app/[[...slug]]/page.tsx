@@ -1,4 +1,4 @@
-import { catalog } from "@/lib/db";
+import { catalogForRoute } from "@/lib/catalog";
 import Store from "@/components/store";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -30,7 +30,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug = [] } = await params;
   if (slug[0] === "product") {
-    const data = await catalog();
+    const data = await catalogForRoute(slug[0] || "", slug[1] || "");
     const p = data.products.find((p) => p.slug === slug[1]);
     return {
       title: p?.name || "Không tìm thấy sản phẩm",
@@ -38,7 +38,7 @@ export async function generateMetadata({
     };
   }
   if (slug[0] === "journal" && slug[1]) {
-    const data = await catalog();
+    const data = await catalogForRoute(slug[0] || "", slug[1] || "");
     const p = data.posts.find((p) => p.slug === slug[1]);
     return {
       title: p?.title || "Không tìm thấy bài viết",
@@ -55,7 +55,7 @@ export default async function Page({
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug = [] } = await params;
-  const data = await catalog();
+  const data = await catalogForRoute(slug[0] || "", slug[1] || "");
   if (slug.length) {
     if (slug[0] === "product") {
       if (slug.length !== 2 || !data.products.some((p) => p.slug === slug[1]))

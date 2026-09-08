@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
+import FlowerImage from "./flower-image";
 import {
   ArrowUpRight,
   Flower2,
@@ -39,10 +41,16 @@ export default function Home({ data }: { data: Catalog }) {
             <span>BỘ SƯU TẬP EVERYDAY BEAUTY</span>
           </div>
         </div>
-        <div
-          className="hero-photo"
-          style={{ backgroundImage: "url(/images/hero.jpg)" }}
-        >
+        <div className="hero-photo">
+          <Image
+            src="/images/hero.jpg"
+            alt=""
+            fill
+            sizes="(max-width: 700px) 100vw, 50vw"
+            loading="eager"
+            fetchPriority="high"
+            style={{ objectFit: "cover" }}
+          />
           <span className="photo-label">
             Được chọn bằng mắt.
             <br />
@@ -123,7 +131,7 @@ export function ProductCard({ p }: { p: Product }) {
   return (
     <article className="product-card">
       <Link className="product-image" href={"/product/" + p.slug}>
-        <img src={p.image} alt={p.name} />
+        <FlowerImage src={p.image} alt={p.name} />
         {p.badge && <span className="badge">{p.badge}</span>}
         <span className="product-add">
           <Plus size={19} />

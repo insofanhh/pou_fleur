@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { emailAdminRead, emailAdminAction } from "@/lib/email-admin";
 import { safelyProcessEmails } from "@/lib/email";
 import { z } from "zod";
+import { publicProducts, invalidateCatalog } from "@/lib/catalog";
 import { randomBytes } from "node:crypto";
 import { query, mutate, pool } from "@/lib/db";
 import {
@@ -50,7 +51,9 @@ async function handle(
       }
     }
     let result: unknown;
-    if (key === "auth/me" && method === "GET")
+    if (key === "catalog/products" && method === "GET")
+      result = await publicProducts();
+    else if (key === "auth/me" && method === "GET")
       result = { user: await currentUser(), permissions };
     else if (key === "auth/register" && method === "POST") {
       const b = z
@@ -381,6 +384,11 @@ async function handle(
               ["campaigns", "retry"].includes(path[2])))))
     )
       after(safelyProcessEmails);
+    if (method !== "GET") {
+      if (path[0] === "admin") invalidateCatalog(path[1]);
+      else if (key === "checkout" || path[0] === "orders")
+        invalidateCatalog(path[0]);
+    }
     return NextResponse.json(result, {
       headers: { "Cache-Control": "no-store" },
     });

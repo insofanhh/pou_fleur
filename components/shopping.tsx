@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import FlowerImage from "./flower-image";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -212,7 +213,12 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
       <Breadcrumb title={p.name} />
       <div className="detail-layout">
         <div className="detail-photo">
-          <img src={p.image} alt={p.name} />
+          <FlowerImage
+            src={p.image}
+            alt={p.name}
+            sizes="(max-width: 700px) 90vw, 44vw"
+            eager
+          />
           <span className="badge">{p.badge || "Thiết kế bởi Fleur"}</span>
         </div>
         <div className="detail-info">
@@ -448,7 +454,11 @@ export function Cart({ data }: { data: Catalog }) {
                 {i.p ? (
                   <>
                     <Link href={"/product/" + i.p.slug}>
-                      <img src={i.p.image} alt={i.p.name} />
+                      <FlowerImage
+                        src={i.p.image}
+                        alt={i.p.name}
+                        sizes="80px"
+                      />
                     </Link>
                     <div className="cart-item-info">
                       <p>{i.p.category}</p>
@@ -814,7 +824,7 @@ export function Checkout({ data }: { data: Catalog }) {
             const p = data.products.find((p) => p.id === i.productId);
             return p ? (
               <div className="mini-product" key={i.productId + i.size}>
-                <img src={p.image} alt={p.name} />
+                <FlowerImage src={p.image} alt={p.name} />
                 <div>
                   <strong>{p.name}</strong>
                   <small>

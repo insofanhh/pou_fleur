@@ -3305,3 +3305,51 @@ td code {
     display: none;
   }
 }
+
+.route-loading {
+  min-height: 65vh;
+  padding: 60px 6%;
+}
+.route-loading > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.loading-heading,
+.loading-line,
+.loading-grid > div {
+  background: var(--soft);
+  border-radius: 8px;
+}
+.loading-heading {
+  width: min(420px, 80%);
+  height: 48px;
+  margin: 24px 0 18px;
+}
+.loading-line {
+  width: min(560px, 95%);
+  height: 16px;
+  margin-bottom: 42px;
+}
+.loading-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.loading-grid > div {
+  height: 240px;
+}
+@media (max-width: 700px) {
+  .route-loading {
+    padding: 32px 5%;
+  }
+  .loading-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .loading-grid > div {
+    height: 180px;
+  }
+  .loading-grid > div:last-child {
+    display: none;
+  }
+}
