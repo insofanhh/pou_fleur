@@ -8,7 +8,10 @@
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "db:setup": "node --env-file=.env.local scripts/setup-db.mjs",
-    "test": "node --env-file=.env.local scripts/smoke.mjs"
+    "test": "node --env-file=.env.local scripts/smoke.mjs",
+    "db:setup:tidb": "node --env-file=.env.tidb.local scripts/setup-db.mjs --tidb",
+    "test:setup": "node --env-file=.env.local scripts/test-setup.mjs",
+    "db:verify:tidb": "node --env-file=.env.tidb.local scripts/verify-tidb.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.42.0",

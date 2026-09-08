@@ -10,7 +10,14 @@ export const pool =
     password: process.env.MYSQL_PASSWORD || "",
     database: process.env.MYSQL_DATABASE || "fleur_store",
     waitForConnections: true,
-    connectionLimit: 8,
+    connectionLimit: 5,
+    maxIdle: 2,
+    idleTimeout: 5000,
+    enableKeepAlive: true,
+    ssl:
+      process.env.MYSQL_SSL === "true"
+        ? { minVersion: "TLSv1.2", rejectUnauthorized: true }
+        : undefined,
     dateStrings: true,
     decimalNumbers: true,
     charset: "utf8mb4",

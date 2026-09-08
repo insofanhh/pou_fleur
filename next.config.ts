@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
-  distDir: process.env.NODE_ENV === "production" ? ".next-production" : ".next",
+  distDir:
+    process.env.VERCEL === "1"
+      ? ".next"
+      : process.env.NODE_ENV === "production"
+        ? ".next-production"
+        : ".next",
   async headers() {
     return [
       {

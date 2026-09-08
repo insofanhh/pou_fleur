@@ -54,6 +54,10 @@ const connection = await mysql.createConnection({
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DATABASE,
+  ssl:
+    process.env.MYSQL_SSL === "true"
+      ? { minVersion: "TLSv1.2", rejectUnauthorized: true }
+      : undefined,
 });
 try {
   for (const path of [
@@ -121,6 +125,10 @@ try {
     password: process.env.ADMIN_PASSWORD,
   });
   check(r.status === 200 && r.data.user.role === "admin", "Admin sign in");
+  check(
+    (await admin("admin/overview")).status === 200,
+    "Admin overview aggregates are compatible",
+  );
   const upload = new FormData();
   upload.set(
     "file",

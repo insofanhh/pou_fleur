@@ -68,6 +68,46 @@ Bộ kiểm tra tích hợp tạo các bản ghi QA riêng, xác thực HTTP/API
 
 Chưa thực hiện kiểm thử tương tác/ảnh chụp trong trình duyệt. Bố cục có CSS responsive cho desktop/tablet/mobile. Có các WebMCP tool tìm hoa/thêm giỏ khi trình duyệt hỗ trợ; chưa xác minh bằng context WebMCP thực tế.
 
+## Vercel + TiDB Cloud
+
+Kết nối database trong ứng dụng và script seed hỗ trợ TLS qua MYSQL_SSL=true, xác minh chứng chỉ máy chủ và yêu cầu TLS 1.2 trở lên. Pool dùng tối đa 5 kết nối mỗi instance, giữ tối đa 2 kết nối nhàn rỗi và timeout nhàn rỗi 5 giây.
+
+Tạo file .env.tidb.local riêng (bị loại khỏi Git) với các biến:
+
+```dotenv
+MYSQL_HOST=<host trong TiDB Connect>
+MYSQL_PORT=4000
+MYSQL_USER=<username đầy đủ trong TiDB Connect>
+MYSQL_PASSWORD=<mật khẩu database>
+MYSQL_DATABASE=fleur_store
+MYSQL_SSL=true
+ADMIN_EMAIL=admin@fleur.local
+ADMIN_PASSWORD=<mật khẩu riêng tối thiểu 12 ký tự>
+```
+
+Chạy:
+
+```sh
+npm run db:setup:tidb
+npm run db:verify:tidb
+```
+
+Lệnh setup kiểm tra cấu hình trước khi kết nối, không cho phép fallback sang MySQL cục bộ hoặc ghi vào database hệ thống (sys/mysql/information_schema/performance_schema/metrics_schema). Script tạo schema bằng CREATE TABLE IF NOT EXISTS; dữ liệu mẫu và admin được ghi trong transaction. Khi seed một database trống, ID danh mục được tra theo slug thay vì giả định bắt đầu từ 1. Chạy lại không đặt lại mật khẩu admin đã tồn tại.
+
+Lệnh verify kiểm tra đúng TiDB, chứng chỉ TLS, 16 bảng, các bộ đếm dữ liệu mẫu, mật khẩu admin, JSON aggregation và khóa bản ghi trong transaction. Không in host, username hay mật khẩu.
+
+Trên Vercel, import repository, chọn Next.js, Node.js 22.x, nhánh main, Install Command npm ci, Build Command npm run build và để Output Directory mặc định. Khi VERCEL=1, build dùng .next; production cục bộ vẫn dùng .next-production. Không chạy seed trong Build Command.
+
+Thêm MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE=fleur_store, MYSQL_SSL=true và APP_ORIGIN=https://<domain-thực-tế> vào Environment Variables của Production. APP_ORIGIN phải khớp chính xác URL đang truy cập và không có dấu / cuối. Không dùng tiền tố NEXT_PUBLIC_ cho thông tin database. ADMIN_EMAIL/ADMIN_PASSWORD chỉ dùng khi seed, không cần đưa lên Vercel runtime.
+
+Các bước cấu hình này không tự tạo project hoặc triển khai lên tài khoản Vercel. Upload vẫn dùng filesystem cục bộ; cần chuyển API upload sang Blob/object storage trước khi dùng chọn file trên Vercel. Các ảnh mẫu trong public/images và ảnh URL HTTPS vẫn dùng được.
+
+Kiểm tra seed trên database QA cục bộ, được tạo và dọn tự động:
+
+```sh
+npm run test:setup
+```
+
 ## Triển khai Docker
 
 Có Dockerfile và compose.yaml cho Node.js + MySQL 8.4 với volume lưu database/ảnh upload.
