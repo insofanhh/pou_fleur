@@ -59,6 +59,8 @@ input,
 select,
 textarea {
   font: inherit;
+  /* Override native control colors, including blue button text on iOS. */
+  color: inherit;
 }
 button,
 a,
