@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { uploadFailure } from "@/lib/upload-errors";
 import { MAX_IMAGE_BYTES } from "@/lib/product-images";
 import { requirePermission, HttpError } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
@@ -7,6 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
+  let stage = "authorize";
   try {
     if (
       req.headers.get("origin") !==
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
       MAX_IMAGE_BYTES + 100000
     )
       throw new HttpError(413, "Ảnh tối đa 4 MB.");
+    stage = "read-file";
     const form = await req.formData();
     const file = form.get("file");
     if (
@@ -42,6 +45,7 @@ export async function POST(req: NextRequest) {
     )
       ext = "webp";
     if (!ext) throw new HttpError(400, "Định dạng ảnh không hợp lệ.");
+    stage = "storage";
     const name = randomUUID() + "." + ext;
     if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) {
       const blob = await put("products/" + name, bytes, {
@@ -61,9 +65,25 @@ export async function POST(req: NextRequest) {
     await writeFile(path.join(dir, name), bytes);
     return NextResponse.json({ url: "/uploads/" + name });
   } catch (e) {
+    if (e instanceof HttpError)
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    const failure = uploadFailure(e);
+    const requestId = randomUUID();
+    console.error("[product-upload]", {
+      requestId,
+      stage,
+      code: failure.code,
+      errorType: e instanceof Error ? e.constructor.name : "Unknown",
+      hasBlobStore: !!process.env.BLOB_STORE_ID,
+      hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+    });
     return NextResponse.json(
-      { error: e instanceof HttpError ? e.message : "Không thể tải ảnh lên." },
-      { status: e instanceof HttpError ? e.status : 500 },
+      {
+        error: failure.message + " [" + failure.code + "; " + requestId + "]",
+        code: failure.code,
+        requestId,
+      },
+      { status: failure.status },
     );
   }
 }
