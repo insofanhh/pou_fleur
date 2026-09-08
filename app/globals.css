@@ -3216,3 +3216,24 @@ td code {
     height: 500px;
   }
 }
+
+/* Progressive enhancement: content stays visible before JS and without observers. */
+@keyframes section-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.section-fade-in {
+  animation: section-fade-in 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.section-fade-in:focus-within {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce), print {
+  .section-fade-in {
+    animation: none !important;
+  }
+}

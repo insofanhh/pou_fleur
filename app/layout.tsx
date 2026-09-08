@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Provider } from "@/components/context";
+import SectionReveal from "@/components/section-reveal";
 export const metadata: Metadata = {
   title: {
     default: "Fleur — Hoa cho những điều không thể nói",
@@ -14,7 +15,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi">
       <body>
-        <Provider>{children}</Provider>
+        <Provider>
+          {children}
+          <SectionReveal />
+        </Provider>
       </body>
     </html>
   );
