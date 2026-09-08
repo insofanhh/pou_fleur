@@ -583,6 +583,16 @@ export function Checkout({ data }: { data: Catalog }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [success, setSuccess] = useState<any>(null);
+  const [deliveryMode, setDeliveryMode] = useState<"self" | "gift">("self");
+  const [buyerName, setBuyerName] = useState<string | null>(null);
+  const [buyerPhone, setBuyerPhone] = useState<string | null>(null);
+  const [selfAddress, setSelfAddress] = useState<string | null>(null);
+  const [giftName, setGiftName] = useState("");
+  const [giftPhone, setGiftPhone] = useState("");
+  const [giftAddress, setGiftAddress] = useState("");
+  const customerName = buyerName ?? user?.name ?? "";
+  const customerPhone = buyerPhone ?? user?.phone ?? "";
+  const receivingSelf = deliveryMode === "self";
   const key = useRef("");
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Ho_Chi_Minh",
@@ -605,6 +615,10 @@ export function Checkout({ data }: { data: Catalog }) {
     setBusy(true);
     setError("");
     const f = Object.fromEntries(new FormData(e.currentTarget));
+    if (receivingSelf) {
+      f.recipientName = f.customerName;
+      f.recipientPhone = f.phone;
+    }
     try {
       const result = await api("checkout", "POST", {
         ...f,
@@ -692,7 +706,8 @@ export function Checkout({ data }: { data: Catalog }) {
                 label="Họ và tên"
                 name="customerName"
                 required
-                defaultValue={user?.name}
+                value={customerName}
+                onChange={(e) => setBuyerName(e.target.value)}
               />
               <Field
                 label="Số điện thoại"
@@ -700,7 +715,8 @@ export function Checkout({ data }: { data: Catalog }) {
                 type="tel"
                 required
                 pattern="[+0-9 ()-]{9,20}"
-                defaultValue={user?.phone}
+                value={customerPhone}
+                onChange={(e) => setBuyerPhone(e.target.value)}
               />
               <Field
                 label="Email"
@@ -714,14 +730,69 @@ export function Checkout({ data }: { data: Catalog }) {
           </section>
           <section className="form-section">
             <h3>
-              <span>02</span> Gửi đến người bạn thương
+              <span>02</span> Thông tin giao hoa
             </h3>
+            <fieldset
+              className="recipient-options"
+              aria-label="Chọn người nhận hoa"
+            >
+              <label
+                className={
+                  "recipient-option" + (receivingSelf ? " selected" : "")
+                }
+              >
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="self"
+                  checked={receivingSelf}
+                  onChange={() => setDeliveryMode("self")}
+                />
+                <span>
+                  <strong>Giao cho tôi</strong>
+                  <span>Một chút hoa dành cho chính mình.</span>
+                </span>
+              </label>
+              <label
+                className={
+                  "recipient-option" + (!receivingSelf ? " selected" : "")
+                }
+              >
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="gift"
+                  checked={!receivingSelf}
+                  onChange={() => setDeliveryMode("gift")}
+                />
+                <span>
+                  <strong>Gửi đến người bạn thương</strong>
+                  <span>Gửi hoa cùng những lời nhắn yêu thương.</span>
+                </span>
+              </label>
+            </fieldset>
+            {receivingSelf && (
+              <p className="recipient-help">
+                Tên và số điện thoại người nhận được lấy từ bước 1. Bạn có thể
+                thay đổi địa chỉ giao bên dưới.
+              </p>
+            )}
             <div className="form-grid">
-              <Field label="Tên người nhận" name="recipientName" required />
+              <Field
+                label="Tên người nhận"
+                name="recipientName"
+                required
+                readOnly={receivingSelf}
+                value={receivingSelf ? customerName : giftName}
+                onChange={(e) => setGiftName(e.target.value)}
+              />
               <Field
                 label="Số điện thoại người nhận"
                 type="tel"
                 name="recipientPhone"
+                value={receivingSelf ? customerPhone : giftPhone}
+                readOnly={receivingSelf}
+                onChange={(e) => setGiftPhone(e.target.value)}
                 required
                 pattern="[+0-9 ()-]{9,20}"
               />
@@ -733,7 +804,16 @@ export function Checkout({ data }: { data: Catalog }) {
                   minLength={10}
                   maxLength={500}
                   placeholder="Số nhà, đường, phường, quận"
-                  defaultValue={user?.address}
+                  value={
+                    receivingSelf
+                      ? (selfAddress ?? user?.address ?? "")
+                      : giftAddress
+                  }
+                  onChange={(e) =>
+                    receivingSelf
+                      ? setSelfAddress(e.target.value)
+                      : setGiftAddress(e.target.value)
+                  }
                 />
               </label>
               <div className="delivery-schedule span-2">

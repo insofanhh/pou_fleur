@@ -3933,3 +3933,62 @@ td code {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.recipient-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0 0 22px;
+  min-width: 0;
+  border: 0;
+}
+.recipient-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.recipient-option.selected {
+  border-color: var(--ink);
+  background: #f7f7f7;
+}
+.recipient-option:focus-within {
+  outline: 2px solid #777;
+  outline-offset: 3px;
+}
+.recipient-option input {
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--ink);
+}
+.recipient-option > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recipient-option strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.recipient-option span span,
+.recipient-help {
+  font-size: 12px;
+  color: #777;
+  line-height: 1.6;
+}
+.recipient-help {
+  margin: -6px 0 20px;
+}
+@media (max-width: 700px) {
+  .recipient-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
