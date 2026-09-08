@@ -281,6 +281,7 @@ try {
   check(r.status === 200, "Create category");
   categoryId = r.data.id;
   const product = {
+    gallery: ["/images/vase.jpg", "/images/roses.jpg"],
     name: "Hoa kiểm thử",
     slug: tag,
     category_id: categoryId,
@@ -303,6 +304,52 @@ try {
       cachedProducts.data.some((p) => p.id === productId),
     "Public catalog invalidated after product creation",
   );
+  const createdGallery = cachedProducts.data.find(
+    (p) => p.id === productId,
+  ).gallery;
+  check(
+    JSON.stringify(
+      typeof createdGallery === "string"
+        ? JSON.parse(createdGallery)
+        : createdGallery,
+    ) === JSON.stringify(product.gallery),
+    "Album persists and reaches public catalog in order",
+  );
+  check(
+    (
+      await admin("admin/products/" + productId, "PATCH", {
+        ...product,
+        gallery: ["javascript:alert(1)"],
+      })
+    ).status === 400,
+    "Reject unsafe gallery URL",
+  );
+  check(
+    (
+      await admin("admin/products/" + productId, "PATCH", {
+        ...product,
+        gallery: Array(12).fill("/images/vase.jpg"),
+      })
+    ).status === 400,
+    "Reject oversized album",
+  );
+  const legacyProduct = { ...product };
+  delete legacyProduct.gallery;
+  check(
+    (await admin("admin/products/" + productId, "PATCH", legacyProduct))
+      .status === 200,
+    "Legacy product update supported",
+  );
+  const retained = (await admin("admin/products")).data.find(
+    (p) => p.id === productId,
+  ).gallery;
+  check(
+    JSON.stringify(
+      typeof retained === "string" ? JSON.parse(retained) : retained,
+    ) === JSON.stringify(product.gallery),
+    "Legacy update preserves existing album",
+  );
+  await guest("catalog/products");
   await connection.execute("UPDATE products SET stock=1 WHERE id=?", [
     productId,
   ]);

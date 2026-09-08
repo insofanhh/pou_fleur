@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_PRODUCT_IMAGES } from "./product-images";
 import { query, mutate } from "./db";
 import { HttpError, requirePermission } from "./auth";
 const text = z.string().trim().min(1).max(200);
@@ -23,6 +24,13 @@ export const schemas: Record<string, z.ZodType> = {
     compare_price: amount.nullable().optional(),
     stock: amount.max(100000),
     image,
+    gallery: z
+      .array(image)
+      .max(MAX_PRODUCT_IMAGES - 1)
+      .optional()
+      .transform((v) =>
+        v === undefined ? undefined : JSON.stringify([...new Set(v)]),
+      ),
     description: long.min(10),
     flowers: text,
     care: long,
@@ -168,6 +176,8 @@ export async function adminWrite(
           "Không thể tự thu hồi quyền hoặc khoá tài khoản đang sử dụng.",
         );
     }
+    for (const key of Object.keys(value))
+      if (value[key] === undefined) delete value[key];
     const keys = Object.keys(value);
     if (id) {
       const result = await mutate(

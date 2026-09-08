@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { put } from "@vercel/blob";
+import { MAX_IMAGE_BYTES } from "@/lib/product-images";
 import { requirePermission, HttpError } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -12,16 +14,19 @@ export async function POST(req: NextRequest) {
     )
       throw new HttpError(403, "Nguồn yêu cầu không hợp lệ.");
     await requirePermission("products");
-    if (Number(req.headers.get("content-length") || 0) > 5.2 * 1024 * 1024)
-      throw new HttpError(413, "Ảnh tối đa 5 MB.");
+    if (
+      Number(req.headers.get("content-length") || 0) >
+      MAX_IMAGE_BYTES + 100000
+    )
+      throw new HttpError(413, "Ảnh tối đa 4 MB.");
     const form = await req.formData();
     const file = form.get("file");
     if (
       !(file instanceof File) ||
-      file.size > 5 * 1024 * 1024 ||
+      file.size > MAX_IMAGE_BYTES ||
       file.size < 16
     )
-      throw new HttpError(400, "Chọn ảnh JPG, PNG hoặc WebP dưới 5 MB.");
+      throw new HttpError(400, "Chọn ảnh JPG, PNG hoặc WebP dưới 4 MB.");
     const bytes = Buffer.from(await file.arrayBuffer());
     let ext = "";
     if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) ext = "jpg";
@@ -38,6 +43,19 @@ export async function POST(req: NextRequest) {
       ext = "webp";
     if (!ext) throw new HttpError(400, "Định dạng ảnh không hợp lệ.");
     const name = randomUUID() + "." + ext;
+    if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) {
+      const blob = await put("products/" + name, bytes, {
+        access: "public",
+        contentType: ext === "jpg" ? "image/jpeg" : "image/" + ext,
+        addRandomSuffix: false,
+      });
+      return NextResponse.json({ url: blob.url });
+    }
+    if (process.env.VERCEL === "1")
+      throw new HttpError(
+        503,
+        "Chưa kết nối kho ảnh Blob. Vui lòng Connect Blob store với dự án Vercel rồi redeploy.",
+      );
     const dir = path.join(process.cwd(), "storage", "uploads");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, name), bytes);

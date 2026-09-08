@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import AdminNotifications from "./admin-notifications";
+import ProductMediaEditor from "./product-media-editor";
+import { productSlug } from "@/lib/product-images";
 import EmailWorkspace from "./email-admin";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
@@ -1123,11 +1125,23 @@ function Editor({
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [resetUrl, setResetUrl] = useState("");
+  const [designName, setDesignName] = useState(record.name || "");
+  const [designSlug, setDesignSlug] = useState(record.slug || "");
+  const manualSlug = useRef(!!record.id);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError("");
     const f: any = Object.fromEntries(new FormData(e.currentTarget));
+    if (area === "products") {
+      if (!f.image) {
+        setError("Vui lòng chọn ảnh đại diện cho thiết kế.");
+        setBusy(false);
+        return;
+      }
+      f.gallery = JSON.parse(f.gallery || "[]");
+    }
     for (const d of fields[area]) {
       if (d.type === "number")
         f[d.key] =
@@ -1153,98 +1167,114 @@ function Editor({
     <Modal title={record.id ? "Chỉnh sửa thông tin" : "Thêm mới"} close={close}>
       <form onSubmit={submit} className="editor-form">
         {area === "products" && (
-          <label className="field span-2">
-            Tải ảnh sản phẩm (JPG, PNG, WebP · tối đa 5 MB)
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                const form = e.currentTarget.form;
-                if (!file || !form) return;
-                setBusy(true);
-                setError("");
-                try {
-                  const f = new FormData();
-                  f.set("file", file);
-                  const response = await fetch("/api/upload", {
-                    method: "POST",
-                    body: f,
-                  });
-                  const result = await response.json();
-                  if (!response.ok) throw Error(result.error);
-                  (form.elements.namedItem("image") as HTMLInputElement).value =
-                    result.url;
-                  toast("Đã tải ảnh lên.");
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-          </label>
+          <ProductMediaEditor
+            image={record.image || ""}
+            gallery={record.gallery}
+            disabled={busy}
+            onBusy={setBusy}
+          />
         )}
-        {fields[area].map((f) => {
-          let value =
-            record[f.key] ??
-            (["active", "published"].includes(f.key)
-              ? "1"
-              : f.key === "stock"
-                ? 30
-                : f.key === "usage_limit"
-                  ? 100
-                  : f.type === "number"
-                    ? 0
-                    : "");
-          if (f.type === "datetime-local")
-            value = String(value).replace(" ", "T").slice(0, 16);
-          if (f.type === "date") value = String(value).slice(0, 10);
-          return (
-            <label
-              className={"field " + (f.type === "textarea" ? "span-2" : "")}
-              key={f.key}
-            >
-              {f.label}
-              {f.options ? (
-                <select name={f.key} defaultValue={value || f.options[0][0]}>
-                  {f.options.map(([v, l]) => (
-                    <option value={v} key={v}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              ) : f.type === "category" ? (
-                <select
-                  name={f.key}
-                  defaultValue={value || data.categories[0]?.id}
-                >
-                  {data.categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              ) : f.type === "textarea" ? (
-                <textarea
-                  name={f.key}
-                  rows={f.key === "content" ? 9 : 3}
-                  defaultValue={value}
-                  required={f.required !== false}
-                />
-              ) : (
-                <input
-                  name={f.key}
-                  type={f.type || "text"}
-                  defaultValue={value}
-                  required={f.required !== false}
-                  min={f.type === "number" ? 0 : undefined}
-                  maxLength={f.type === "text" || !f.type ? 200 : undefined}
-                />
-              )}
-            </label>
-          );
-        })}
+        {fields[area]
+          .filter((f) => area !== "products" || f.key !== "image")
+          .map((f) => {
+            let value =
+              record[f.key] ??
+              (["active", "published"].includes(f.key)
+                ? "1"
+                : f.key === "stock"
+                  ? 30
+                  : f.key === "usage_limit"
+                    ? 100
+                    : f.type === "number"
+                      ? 0
+                      : "");
+            if (f.type === "datetime-local")
+              value = String(value).replace(" ", "T").slice(0, 16);
+            if (f.type === "date") value = String(value).slice(0, 10);
+            return (
+              <label
+                className={"field " + (f.type === "textarea" ? "span-2" : "")}
+                key={f.key}
+              >
+                {f.label}
+                {area === "products" && f.key === "name" ? (
+                  <input
+                    name="name"
+                    value={designName}
+                    maxLength={160}
+                    required
+                    onChange={(e) => {
+                      setDesignName(e.target.value);
+                      if (!manualSlug.current)
+                        setDesignSlug(productSlug(e.target.value));
+                    }}
+                  />
+                ) : area === "products" && f.key === "slug" ? (
+                  <>
+                    <input
+                      name="slug"
+                      value={designSlug}
+                      maxLength={180}
+                      pattern="[a-z0-9-]+"
+                      required
+                      onChange={(e) => {
+                        manualSlug.current = true;
+                        setDesignSlug(e.target.value);
+                      }}
+                    />
+                    <small className="slug-preview">
+                      /product/{designSlug || "ten-thiet-ke"}
+                    </small>
+                    <button
+                      type="button"
+                      className="media-text-button"
+                      onClick={() => {
+                        manualSlug.current = false;
+                        setDesignSlug(productSlug(designName));
+                      }}
+                    >
+                      Tạo lại từ tên thiết kế
+                    </button>
+                  </>
+                ) : f.options ? (
+                  <select name={f.key} defaultValue={value || f.options[0][0]}>
+                    {f.options.map(([v, l]) => (
+                      <option value={v} key={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                ) : f.type === "category" ? (
+                  <select
+                    name={f.key}
+                    defaultValue={value || data.categories[0]?.id}
+                  >
+                    {data.categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : f.type === "textarea" ? (
+                  <textarea
+                    name={f.key}
+                    rows={f.key === "content" ? 9 : 3}
+                    defaultValue={value}
+                    required={f.required !== false}
+                  />
+                ) : (
+                  <input
+                    name={f.key}
+                    type={f.type || "text"}
+                    defaultValue={value}
+                    required={f.required !== false}
+                    min={f.type === "number" ? 0 : undefined}
+                    maxLength={f.type === "text" || !f.type ? 200 : undefined}
+                  />
+                )}
+              </label>
+            );
+          })}
         {area === "users" && record.id && (
           <div className="span-2">
             <button

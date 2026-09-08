@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import FlowerImage from "./flower-image";
+import ProductGallery from "./product-gallery";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -212,15 +213,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
     <main className="page">
       <Breadcrumb title={p.name} />
       <div className="detail-layout">
-        <div className="detail-photo">
-          <FlowerImage
-            src={p.image}
-            alt={p.name}
-            sizes="(max-width: 700px) 90vw, 44vw"
-            eager
-          />
-          <span className="badge">{p.badge || "Thiết kế bởi Fleur"}</span>
-        </div>
+        <ProductGallery key={p.id} product={p} />
         <div className="detail-info">
           <span className="eyebrow">{p.category} / FLEUR SIGNATURE</span>
           <h1>{p.name}</h1>

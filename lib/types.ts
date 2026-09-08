@@ -8,6 +8,7 @@ export type Product = {
   compare_price: number | null;
   stock: number;
   image: string;
+  gallery?: string[] | string | null;
   description: string;
   flowers: string;
   care: string;

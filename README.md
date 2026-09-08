@@ -42,7 +42,7 @@ Tài khoản quản trị chỉ được tạo nếu email chưa tồn tại. Đ
 
 - Tổng quan sử dụng số liệu thật: doanh thu đã giao, đơn hàng, khách hàng, sản phẩm, biểu đồ 14 ngày.
 - CRUD sản phẩm/danh mục/khuyến mãi/sự kiện/tin tức. Ẩn nội dung để bảo toàn dữ liệu đơn hàng.
-- Tải ảnh JPG/PNG/WebP, giới hạn 5 MB và kiểm tra chữ ký định dạng.
+- Tải ảnh JPG/PNG/WebP, giới hạn 4 MB mỗi ảnh và kiểm tra chữ ký định dạng.
 - Xem chi tiết và chuyển trạng thái đơn theo luồng hợp lệ; huỷ đơn hoàn tồn kho và hoàn lượt ưu đãi.
 - Quản lý users, khoá tài khoản và phân quyền theo 5 vai trò.
 - CRM: tự tạo hồ sơ khi đăng ký/đặt hàng; phân nhóm, lịch sử mua hàng, chi tiêu, ngày sinh, ghi chú, lịch hẹn chăm sóc, trạng thái công việc, xuất CSV.
@@ -100,7 +100,7 @@ Trên Vercel, import repository, chọn Next.js, Node.js 22.x, nhánh main, Inst
 
 Thêm MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE=fleur_store, MYSQL_SSL=true và APP_ORIGIN=https://<domain-thực-tế> vào Environment Variables của Production. APP_ORIGIN phải khớp chính xác URL đang truy cập và không có dấu / cuối. Không dùng tiền tố NEXT_PUBLIC_ cho thông tin database. ADMIN_EMAIL/ADMIN_PASSWORD chỉ dùng khi seed, không cần đưa lên Vercel runtime.
 
-Các bước cấu hình này không tự tạo project hoặc triển khai lên tài khoản Vercel. Upload vẫn dùng filesystem cục bộ; cần chuyển API upload sang Blob/object storage trước khi dùng chọn file trên Vercel. Các ảnh mẫu trong public/images và ảnh URL HTTPS vẫn dùng được.
+Các bước cấu hình này không tự tạo project hoặc triển khai lên tài khoản Vercel. Upload dùng Vercel Blob khi có BLOB_STORE_ID (kết nối OIDC của Vercel) hoặc BLOB_READ_WRITE_TOKEN. Trên Vercel, kết nối một public Blob store với project và môi trường Production rồi redeploy; API không ghi vào filesystem của Vercel. Khi chạy local không có cấu hình Blob, ảnh được lưu tại storage/uploads. Các ảnh mẫu trong public/images và ảnh URL HTTPS vẫn dùng được.
 
 Kiểm tra seed trên database QA cục bộ, được tạo và dọn tự động:
 
@@ -216,3 +216,11 @@ Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https
 - npm test: có kiểm tra phân quyền email, mẫu và xem trước CRM.
 - TEST_EMAIL_CAMPAIGNS=1 bật thêm kiểm tra gửi chương trình/hủy đăng ký. Chỉ chạy với server QA đã cấu hình SMTP_HOST=fleur-mail-test.invalid, SMTP_FROM_EMAIL=qa-sender@example.test và tài khoản thử; không dùng SMTP thật. Đã chạy đủ 100 kiểm tra tích hợp trên MySQL local và TiDB bằng SMTP giả lập.
 - Đã kiểm tra màn hình mẫu, bản xem trước và form chương trình trong trình duyệt desktop. Chưa xác minh giao diện email bên trong Gmail/Outlook hoặc gửi Gmail thật do chưa có mật khẩu ứng dụng.
+
+### Album ảnh sản phẩm
+
+- Admin hỗ trợ 1 ảnh đại diện và tối đa 11 ảnh album, tải nhiều file cùng lúc, đổi thứ tự, chọn ảnh làm đại diện và xóa khỏi album. File JPG/PNG/WebP tối đa 4 MB; mỗi file được gửi riêng để nằm dưới giới hạn request của Vercel Functions. [Tài liệu upload Vercel Blob](https://vercel.com/docs/vercel-blob/server-upload).
+- Tên thiết kế tự tạo slug không dấu khi thêm mới. Slug của sản phẩm cũ được giữ nguyên khi đổi tên; có nút tạo lại hoặc sửa thủ công.
+- Chạy `npm run db:gallery` cho database local, `npm run db:gallery:tidb` cho TiDB trước khi deploy code mới. Migration chỉ thêm cột JSON gallery nếu chưa có, không ghi đè ảnh cũ. Lệnh setup database cũng tích hợp migration này.
+- Trang chi tiết có ảnh chính, hàng thumbnail, nút trước/sau, phím trái/phải và vuốt ngang trên điện thoại. Sản phẩm một ảnh không hiện điều khiển thừa.
+- Xóa ảnh trong form chỉ bỏ liên kết khỏi sản phẩm, không xóa file khỏi kho Blob để tránh ảnh đang được dùng ở nơi khác.

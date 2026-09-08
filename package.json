@@ -15,9 +15,13 @@
     "db:email": "node --env-file=.env.local scripts/setup-email.mjs",
     "db:email:tidb": "node --env-file=.env.tidb.local scripts/setup-email.mjs --tidb",
     "test:email": "node --env-file=.env.local --import tsx scripts/test-email.ts",
-    "smtp:verify": "node --env-file=.env.smtp.local --import tsx scripts/verify-smtp.ts"
+    "smtp:verify": "node --env-file=.env.smtp.local --import tsx scripts/verify-smtp.ts",
+    "db:gallery": "node --env-file=.env.local scripts/setup-product-gallery.mjs",
+    "db:gallery:tidb": "node --env-file=.env.tidb.local scripts/setup-product-gallery.mjs --tidb",
+    "test:product-images": "tsx scripts/test-product-images.ts"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.0",
     "lucide-react": "^1.42.0",
     "mysql2": "^3.24.4",
     "next": "^16.3.4",

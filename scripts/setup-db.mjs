@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import { setupProductGallery } from "./product-gallery-schema.mjs";
 import { setupEmail } from "./email-schema.mjs";
 import { scryptSync, randomBytes } from "node:crypto";
 
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS login_attempts(attempt_key CHAR(64) PRIMARY KEY,attem
 CREATE TABLE IF NOT EXISTS password_resets(token_hash CHAR(64) PRIMARY KEY,user_id INT NOT NULL,expires_at DATETIME NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
   await setupEmail(c);
+  await setupProductGallery(c);
   await c.beginTransaction();
   try {
     const [[count]] = await c.query("SELECT COUNT(*) n FROM categories");
