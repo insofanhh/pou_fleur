@@ -48,9 +48,9 @@ export const sectionMotionStyles = `
   ${target}:where(${excludedSelector}) {
     animation: none;
   }
+  /* Keep the animation timeline intact so blur cannot restart the fade. */
   ${target}:focus-within {
     opacity: 1 !important;
-    animation: none !important;
   }
   @media (prefers-reduced-motion: reduce), print {
     ${target} {

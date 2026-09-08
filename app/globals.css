@@ -3956,7 +3956,7 @@ td code {
   border-color: var(--ink);
   background: #f7f7f7;
 }
-.recipient-option:focus-within {
+.recipient-option:has(input:focus-visible) {
   outline: 2px solid #777;
   outline-offset: 3px;
 }
