@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { productBlobAuth } from "@/lib/product-blob";
 import { uploadFailure } from "@/lib/upload-errors";
 import { MAX_IMAGE_BYTES } from "@/lib/product-images";
 import { requirePermission, HttpError } from "@/lib/auth";
@@ -47,8 +48,10 @@ export async function POST(req: NextRequest) {
     if (!ext) throw new HttpError(400, "Định dạng ảnh không hợp lệ.");
     stage = "storage";
     const name = randomUUID() + "." + ext;
-    if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) {
+    const blobAuth = await productBlobAuth();
+    if (blobAuth) {
       const blob = await put("products/" + name, bytes, {
+        ...blobAuth,
         access: "public",
         contentType: ext === "jpg" ? "image/jpeg" : "image/" + ext,
         addRandomSuffix: false,
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest) {
     if (process.env.VERCEL === "1")
       throw new HttpError(
         503,
-        "Chưa kết nối kho ảnh Blob. Vui lòng Connect Blob store với dự án Vercel rồi redeploy.",
+        "Chưa có cấu hình kho ảnh BLD. Hãy kết nối Public Blob store với prefix BLD cho Production rồi redeploy.",
       );
     const dir = path.join(process.cwd(), "storage", "uploads");
     await mkdir(dir, { recursive: true });
@@ -74,8 +77,8 @@ export async function POST(req: NextRequest) {
       stage,
       code: failure.code,
       errorType: e instanceof Error ? e.constructor.name : "Unknown",
-      hasBlobStore: !!process.env.BLOB_STORE_ID,
-      hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+      hasBlobStore: !!process.env.BLD_STORE_ID,
+      hasBlobToken: !!process.env.BLD_READ_WRITE_TOKEN,
     });
     return NextResponse.json(
       {

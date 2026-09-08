@@ -28,7 +28,7 @@ export function uploadFailure(error: unknown) {
       code: "BLOB_AUTH",
       status: 503,
       message:
-        "Blob không xác thực được quyền tải ảnh. Kiểm tra kết nối BLOB_STORE_ID/OIDC hoặc BLOB_READ_WRITE_TOKEN của Production, rồi redeploy.",
+        "Blob không xác thực được quyền tải ảnh. Kiểm tra kết nối BLD_STORE_ID/OIDC hoặc BLD_READ_WRITE_TOKEN của Production, rồi redeploy.",
     };
   if (/store does not exist/i.test(message))
     return {

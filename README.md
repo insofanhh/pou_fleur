@@ -100,7 +100,7 @@ Trên Vercel, import repository, chọn Next.js, Node.js 22.x, nhánh main, Inst
 
 Thêm MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE=fleur_store, MYSQL_SSL=true và APP_ORIGIN=https://<domain-thực-tế> vào Environment Variables của Production. APP_ORIGIN phải khớp chính xác URL đang truy cập và không có dấu / cuối. Không dùng tiền tố NEXT_PUBLIC_ cho thông tin database. ADMIN_EMAIL/ADMIN_PASSWORD chỉ dùng khi seed, không cần đưa lên Vercel runtime.
 
-Các bước cấu hình này không tự tạo project hoặc triển khai lên tài khoản Vercel. Upload dùng Vercel Blob khi có BLOB_STORE_ID (kết nối OIDC của Vercel) hoặc BLOB_READ_WRITE_TOKEN. Trên Vercel, kết nối một public Blob store với project và môi trường Production rồi redeploy; API không ghi vào filesystem của Vercel. Khi chạy local không có cấu hình Blob, ảnh được lưu tại storage/uploads. Các ảnh mẫu trong public/images và ảnh URL HTTPS vẫn dùng được.
+Các bước cấu hình này không tự tạo project hoặc triển khai lên tài khoản Vercel. Upload dùng Vercel Blob khi có BLD_STORE_ID (kết nối OIDC của Vercel) hoặc BLD_READ_WRITE_TOKEN. Trên Vercel, kết nối một public Blob store với project, đặt Variable Prefix là BLD, chọn môi trường Production rồi redeploy; API không ghi vào filesystem của Vercel. Khi chạy local không có cấu hình Blob, ảnh được lưu tại storage/uploads. Các ảnh mẫu trong public/images và ảnh URL HTTPS vẫn dùng được.
 
 Kiểm tra seed trên database QA cục bộ, được tạo và dọn tự động:
 
@@ -224,3 +224,5 @@ Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https
 - Chạy `npm run db:gallery` cho database local, `npm run db:gallery:tidb` cho TiDB trước khi deploy code mới. Migration chỉ thêm cột JSON gallery nếu chưa có, không ghi đè ảnh cũ. Lệnh setup database cũng tích hợp migration này.
 - Trang chi tiết có ảnh chính, hàng thumbnail, nút trước/sau, phím trái/phải và vuốt ngang trên điện thoại. Sản phẩm một ảnh không hiện điều khiển thừa.
 - Xóa ảnh trong form chỉ bỏ liên kết khỏi sản phẩm, không xóa file khỏi kho Blob để tránh ảnh đang được dùng ở nơi khác.
+
+Ảnh sản phẩm chỉ dùng prefix `BLD`. Các biến `BLOB_*` của kho khác được giữ nguyên và không được dùng làm cấu hình dự phòng. Nếu có `BLD_READ_WRITE_TOKEN`, API truyền token này trực tiếp; nếu chỉ có `BLD_STORE_ID`, API dùng OIDC của Vercel cùng store ID này. Nếu OIDC không khả dụng, upload báo lỗi xác thực thay vì tự chuyển sang kho khác.
