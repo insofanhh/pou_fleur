@@ -106,7 +106,7 @@ svg {
   letter-spacing: 0.1px;
 }
 .announcement-track {
-  animation: announcement-scroll 6s linear infinite;
+  animation: announcement-scroll 7s linear infinite;
 }
 .announcement-message {
   height: 34px;
