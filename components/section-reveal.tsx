@@ -4,6 +4,11 @@ import { useLayoutEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { sectionSelector, excludedSelector } from "@/lib/section-motion";
 
+type Motion = {
+  state: "waiting" | "visible";
+  animation?: Animation;
+};
+
 export default function SectionReveal() {
   const pathname = usePathname();
   const previousPath = useRef<string | null>(null);
@@ -13,12 +18,30 @@ export default function SectionReveal() {
       previousPath.current !== null && previousPath.current !== pathname;
     previousPath.current = pathname;
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (!("IntersectionObserver" in window)) return;
+    if (
+      !("IntersectionObserver" in window) ||
+      !("animate" in Element.prototype)
+    )
+      return;
 
-    const tracked = new Set<HTMLElement>();
-    const setState = (element: HTMLElement, state: "waiting" | "visible") => {
-      if (element.dataset.fadeState !== state)
-        element.dataset.fadeState = state;
+    const tracked = new Map<HTMLElement, Motion>();
+    const setState = (element: HTMLElement, state: Motion["state"]) => {
+      const motion = tracked.get(element);
+      if (!motion || motion.state === state) return;
+      motion.animation?.cancel();
+      motion.state = state;
+      // Streaming boundaries can hydrate after this layout effect. WAAPI keeps
+      // motion outside React's HTML attributes, even for not-yet-hydrated nodes.
+      motion.animation =
+        state === "waiting"
+          ? element.animate([{ opacity: 0 }, { opacity: 0 }], {
+              duration: 0,
+              fill: "both",
+            })
+          : element.animate([{ opacity: 0 }, { opacity: 1 }], {
+              duration: 650,
+              easing: "cubic-bezier(.25,.1,.25,1)",
+            });
     };
     const observer = new IntersectionObserver(
       (entries) => {
@@ -29,7 +52,6 @@ export default function SectionReveal() {
             setState(element, "visible");
           } else if (!element.matches(":focus-within")) {
             // Re-arm only completely outside the viewport + buffer.
-            // Hovering near the screen edge never resets a visible section.
             setState(element, "waiting");
           }
         }
@@ -39,14 +61,18 @@ export default function SectionReveal() {
     const register = (element: HTMLElement, routeEntry = false) => {
       if (tracked.has(element) || element.closest(excludedSelector)) return;
       if (element.parentElement?.closest(sectionSelector)) return;
-      tracked.add(element);
+      tracked.set(element, { state: "visible" });
       if (preference.matches) return;
       const rect = element.getBoundingClientRect();
       const outside = rect.bottom <= 0 || rect.top >= window.innerHeight;
-      if (outside || routeEntry) setState(element, "waiting");
-      // For initial, already-visible content, retain the CSS animation's
-      // existing timeline. Never restart it after hydration.
-      else setState(element, "visible");
+      if (!element.matches(":focus-within")) {
+        if (outside) setState(element, "waiting");
+        else if (routeEntry) {
+          tracked.get(element)!.state = "waiting";
+          setState(element, "visible");
+        }
+      }
+      // Initial visible content keeps the server CSS animation's timeline.
       observer.observe(element);
     };
     const scan = (root: Element, routeEntry = false) => {
@@ -60,27 +86,38 @@ export default function SectionReveal() {
       for (const record of records)
         for (const added of record.addedNodes)
           if (added instanceof Element) scan(added);
-      for (const element of tracked)
+      for (const [element, motion] of tracked)
         if (!element.isConnected) {
           observer.unobserve(element);
+          motion.animation?.cancel();
           tracked.delete(element);
         }
     });
     const onPreferenceChange = () => {
       observer.disconnect();
-      for (const element of tracked) {
-        delete element.dataset.fadeState;
+      for (const [element, motion] of tracked) {
+        motion.animation?.cancel();
+        motion.animation = undefined;
+        motion.state = "visible";
         if (!preference.matches) observer.observe(element);
       }
     };
     const onFocus = (event: FocusEvent) => {
       if (!(event.target instanceof Element)) return;
-      const element = event.target.closest<HTMLElement>("[data-fade-state]");
-      if (element) setState(element, "visible");
+      let element: Element | null = event.target;
+      while (element) {
+        if (element instanceof HTMLElement && tracked.has(element)) {
+          const motion = tracked.get(element)!;
+          // Keyboard focus must reveal content immediately, without a fade.
+          motion.animation?.cancel();
+          motion.animation = undefined;
+          motion.state = "visible";
+          break;
+        }
+        element = element.parentElement;
+      }
     };
 
-    // Layout effect prepares new routes before paint. The first page is
-    // already animated by server-rendered CSS, not an effect-added class.
     scan(document.body, newPage);
     changes.observe(document.body, { childList: true, subtree: true });
     preference.addEventListener("change", onPreferenceChange);
@@ -91,7 +128,7 @@ export default function SectionReveal() {
       changes.disconnect();
       preference.removeEventListener("change", onPreferenceChange);
       document.removeEventListener("focusin", onFocus);
-      for (const element of tracked) delete element.dataset.fadeState;
+      for (const motion of tracked.values()) motion.animation?.cancel();
     };
   }, [pathname]);
 

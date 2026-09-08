@@ -48,13 +48,6 @@ export const sectionMotionStyles = `
   ${target}:where(${excludedSelector}) {
     animation: none;
   }
-  ${target}[data-fade-state="waiting"] {
-    opacity: 0;
-    animation: none;
-  }
-  ${target}[data-fade-state="visible"] {
-    animation: section-fade-in 650ms cubic-bezier(.25,.1,.25,1);
-  }
   ${target}:focus-within {
     opacity: 1 !important;
     animation: none !important;
