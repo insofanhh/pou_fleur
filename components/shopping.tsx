@@ -583,7 +583,7 @@ export function Checkout({ data }: { data: Catalog }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [success, setSuccess] = useState<any>(null);
-  const [deliveryMode, setDeliveryMode] = useState<"self" | "gift">("self");
+  const [deliveryMode, setDeliveryMode] = useState<"self" | "gift">("gift");
   const [buyerName, setBuyerName] = useState<string | null>(null);
   const [buyerPhone, setBuyerPhone] = useState<string | null>(null);
   const [selfAddress, setSelfAddress] = useState<string | null>(null);
@@ -738,23 +738,6 @@ export function Checkout({ data }: { data: Catalog }) {
             >
               <label
                 className={
-                  "recipient-option" + (receivingSelf ? " selected" : "")
-                }
-              >
-                <input
-                  type="radio"
-                  name="deliveryMode"
-                  value="self"
-                  checked={receivingSelf}
-                  onChange={() => setDeliveryMode("self")}
-                />
-                <span>
-                  <strong>Giao cho tôi</strong>
-                  <span>Một chút hoa dành cho chính mình.</span>
-                </span>
-              </label>
-              <label
-                className={
                   "recipient-option" + (!receivingSelf ? " selected" : "")
                 }
               >
@@ -768,6 +751,23 @@ export function Checkout({ data }: { data: Catalog }) {
                 <span>
                   <strong>Gửi đến người bạn thương</strong>
                   <span>Gửi hoa cùng những lời nhắn yêu thương.</span>
+                </span>
+              </label>
+              <label
+                className={
+                  "recipient-option" + (receivingSelf ? " selected" : "")
+                }
+              >
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="self"
+                  checked={receivingSelf}
+                  onChange={() => setDeliveryMode("self")}
+                />
+                <span>
+                  <strong>Giao cho tôi</strong>
+                  <span>Một chút hoa dành cho chính mình.</span>
                 </span>
               </label>
             </fieldset>
