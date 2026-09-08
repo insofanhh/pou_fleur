@@ -771,12 +771,6 @@ export function Checkout({ data }: { data: Catalog }) {
                 </span>
               </label>
             </fieldset>
-            {receivingSelf && (
-              <p className="recipient-help">
-                Tên và số điện thoại người nhận được lấy từ bước 1. Bạn có thể
-                thay đổi địa chỉ giao bên dưới.
-              </p>
-            )}
             <div className="form-grid">
               {!receivingSelf && (
                 <>
