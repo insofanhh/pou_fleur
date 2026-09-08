@@ -1,0 +1,37 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fleur_store
+      MYSQL_USER: fleur
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  web:
+    build: .
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: fleur
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: fleur_store
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@fleur.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/storage/uploads
+volumes:
+  mysql_data:
+  uploads:

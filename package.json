@@ -1,0 +1,28 @@
+{
+  "name": "fleur-store",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "db:setup": "node --env-file=.env.local scripts/setup-db.mjs",
+    "test": "node --env-file=.env.local scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.42.0",
+    "mysql2": "^3.24.4",
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2"
+  }
+}
