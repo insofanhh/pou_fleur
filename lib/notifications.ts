@@ -22,7 +22,7 @@ export async function adminNotifications() {
     },
     {
       area: "users",
-      title: "Người dùng mới",
+      title: "Khách hàng mới",
       sql: "SELECT id, name AS detail, UNIX_TIMESTAMP(created_at)*1000 AS createdAt FROM customers ORDER BY id DESC LIMIT 30",
     },
   ] as const;
