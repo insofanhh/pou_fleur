@@ -1,3 +1,4 @@
+import { withStore } from "../lib/tenant";
 import assert from "node:assert/strict";
 import mysql from "mysql2/promise";
 import nodemailer from "nodemailer";
@@ -58,6 +59,21 @@ async function main() {
     );
     await c.query(
       "INSERT INTO customers VALUES(1,'yes@example.test','Yes',1),(2,'no@example.test','No',0); INSERT INTO users VALUES(1,'yes@example.test',1); INSERT INTO orders VALUES(1,'FLTEST','An','order@example.test',932000,'pending','Minh','Địa chỉ thử','2026-10-20','09:00–12:00'); INSERT INTO order_items VALUES(1,1,'Tulip','M',1,897000)",
+    );
+    for (const table of [
+      "customers",
+      "orders",
+      "order_items",
+      "email_templates",
+      "email_campaigns",
+      "email_suppressions",
+      "email_outbox",
+    ])
+      await c.query(
+        "ALTER TABLE " + table + " ADD COLUMN store_id INT NOT NULL DEFAULT 1",
+      );
+    await c.query(
+      "ALTER TABLE orders ADD COLUMN version INT DEFAULT 1,ADD COLUMN store_name VARCHAR(100) DEFAULT 'Fleur'; CREATE TABLE stores(id INT PRIMARY KEY,slug VARCHAR(100)); INSERT INTO stores VALUES(1,'fleur')",
     );
     const conn = await appPool.getConnection();
     try {
@@ -283,7 +299,7 @@ async function main() {
     await c.end();
   }
 }
-main().catch((e) => {
+withStore(1, main).catch((e) => {
   console.error(e);
   process.exitCode = 1;
 });

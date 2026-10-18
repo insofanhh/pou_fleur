@@ -1,7 +1,8 @@
 "use client";
-import Link from "next/link";
+import Link, { useScopedRouter, storeRef } from "./routing";
 import FlowerImage from "./flower-image";
 import ProductGallery from "./product-gallery";
+import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -407,7 +408,10 @@ export function Cart({ data }: { data: Catalog }) {
       setQuote(
         await api("checkout/quote", "POST", { items: cart, code: promo }),
       );
-      sessionStorage.setItem("fleur.promo", promo);
+      sessionStorage.setItem(
+        "fleur.promo." + storeRef(location.pathname),
+        promo,
+      );
     } catch (e) {
       setQuote(null);
       setError((e as Error).message);
@@ -590,6 +594,12 @@ export function Checkout({ data }: { data: Catalog }) {
   const [giftName, setGiftName] = useState("");
   const [giftPhone, setGiftPhone] = useState("");
   const [giftAddress, setGiftAddress] = useState("");
+  const [selfLocation, setSelfLocation] = useState<DeliveryLocation | null>(
+    null,
+  );
+  const [giftLocation, setGiftLocation] = useState<DeliveryLocation | null>(
+    null,
+  );
   const customerName = buyerName ?? user?.name ?? "";
   const customerPhone = buyerPhone ?? user?.phone ?? "";
   const receivingSelf = deliveryMode === "self";
@@ -605,7 +615,10 @@ export function Checkout({ data }: { data: Catalog }) {
     if (cart.length)
       api("checkout/quote", "POST", {
         items: cart,
-        code: sessionStorage.getItem("fleur.promo") || "",
+        code:
+          sessionStorage.getItem(
+            "fleur.promo." + storeRef(location.pathname),
+          ) || "",
       })
         .then(setQuote)
         .catch((e) => setError(e.message));
@@ -622,15 +635,25 @@ export function Checkout({ data }: { data: Catalog }) {
     try {
       const result = await api("checkout", "POST", {
         ...f,
+        ...((receivingSelf ? selfLocation : giftLocation)
+          ? {
+              deliveryLat: (receivingSelf ? selfLocation : giftLocation)!.lat,
+              deliveryLng: (receivingSelf ? selfLocation : giftLocation)!.lng,
+            }
+          : {}),
         items: cart,
-        code: sessionStorage.getItem("fleur.promo") || "",
+        code:
+          sessionStorage.getItem(
+            "fleur.promo." + storeRef(location.pathname),
+          ) || "",
         consent: f.consent === "on",
         idempotencyKey: key.current,
+        expectedTotal: quote?.total,
         paymentMethod: "cod",
       });
       setSuccess({ ...result, email: f.email });
       setCart([]);
-      sessionStorage.removeItem("fleur.promo");
+      sessionStorage.removeItem("fleur.promo." + storeRef(location.pathname));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -655,7 +678,8 @@ export function Checkout({ data }: { data: Catalog }) {
             Thanh toán khi nhận hoa ·{" "}
             {money(success.total || quote?.total || 0)}
             <br />
-            Vui lòng lưu mã đơn để tra cứu. Thông báo email chưa được cấu hình.
+            Vui lòng lưu mã đơn để tra cứu. Cửa hàng sẽ gửi cập nhật đơn qua
+            email đã cung cấp.
           </div>
           <Link
             className="button"
@@ -792,26 +816,18 @@ export function Checkout({ data }: { data: Catalog }) {
                   />
                 </>
               )}
-              <label className="field span-2">
-                Địa chỉ tại TP. Hà Nội
-                <input
-                  name="address"
-                  required
-                  minLength={10}
-                  maxLength={500}
-                  placeholder="Số nhà, đường, phường, quận"
-                  value={
-                    receivingSelf
-                      ? (selfAddress ?? user?.address ?? "")
-                      : giftAddress
-                  }
-                  onChange={(e) =>
-                    receivingSelf
-                      ? setSelfAddress(e.target.value)
-                      : setGiftAddress(e.target.value)
-                  }
-                />
-              </label>
+              <DeliveryAddress
+                key={deliveryMode}
+                enabled={!!data.features?.goong}
+                value={
+                  receivingSelf
+                    ? (selfAddress ?? user?.address ?? "")
+                    : giftAddress
+                }
+                onChange={receivingSelf ? setSelfAddress : setGiftAddress}
+                location={receivingSelf ? selfLocation : giftLocation}
+                onLocation={receivingSelf ? setSelfLocation : setGiftLocation}
+              />
               <div className="delivery-schedule span-2">
                 <Field
                   label="Ngày giao hoa"
@@ -827,10 +843,16 @@ export function Checkout({ data }: { data: Catalog }) {
                 <label className="field">
                   Khung giờ
                   <select name="deliverySlot">
-                    <option>09:00–12:00</option>
-                    <option>12:00–15:00</option>
-                    <option>15:00–18:00</option>
-                    <option>18:00–20:00</option>
+                    {(
+                      data.store?.settings?.slots || [
+                        "09:00–12:00",
+                        "12:00–15:00",
+                        "15:00–18:00",
+                        "18:00–20:00",
+                      ]
+                    ).map((slot: string) => (
+                      <option key={slot}>{slot}</option>
+                    ))}
                   </select>
                 </label>
               </div>

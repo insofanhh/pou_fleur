@@ -1,7 +1,8 @@
+import { scopedSQL } from "./tenant";
 import mysql from "mysql2/promise";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 const globalDB = globalThis as unknown as { fleurPool?: mysql.Pool };
-export const pool =
+const rawPool =
   globalDB.fleurPool ??
   mysql.createPool({
     host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -22,7 +23,25 @@ export const pool =
     decimalNumbers: true,
     charset: "utf8mb4",
   });
-if (process.env.NODE_ENV !== "production") globalDB.fleurPool = pool;
+if (process.env.NODE_ENV !== "production") globalDB.fleurPool = rawPool;
+function scopedConnection(c: mysql.PoolConnection) {
+  return new Proxy(c, {
+    get(target, key) {
+      if (key === "execute" || key === "query")
+        return (sql: string, values?: any[]) =>
+          (target[key] as any)(scopedSQL(sql), values);
+      const value = Reflect.get(target, key);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+export const pool = {
+  end: () => rawPool.end(),
+  execute: (sql: string, values?: any[]) =>
+    rawPool.execute(scopedSQL(sql), values),
+  query: (sql: string, values?: any[]) => rawPool.query(scopedSQL(sql), values),
+  getConnection: async () => scopedConnection(await rawPool.getConnection()),
+};
 export async function query<T = RowDataPacket[]>(
   sql: string,
   values: unknown[] = [],

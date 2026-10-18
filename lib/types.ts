@@ -53,6 +53,13 @@ export type Event = {
   active: number;
 };
 export type User = {
+  memberships?: {
+    store_id: number;
+    role: string;
+    slug: string;
+    name: string;
+  }[];
+  platformRole?: string | null;
   id: number;
   name: string;
   email: string;
@@ -63,6 +70,8 @@ export type User = {
   marketing_consent: number;
 };
 export type Catalog = {
+  store?: any;
+  features?: { google: boolean; goong?: boolean };
   products: Product[];
   categories: Category[];
   posts: Post[];

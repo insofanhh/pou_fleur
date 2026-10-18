@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link, { storeRef } from "./routing";
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
@@ -23,7 +23,9 @@ export default function AdminNotifications({ userId }: { userId: number }) {
   const root = useRef<HTMLDivElement>(null);
   const bell = useRef<HTMLButtonElement>(null);
   const readKeys = useRef(new Set<string>());
-  const storageKey = `fleur.notifications.read.${userId}`;
+  const scope =
+    typeof location === "undefined" ? "1" : storeRef(location.pathname);
+  const storageKey = `fleur.notifications.read.${userId}.${scope}`;
 
   useEffect(() => {
     const loadRead = () => {
@@ -67,6 +69,7 @@ export default function AdminNotifications({ userId }: { userId: number }) {
       try {
         const response = await fetch("/api/admin/notifications", {
           cache: "no-store",
+          headers: { "x-fleur-store": scope },
           signal: controller.signal,
         });
         if (response.status === 401 || response.status === 403) {

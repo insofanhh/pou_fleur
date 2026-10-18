@@ -1,3 +1,5 @@
+import { query } from "./db";
+import { withSystem, withStore, tenantId } from "./tenant";
 import nodemailer from "nodemailer";
 import { randomUUID } from "node:crypto";
 import type { PoolConnection } from "mysql2/promise";
@@ -106,13 +108,19 @@ export async function enqueueOrderEmail(
     delivery_address: o.address,
     delivery_date: String(o.delivery_date).slice(0, 10),
     delivery_slot: o.delivery_slot,
+    store_name: o.store_name,
     tracking_url:
-      (process.env.APP_ORIGIN || "").replace(/\/$/, "") + "/track-order",
+      (process.env.APP_ORIGIN || "").replace(/\/$/, "") +
+      "/s/" +
+      (
+        await query<any[]>("SELECT slug FROM stores WHERE id=?", [tenantId()])
+      )[0].slug +
+      "/track-order",
   };
   await c.execute(
     "INSERT INTO email_outbox(dedupe_key,template_key,kind,recipient,order_id,subject,body) VALUES(?,?,'transactional',?,?,?,?) ON DUPLICATE KEY UPDATE dedupe_key=dedupe_key",
     [
-      key + ":" + id + (key === "order_status" ? ":" + o.status : ""),
+      key + ":" + id + (key === "order_status" ? ":" + o.version : ""),
       key,
       o.email,
       id,
@@ -288,7 +296,7 @@ export async function safelyProcessEmails() {
     );
   }
 }
-export async function unsubscribeEmail(token: string) {
+async function unsubscribeScoped(token: string) {
   if (!/^[a-f0-9]{64}$/.test(token)) return false;
   const c = await pool.getConnection();
   try {
@@ -308,9 +316,7 @@ export async function unsubscribeEmail(token: string) {
     await c.execute("UPDATE customers SET marketing_consent=0 WHERE email=?", [
       mail.recipient,
     ]);
-    await c.execute("UPDATE users SET marketing_consent=0 WHERE email=?", [
-      mail.recipient,
-    ]);
+
     await c.execute(
       "UPDATE email_outbox SET status='cancelled',last_error='CONSENT_WITHDRAWN' WHERE recipient=? AND kind='marketing' AND status IN ('pending','failed')",
       [mail.recipient],
@@ -323,4 +329,31 @@ export async function unsubscribeEmail(token: string) {
   } finally {
     c.release();
   }
+}
+
+export async function unsubscribeEmail(token: string) {
+  if (!/^[a-f0-9]{64}$/.test(token)) return false;
+  const [mail] = await withSystem(() =>
+    query<any[]>(
+      "SELECT store_id FROM email_outbox WHERE unsubscribe_token=? AND kind='marketing'",
+      [token],
+    ),
+  );
+  return mail
+    ? withStore(mail.store_id, () => unsubscribeScoped(token))
+    : false;
+}
+export async function processAllStoreEmails(deadline = Date.now() + 30000) {
+  const stores = await withSystem(() =>
+    query<any[]>(
+      "SELECT store_id id FROM email_outbox WHERE status IN ('pending','sending') GROUP BY store_id ORDER BY MIN(id) LIMIT 20",
+    ),
+  );
+  let processed = 0;
+  for (const s of stores) {
+    if (Date.now() + 21000 > deadline) break;
+    const r = await withStore(s.id, () => processEmails(1));
+    processed += r.processed;
+  }
+  return { processed };
 }

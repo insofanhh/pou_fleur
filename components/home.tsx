@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "./routing";
 import Image from "next/image";
 import FlowerImage from "./flower-image";
 import {
@@ -23,14 +23,10 @@ export default function Home({ data }: { data: Catalog }) {
             THIÊN NHIÊN. ĐƯỢC NÂNG NIU.
           </div>
           <h1>
-            Có những điều,
-            <br />
-            để hoa nói thay.
+            {data.store?.theme?.hero || "Có những điều, để hoa nói thay."}
           </h1>
           <p>
-            Một bó hoa nhỏ. Một lời thương lớn.
-            <br />
-            Gửi trao những cảm xúc chân thành, theo cách của bạn.
+            {data.store?.theme?.story || "Một bó hoa nhỏ. Một lời thương lớn."}
           </p>
           <Link href="/shop" className="button">
             Tìm bó hoa của bạn <ArrowUpRight size={18} />
@@ -150,18 +146,24 @@ export function ProductCard({ p }: { p: Product }) {
     </article>
   );
 }
-export function Footer() {
+export function Footer({ name = "Fleur" }: { name?: string }) {
   return (
     <footer>
       <div className="footer-main">
         <div>
           <Link className="logo" href="/">
-            fleur<span>®</span>
+            {name === "Fleur" ? (
+              <>
+                fleur<span>®</span>
+              </>
+            ) : (
+              name
+            )}
           </Link>
           <p>Hoa cho những điều không thể nói.</p>
         </div>
         <div>
-          <h4>Khám phá Fleur</h4>
+          <h4>Khám phá {name}</h4>
           <Link href="/shop">Tất cả sản phẩm</Link>
           <Link href="/events">Sự kiện & bộ sưu tập</Link>
           <Link href="/journal">Chuyện về hoa</Link>
@@ -177,12 +179,14 @@ export function Footer() {
           <Link href="/account">Tài khoản của bạn</Link>
           <Link href="/wishlist">Hoa yêu thích</Link>
           <Link href="/admin">
-            Fleur Workspace <ArrowUpRight size={13} />
+            Quản lý cửa hàng <ArrowUpRight size={13} />
           </Link>
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2026 Fleur Floral Studio.</span>
+        <span>
+          © {new Date().getFullYear()} {name}.
+        </span>
         <span>Một chút hoa. Thật nhiều yêu thương.</span>
         <Link href="/privacy">Quyền riêng tư</Link>
       </div>

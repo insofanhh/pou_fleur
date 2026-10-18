@@ -1,5 +1,7 @@
 "use client";
-import Link from "next/link";
+import WorkspaceView, { workspaceAreas } from "./workspace";
+
+import Link, { useLocalPath } from "./routing";
 import AdminNotifications from "./admin-notifications";
 import ProductMediaEditor from "./product-media-editor";
 import { productSlug } from "@/lib/product-images";
@@ -42,6 +44,12 @@ import { money } from "./home";
 import { Status, statusNames } from "./pages";
 const nav = [
   ["overview", "Tổng quan", LayoutDashboard],
+  ["analytics", "Phân tích dữ liệu", TrendingUp],
+  ["board", "Đơn hàng · Kanban", ClipboardList],
+  ["calendar", "Lịch giao & ghi chú", CalendarDays],
+  ["theme", "Giao diện store", Layers],
+  ["settings", "Cấu hình store", ShieldCheck],
+  ["billing", "Gói & hóa đơn", Wallet],
   ["products", "Sản phẩm", Flower2],
   ["categories", "Danh mục", Layers],
   ["orders", "Đơn hàng", Package],
@@ -50,14 +58,21 @@ const nav = [
   ["posts", "Tin tức", Newspaper],
   ["crm", "Khách hàng & CRM", ContactRound],
   ["emails", "Email & chương trình", Mail],
+  ["automations", "Chăm sóc tự động", ContactRound],
   ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
   ["users", "Người dùng & quyền", Users],
   ["audit", "Nhật ký hoạt động", History],
 ] as const;
 const rights: Record<string, string[]> = {
-  admin: nav.map((n) => n[0]),
+  owner: nav.map((n) => n[0]),
+  admin: nav
+    .map((n) => n[0])
+    .filter((k) => !["settings", "theme", "billing"].includes(k)),
   manager: [
     "overview",
+    "analytics",
+    "board",
+    "calendar",
     "products",
     "categories",
     "orders",
@@ -66,11 +81,13 @@ const rights: Record<string, string[]> = {
     "crm",
     "inquiries",
     "emails",
+    "automations",
   ],
   editor: ["posts", "events"],
-  support: ["orders", "crm", "inquiries", "emails"],
+  support: ["board", "calendar", "orders", "crm", "inquiries", "emails"],
 };
 const roleNames: Record<string, string> = {
+  owner: "Chủ cửa hàng",
   admin: "Quản trị viên",
   manager: "Quản lý cửa hàng",
   editor: "Biên tập viên",
@@ -181,7 +198,7 @@ const fields: Record<string, FieldDef[]> = {
   ],
 };
 export default function Admin({ data }: { data: Catalog }) {
-  const path = usePathname();
+  const path = useLocalPath();
   const requested = path.split("/")[2] || "overview";
   const { user, setUser, ready, toast } = useShop();
   const area = requested;
@@ -213,7 +230,10 @@ export default function Admin({ data }: { data: Catalog }) {
     setSearch("");
     setStatusFilter("");
     setLoading(true);
-    if (user && allowed.includes(area)) void refresh();
+    if (workspaceAreas.includes(area)) {
+      setLoading(false);
+      setPayload(null);
+    } else if (user && allowed.includes(area)) void refresh();
   }, [area, user]);
   if (!ready)
     return <div className="admin-loading">Đang mở Fleur Workspace...</div>;
@@ -266,7 +286,10 @@ export default function Admin({ data }: { data: Catalog }) {
   }
   async function transition(o: any, status: string) {
     try {
-      await api("admin/orders/" + o.id, "PATCH", { status });
+      await api("admin/orders/" + o.id, "PATCH", {
+        status,
+        version: o.version,
+      });
       toast("Đã cập nhật đơn hàng.");
       setSelected(null);
       void refresh();
@@ -280,7 +303,20 @@ export default function Admin({ data }: { data: Catalog }) {
         <Link href="/admin" className="logo">
           fleur<span>®</span>
         </Link>
-        <div className="workspace-label">WORKSPACE</div>
+        <div className="workspace-label">{data.store?.name || "WORKSPACE"}</div>
+        <select
+          aria-label="Chuyển cửa hàng"
+          value={data.store?.id || 1}
+          onChange={(e) => {
+            window.location.href = "/workspace/" + e.target.value;
+          }}
+        >
+          {user.memberships?.map((m) => (
+            <option value={m.store_id} key={m.store_id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
         <nav>
           {nav
             .filter((n) => allowed.includes(n[0]))
@@ -337,7 +373,7 @@ export default function Admin({ data }: { data: Catalog }) {
           </span>
           <div>
             <Link
-              href="/"
+              href={"/s/" + (data.store?.slug || "fleur")}
               target="_blank"
               rel="noopener noreferrer"
               className="admin-store-link"
@@ -345,7 +381,7 @@ export default function Admin({ data }: { data: Catalog }) {
               <ArrowUpRight size={17} /> Xem cửa hàng
             </Link>
             <AdminNotifications
-              key={`${user.id}:${user.role}`}
+              key={`${data.store?.id}:${user.id}:${user.role}`}
               userId={user.id}
             />
           </div>
@@ -398,6 +434,8 @@ export default function Admin({ data }: { data: Catalog }) {
                 Mở workspace của bạn
               </Link>
             </div>
+          ) : workspaceAreas.includes(area) ? (
+            <WorkspaceView key={area} area={area} />
           ) : loading ? (
             <div className="panel loading-state">
               Đang tải dữ liệu cửa hàng...
@@ -415,7 +453,7 @@ export default function Admin({ data }: { data: Catalog }) {
             <EmailWorkspace
               payload={payload}
               refresh={refresh}
-              canEdit={["admin", "manager"].includes(user.role)}
+              canEdit={["owner", "admin", "manager"].includes(user.role)}
             />
           ) : area === "crm" ? (
             <CRM payload={payload} refresh={refresh} />
@@ -844,7 +882,8 @@ export default function Admin({ data }: { data: Catalog }) {
                     {
                       pending: ["confirmed", "cancelled"],
                       confirmed: ["preparing", "cancelled"],
-                      preparing: ["shipping"],
+                      preparing: ["ready"],
+                      ready: ["shipping"],
                       shipping: ["delivered"],
                       delivered: [],
                       cancelled: [],

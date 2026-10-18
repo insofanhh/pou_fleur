@@ -6,6 +6,7 @@ import {
 } from "node:crypto";
 import { cookies } from "next/headers";
 import { query, mutate } from "./db";
+import { activeStoreId } from "./tenant";
 import type { User } from "./types";
 export const digest = (s: string) =>
   createHash("sha256").update(s).digest("hex");
@@ -29,7 +30,24 @@ export async function currentUser() {
     "SELECT u.id,u.name,u.email,u.phone,u.role,u.birthday,u.address,u.marketing_consent FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>NOW() AND u.active=1",
     [digest(token)],
   );
-  return rows[0] || null;
+  const u = rows[0];
+  if (!u) return null;
+  const memberships = await query<any[]>(
+    "SELECT m.store_id,m.role,s.slug,s.name FROM store_memberships m JOIN stores s ON s.id=m.store_id WHERE m.user_id=? AND m.status='active'",
+    [u.id],
+  );
+  const platform = await query<any[]>(
+    "SELECT role FROM platform_memberships WHERE user_id=?",
+    [u.id],
+  );
+  return {
+    ...u,
+    role:
+      memberships.find((m) => m.store_id === activeStoreId())?.role ||
+      "customer",
+    memberships,
+    platformRole: platform[0]?.role || null,
+  };
 }
 export async function setSession(id: number) {
   const token = randomBytes(32).toString("hex");
@@ -91,6 +109,7 @@ export const permissions: Record<string, string[]> = {
   editor: ["posts", "events"],
   support: ["orders", "crm", "inquiries", "emails"],
 };
+permissions.owner = permissions.admin;
 export async function requirePermission(area: string) {
   const user = await currentUser();
   if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");

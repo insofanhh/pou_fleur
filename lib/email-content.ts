@@ -1,4 +1,5 @@
 export const emailVariables = {
+  store_name: "Tên cửa hàng",
   customer_name: "Tên khách hàng",
   order_reference: "Mã đơn hàng",
   order_items: "Danh sách hoa",
@@ -19,11 +20,13 @@ export const orderStatusNames: Record<string, string> = {
   pending: "Chờ xác nhận",
   confirmed: "Đã xác nhận",
   preparing: "Đang chuẩn bị",
+  ready: "Sẵn sàng giao",
   shipping: "Đang giao",
   delivered: "Đã giao",
   cancelled: "Đã hủy",
 };
 export const demoEmailValues: Record<string, string> = {
+  store_name: "Fleur",
   customer_name: "An",
   order_reference: "FL20260908DEMO",
   order_items: "Pure Poetry · M × 1 · 897.000 ₫",

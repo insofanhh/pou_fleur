@@ -1,5 +1,7 @@
+import AppNavigation from "@/components/pwa";
 import type { Metadata } from "next";
 import "./globals.css";
+import "./saas.css";
 import { Provider } from "@/components/context";
 import StoreShell from "@/components/store-shell";
 import SectionReveal from "@/components/section-reveal";
@@ -23,6 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <Provider>
           <StoreShell>{children}</StoreShell>
           <SectionReveal />
+          <AppNavigation />
         </Provider>
       </body>
     </html>

@@ -1,5 +1,6 @@
 "use client";
-import Link from "next/link";
+import { loginDestination } from "@/lib/login-redirect";
+import Link, { useScopedRouter } from "./routing";
 import FlowerImage from "./flower-image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -25,10 +26,13 @@ export const statusNames: Record<string, string> = {
   pending: "Chờ xác nhận",
   confirmed: "Đã xác nhận",
   preparing: "Đang chuẩn bị",
+  ready: "Sẵn sàng giao",
   shipping: "Đang giao",
   delivered: "Đã giao",
   cancelled: "Đã huỷ",
   unpaid: "Chưa thanh toán",
+  partially_paid: "Thu một phần",
+  partially_refunded: "Hoàn một phần",
   paid: "Đã thanh toán",
   refunded: "Đã hoàn tiền",
 };
@@ -39,8 +43,14 @@ export function Status({ value }: { value: string }) {
     </span>
   );
 }
-export function Auth({ mode }: { mode: string }) {
-  const router = useRouter(),
+export function Auth({
+  mode,
+  googleEnabled = false,
+}: {
+  mode: string;
+  googleEnabled?: boolean;
+}) {
+  const router = useScopedRouter(),
     params = useSearchParams();
   const { setUser } = useShop();
   const [error, setError] = useState(""),
@@ -59,12 +69,7 @@ export function Auth({ mode }: { mode: string }) {
     const f = Object.fromEntries(new FormData(e.currentTarget));
     try {
       if (forgot) {
-        await api("contact", "POST", {
-          name: f.name,
-          email: f.email,
-          message:
-            "Yêu cầu khôi phục tài khoản. Vui lòng xác minh quyền sở hữu email trước khi cấp đường dẫn đặt lại mật khẩu.",
-        });
+        await api("auth/forgot-password", "POST", { email: f.email });
         setSent(true);
       } else {
         const d = await api(
@@ -74,13 +79,7 @@ export function Auth({ mode }: { mode: string }) {
         );
         setUser(d.user);
         const next = params.get("next");
-        router.push(
-          next && next.startsWith("/") && !next.startsWith("//")
-            ? next
-            : d.user.role === "customer"
-              ? "/account"
-              : "/admin",
-        );
+        router.push(loginDestination(d.user, next));
         router.refresh();
       }
     } catch (e) {
@@ -116,20 +115,38 @@ export function Auth({ mode }: { mode: string }) {
         </h1>
         <p>
           {forgot
-            ? "Đội ngũ Fleur sẽ tiếp nhận yêu cầu và xác minh email của bạn."
+            ? "Nhập email để nhận liên kết đặt lại mật khẩu."
             : register
               ? "Tạo tài khoản để lưu những điều bạn yêu."
               : "Đăng nhập để tiếp tục gửi những lời thương."}
         </p>
+        {!forgot && googleEnabled && (
+          <a
+            className="button secondary google-login"
+            href={
+              "/api/auth/google?next=" +
+              encodeURIComponent(params.get("next") || "")
+            }
+          >
+            Tiếp tục với Google
+          </a>
+        )}
+        {params.get("error") && (
+          <p className="error">
+            {params.get("error") === "link_required"
+              ? "Email đã tồn tại. Đăng nhập bằng mật khẩu rồi liên kết Google trong tài khoản."
+              : "Chưa thể đăng nhập Google. Kiểm tra cấu hình hoặc thử lại."}
+          </p>
+        )}
         {sent ? (
           <div className="notice">
             <Check />
-            Đã lưu yêu cầu. Cửa hàng sẽ kiểm tra và hỗ trợ khôi phục tài khoản
-            sau khi xác minh quyền sở hữu email.
+            Nếu email này thuộc một tài khoản, chúng tôi sẽ gửi liên kết đặt lại
+            mật khẩu có hiệu lực 30 phút.
           </div>
         ) : (
           <form onSubmit={submit}>
-            {(register || forgot) && (
+            {register && (
               <Field
                 label="Họ và tên"
                 name="name"
@@ -212,7 +229,7 @@ export function Account() {
     [orders, setOrders] = useState<any[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const router = useRouter();
+  const router = useScopedRouter();
   useEffect(() => {
     if (user)
       api("orders")
@@ -288,6 +305,18 @@ export function Account() {
               {label}
             </button>
           ))}
+          <a href="/api/auth/google?link=1&next=/account">
+            Liên kết tài khoản Google
+          </a>
+          <Link href="/start">Mở cửa hàng của bạn</Link>
+          {user.platformRole === "platform_admin" && (
+            <Link href="/platform">Quản trị nền tảng</Link>
+          )}
+          {user.memberships?.map((m) => (
+            <Link key={m.store_id} href={"/workspace/" + m.store_id}>
+              {m.name} · {m.role}
+            </Link>
+          ))}
           <Link href="/wishlist">
             <Heart size={18} />
             Hoa yêu thích
@@ -326,7 +355,10 @@ export function Account() {
                 orders.map((o) => (
                   <div className="order-card" key={o.id}>
                     <div className="flex-between">
-                      <strong>{o.reference}</strong>
+                      <strong>
+                        {o.reference} ·{" "}
+                        <Link href={"/s/" + o.store_slug}>{o.store_name}</Link>
+                      </strong>
                       <Status value={o.status} />
                     </div>
                     <p className="small">
@@ -350,6 +382,41 @@ export function Account() {
                       <span>
                         Tổng cộng <strong>{money(o.total)}</strong>
                       </span>
+                      {o.status === "delivered" && (
+                        <button
+                          className="text-button"
+                          onClick={async () => {
+                            try {
+                              const d = await api(
+                                "orders/" + o.id + "/reorder",
+                                "POST",
+                                {},
+                              );
+                              const previous = JSON.parse(
+                                localStorage.getItem(
+                                  "fleur.cart." + d.store.slug,
+                                ) || "[]",
+                              );
+                              if (
+                                previous.length &&
+                                !confirm(
+                                  "Giỏ của cửa hàng này đang có hoa. Thay bằng các sản phẩm của đơn cũ?",
+                                )
+                              )
+                                return;
+                              localStorage.setItem(
+                                "fleur.cart." + d.store.slug,
+                                JSON.stringify(d.items),
+                              );
+                              router.push("/s/" + d.store.slug + "/cart");
+                            } catch (e) {
+                              setError((e as Error).message);
+                            }
+                          }}
+                        >
+                          Đặt lại
+                        </button>
+                      )}
                       {["pending", "confirmed"].includes(o.status) && (
                         <button
                           className="text-button"

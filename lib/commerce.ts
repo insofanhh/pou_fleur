@@ -1,3 +1,6 @@
+import { tenantId } from "./tenant";
+import { assertStoreOpen, storeBy, distanceKm } from "./stores";
+import { emit } from "./domain-events";
 import type { PoolConnection } from "mysql2/promise";
 import { pool } from "./db";
 import { enqueueOrderEmail } from "./email";
@@ -25,17 +28,16 @@ export const checkoutSchema = quoteSchema.extend({
   recipientName: z.string().trim().min(2).max(100),
   recipientPhone: phone,
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  deliverySlot: z.enum([
-    "09:00–12:00",
-    "12:00–15:00",
-    "15:00–18:00",
-    "18:00–20:00",
-  ]),
+  deliverySlot: z.string().min(5).max(30),
+  deliveryMode: z.enum(["self", "gift"]).default("gift"),
   message: z.string().max(500).default(""),
   notes: z.string().max(1000).default(""),
   paymentMethod: z.enum(["cod"]),
   consent: z.boolean().default(false),
   idempotencyKey: z.string().uuid(),
+  expectedTotal: z.number().int().nonnegative().optional(),
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryLng: z.number().min(-180).max(180).optional(),
 });
 export async function calculate(
   c: PoolConnection,
@@ -105,7 +107,9 @@ export async function calculate(
     );
     promotionId = p.id;
   }
-  const shipping = subtotal >= 1000000 ? 0 : 35000;
+  const store = await assertStoreOpen();
+  const shipping =
+    subtotal >= store.settings.free_shipping ? 0 : store.settings.shipping;
   return {
     items,
     subtotal,
@@ -118,7 +122,9 @@ export async function calculate(
 export async function createOrder(
   body: z.infer<typeof checkoutSchema>,
   userId: number | null,
+  checkoutOwner?: string,
 ) {
+  const store = await assertStoreOpen();
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Ho_Chi_Minh",
     year: "numeric",
@@ -128,28 +134,90 @@ export async function createOrder(
   const date = new Date(body.deliveryDate + "T00:00:00+07:00");
   if (
     Number.isNaN(date.getTime()) ||
+    new Date(body.deliveryDate + "T12:00:00Z").toISOString().slice(0, 10) !==
+      body.deliveryDate ||
     body.deliveryDate < today ||
-    date.getTime() > Date.now() + 90 * 86400000
+    date.getTime() > Date.now() + store.settings.advance_days * 86400000
   )
     throw new HttpError(
       400,
-      "Vui lòng chọn ngày giao từ hôm nay đến 90 ngày tới.",
+      `Vui lòng chọn ngày giao từ hôm nay đến ${store.settings.advance_days} ngày tới.`,
     );
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
+    // Lock before the first consistent read so waiting transactions see committed reservations.
+    const [lockedStores]: any = await c.execute(
+      "SELECT * FROM stores WHERE id=? FOR UPDATE",
+      [tenantId()],
+    );
+    const locked = lockedStores[0];
+    if (!locked || locked.status !== "approved")
+      throw new HttpError(409, "Cửa hàng hiện chưa nhận đơn.");
+    store.settings =
+      typeof locked.settings === "string"
+        ? JSON.parse(locked.settings)
+        : locked.settings;
+    if (!store.settings.open)
+      throw new HttpError(409, "Cửa hàng đang tạm nghỉ.");
     const [existing] = await c.execute(
-      "SELECT reference,email FROM orders WHERE idempotency_key=?",
+      "SELECT reference,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
       [body.idempotencyKey],
     );
-    const previous = (existing as { reference: string; email: string }[])[0];
+    const previous = (existing as any[])[0];
     if (previous) {
-      if (previous.email !== body.email)
+      if (
+        previous.email !== body.email ||
+        (userId
+          ? previous.user_id !== userId
+          : !checkoutOwner || previous.checkout_owner !== checkoutOwner)
+      )
         throw new HttpError(409, "Yêu cầu không hợp lệ.");
       await c.commit();
       return { reference: previous.reference };
     }
+    // Store row serializes slot reservations across simultaneous checkouts.
+    await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
+      tenantId(),
+    ]);
+    const start = body.deliverySlot.slice(0, 5);
+    if (
+      !store.settings.slots.includes(body.deliverySlot) ||
+      store.settings.closed_dates.includes(body.deliveryDate) ||
+      new Date(body.deliveryDate + "T" + start + ":00+07:00").getTime() <
+        Date.now() + store.settings.lead_minutes * 60000
+    )
+      throw new HttpError(
+        409,
+        "Khung giờ không khả dụng hoặc chưa đủ thời gian chuẩn bị.",
+      );
+    const [capacity]: any = await c.execute(
+      "SELECT COUNT(*) n FROM orders WHERE delivery_date=? AND delivery_slot=? AND status<>'cancelled' FOR UPDATE",
+      [body.deliveryDate, body.deliverySlot],
+    );
+    if (capacity[0].n >= store.settings.capacity)
+      throw new HttpError(
+        409,
+        "Khung giờ đã đủ đơn. Vui lòng chọn khung khác.",
+      );
+    if (
+      body.deliveryLat !== undefined &&
+      body.deliveryLng !== undefined &&
+      store.lat !== null &&
+      store.lng !== null &&
+      distanceKm(store.lat, store.lng, body.deliveryLat, body.deliveryLng) >
+        store.radius_km
+    )
+      throw new HttpError(
+        409,
+        "Địa chỉ nhận ngoài bán kính giao của cửa hàng.",
+      );
     const quote = await calculate(c, body, true);
+    if (body.expectedTotal !== undefined && body.expectedTotal !== quote.total)
+      throw new HttpError(
+        409,
+        "Giá đã thay đổi. Vui lòng kiểm tra lại giỏ hàng trước khi đặt.",
+      );
     const reference =
       "FL" +
       new Date().toISOString().slice(0, 10).replaceAll("-", "") +
@@ -193,14 +261,47 @@ export async function createOrder(
       await c.execute("UPDATE promotions SET used=used+1 WHERE id=?", [
         quote.promotionId,
       ]);
+    const [existingCustomer]: any = await c.execute(
+      "SELECT id FROM customers WHERE email=?",
+      [body.email],
+    );
+    if (!existingCustomer.length)
+      await emit(c, "customer:" + tenantId() + ":" + body.email, {
+        audience: "staff",
+        title: "Khách hàng mới",
+        body: body.customerName,
+        href: "/workspace/" + tenantId() + "/crm",
+      });
     await c.execute(
       "INSERT INTO customers(email,name,phone,marketing_consent) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),phone=VALUES(phone),marketing_consent=GREATEST(marketing_consent,VALUES(marketing_consent))",
       [body.email, body.customerName, body.phone, body.consent ? 1 : 0],
     );
-    if (body.consent && userId)
-      await c.execute("UPDATE users SET marketing_consent=1 WHERE id=?", [
-        userId,
-      ]);
+
+    await c.execute(
+      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=? WHERE id=?",
+      [
+        store.name,
+        body.deliveryMode,
+        checkoutOwner || null,
+        body.deliveryLat ?? null,
+        body.deliveryLng ?? null,
+        id,
+      ],
+    );
+    if (userId)
+      await c.execute(
+        "INSERT INTO notification_preferences(user_id,store_id,marketing,push) VALUES(?,?,?,0) ON DUPLICATE KEY UPDATE marketing=VALUES(marketing)",
+        [userId, tenantId(), body.consent ? 1 : 0],
+      );
+    await c.execute(
+      "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
+      [id, userId, "pending"],
+    );
+    await emit(c, "order:" + id + ":new", {
+      audience: "staff",
+      title: "Đơn hàng mới",
+      body: reference + " · " + body.customerName,
+    });
     await enqueueOrderEmail(c, id, "order_confirmation");
     await c.commit();
     return { reference, total: quote.total };
@@ -211,13 +312,17 @@ export async function createOrder(
       (e instanceof HttpError && e.status === 409)
     ) {
       const [rows] = await c.execute(
-        "SELECT reference,total,email FROM orders WHERE idempotency_key=?",
+        "SELECT reference,total,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
         [body.idempotencyKey],
       );
-      const previous = (
-        rows as { reference: string; total: number; email: string }[]
-      )[0];
-      if (previous && previous.email === body.email)
+      const previous = (rows as any[])[0];
+      if (
+        previous &&
+        previous.email === body.email &&
+        (userId
+          ? previous.user_id === userId
+          : checkoutOwner && previous.checkout_owner === checkoutOwner)
+      )
         return { reference: previous.reference, total: previous.total };
     }
     throw e;
@@ -230,6 +335,7 @@ export async function changeOrder(
   status: string,
   actor: number,
   owner = false,
+  version?: number,
 ) {
   const c = await pool.getConnection();
   try {
@@ -240,11 +346,15 @@ export async function changeOrder(
     );
     const o = (rows as any[])[0];
     if (!o) throw new HttpError(404, "Không tìm thấy đơn hàng.");
+    if (version !== undefined && o.version !== version)
+      throw new HttpError(409, "Đơn hàng vừa được cập nhật. Hãy tải lại.");
     if (
       owner &&
       (o.user_id !== actor ||
         status !== "cancelled" ||
-        o.payment_status === "paid")
+        ["paid", "partially_paid", "partially_refunded"].includes(
+          o.payment_status,
+        ))
     )
       throw new HttpError(
         403,
@@ -253,7 +363,8 @@ export async function changeOrder(
     const next: Record<string, string[]> = {
       pending: ["confirmed", "cancelled"],
       confirmed: ["preparing", "cancelled"],
-      preparing: ["shipping"],
+      preparing: ["ready"],
+      ready: ["shipping"],
       shipping: ["delivered"],
       delivered: [],
       cancelled: [],
@@ -280,13 +391,22 @@ export async function changeOrder(
         );
     }
     await c.execute(
-      "UPDATE orders SET status=?,payment_status=IF(?='delivered' AND payment_method='cod','paid',payment_status) WHERE id=?",
-      [status, status, id],
+      "UPDATE orders SET status=?,version=version+1,completed_at=IF(?='delivered',NOW(),completed_at),confirmed_at=IF(?='confirmed',NOW(),confirmed_at),shipped_at=IF(?='shipping',NOW(),shipped_at) WHERE id=?",
+      [status, status, status, status, id],
     );
     await c.execute(
       "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
       [actor, status, "orders", String(id)],
     );
+    await c.execute(
+      "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
+      [id, actor, status],
+    );
+    await emit(c, "order:" + id + ":" + (o.version + 1), {
+      userId: o.user_id,
+      title: "Đơn " + o.reference + " · " + status,
+      body: "Cửa hàng đã cập nhật trạng thái đơn hoa của bạn.",
+    });
     await enqueueOrderEmail(c, id, "order_status", o.status);
     await c.commit();
     return { ok: true };

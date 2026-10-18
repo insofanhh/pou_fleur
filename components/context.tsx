@@ -7,13 +7,25 @@ import {
   useCallback,
   ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
+import { storeRef } from "./routing";
 import type { CartItem, User } from "@/lib/types";
 import { X, Check } from "lucide-react";
+export function track(name: string) {
+  if (typeof crypto !== "undefined")
+    void api("analytics", "POST", {
+      event_key: crypto.randomUUID(),
+      name,
+    }).catch(() => {});
+}
 export async function api(path: string, method = "GET", body?: unknown) {
   const r = await fetch("/api/" + path, {
     method,
-    headers:
-      body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      "x-fleur-store":
+        typeof location === "undefined" ? "1" : storeRef(location.pathname),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await r.json();
@@ -34,14 +46,27 @@ type State = {
 const Context = createContext<State>(null!);
 export const useShop = () => useContext(Context);
 export function Provider({ children }: { children: ReactNode }) {
+  const pathname = usePathname(),
+    scope = storeRef(pathname);
+  const storageKey = "fleur.cart." + scope;
   const [cart, updateCart] = useState<CartItem[]>([]),
     [wishlist, setWish] = useState<number[]>([]),
     [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
     [message, setMessage] = useState("");
   useEffect(() => {
+    let active = true;
+    setReady(false);
+    updateCart([]);
+    setWish([]);
     try {
-      const c = JSON.parse(localStorage.getItem("fleur.cart") || "[]");
+      const c = JSON.parse(
+        localStorage.getItem(storageKey) ||
+          (scope === "1" || scope === "fleur"
+            ? localStorage.getItem("fleur.cart")
+            : null) ||
+          "[]",
+      );
       if (Array.isArray(c))
         updateCart(
           c.filter(
@@ -53,23 +78,42 @@ export function Provider({ children }: { children: ReactNode }) {
               ["S", "M", "L"].includes(i.size),
           ),
         );
-      const w = JSON.parse(localStorage.getItem("fleur.wishlist") || "[]");
+      const w = JSON.parse(
+        localStorage.getItem("fleur.wishlist." + scope) || "[]",
+      );
       if (Array.isArray(w)) setWish(w.filter(Number.isInteger));
     } catch {}
     api("auth/me")
-      .then((d) => setUser(d.user))
-      .finally(() => setReady(true))
+      .then((d) => {
+        if (active) setUser(d.user);
+      })
+      .finally(() => {
+        if (active) setReady(true);
+      })
       .catch(() => {});
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [scope]);
+  useEffect(() => {
+    if (!pathname.startsWith("/s/")) return;
+    const tail = pathname.replace(/^\/s\/[^/]+/, "");
+    if (!tail) track("store_view");
+    if (tail.startsWith("/product/")) track("product_view");
+    if (tail === "/checkout") track("checkout_start");
+  }, [pathname]);
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  const setCart = useCallback((items: CartItem[]) => {
-    updateCart(items);
-    localStorage.setItem("fleur.cart", JSON.stringify(items));
-  }, []);
+  const setCart = useCallback(
+    (items: CartItem[]) => {
+      updateCart(items);
+      localStorage.setItem(storageKey, JSON.stringify(items));
+    },
+    [storageKey],
+  );
   const add = useCallback(
     (id: number, quantity = 1, size = "S") => {
       if (
@@ -91,6 +135,7 @@ export function Provider({ children }: { children: ReactNode }) {
             )
           : [...cart, { productId: id, quantity, size }],
       );
+      track("add_to_cart");
       setMessage("Đã thêm hoa vào giỏ hàng.");
     },
     [cart, setCart],
@@ -100,7 +145,7 @@ export function Provider({ children }: { children: ReactNode }) {
       ? wishlist.filter((x) => x !== id)
       : [...wishlist, id];
     setWish(next);
-    localStorage.setItem("fleur.wishlist", JSON.stringify(next));
+    localStorage.setItem("fleur.wishlist." + scope, JSON.stringify(next));
     setMessage(
       next.includes(id)
         ? "Đã lưu vào hoa yêu thích."

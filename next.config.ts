@@ -8,13 +8,24 @@ const config: NextConfig = {
   },
   poweredByHeader: false,
   distDir:
-    process.env.VERCEL === "1"
+    process.env.FLEUR_DIST_DIR ||
+    (process.env.VERCEL === "1"
       ? ".next"
       : process.env.NODE_ENV === "production"
         ? ".next-production"
-        : ".next",
+        : ".next"),
   async headers() {
     return [
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
       {
         source: "/:path*",
         headers: [

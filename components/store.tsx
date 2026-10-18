@@ -1,8 +1,9 @@
 "use client";
-import { usePathname } from "next/navigation";
+import { useLocalPath } from "./routing";
 import dynamic from "next/dynamic";
 import type { Catalog } from "@/lib/types";
 import Home from "./home";
+import TemplateHome from "./template-home";
 import { Shop, ProductDetail, Cart, Checkout, Wishlist } from "./shopping";
 import {
   Auth,
@@ -22,10 +23,16 @@ const Admin = dynamic(() => import("./admin"), {
   ),
 });
 export default function Store({ data }: { data: Catalog }) {
-  const path = usePathname();
+  const path = useLocalPath();
   if (path.startsWith("/admin")) return <Admin data={data} />;
   let content;
-  if (path === "/") content = <Home data={data} />;
+  if (path === "/")
+    content =
+      data.store?.theme?.template && data.store.theme.template !== "minimal" ? (
+        <TemplateHome data={data} />
+      ) : (
+        <Home data={data} />
+      );
   else if (path === "/shop") content = <Shop data={data} />;
   else if (path.startsWith("/product/"))
     content = <ProductDetail data={data} slug={path.split("/")[2]} />;
@@ -33,7 +40,9 @@ export default function Store({ data }: { data: Catalog }) {
   else if (path === "/checkout") content = <Checkout data={data} />;
   else if (path === "/wishlist") content = <Wishlist data={data} />;
   else if (["/login", "/register", "/forgot-password"].includes(path))
-    content = <Auth mode={path.slice(1)} />;
+    content = (
+      <Auth mode={path.slice(1)} googleEnabled={!!data.features?.google} />
+    );
   else if (path === "/account" || path === "/account/orders")
     content = <Account />;
   else if (path.startsWith("/journal"))

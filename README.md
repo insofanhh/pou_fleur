@@ -1,16 +1,17 @@
-# Fleur — Next.js + MySQL
+# Fleur — Nền tảng SaaS cho cửa hàng hoa
 
-Website bán hoa bằng Next.js App Router, React, TypeScript và MySQL 8. Giao diện tiếng Việt trắng/đen, phong cách tối giản; cửa hàng và workspace quản trị dùng chung database.
+Next.js App Router, React, TypeScript và MySQL/TiDB. Một marketplace, nhiều storefront độc lập, dashboard từng store và console nền tảng.
 
-## Xem bản đang chạy
+Hướng dẫn cài mới, migration, Google/Goong/PWA và phát hành: [docs/SAAS-SETUP.md](docs/SAAS-SETUP.md). Phạm vi và kết quả kiểm thử: [docs/SAAS-VERIFICATION.md](docs/SAAS-VERIFICATION.md).
 
-- Cửa hàng: http://127.0.0.1:3001
-- Dashboard: http://127.0.0.1:3001/admin
-- Đăng nhập: http://127.0.0.1:3001/login
-- Email quản trị: giá trị ADMIN_EMAIL trong .env.local (mặc định admin@fleur.local).
-- Mật khẩu quản trị: giá trị ADMIN_PASSWORD trong .env.local. Được tạo ngẫu nhiên khi thiết lập, không có mật khẩu mặc định công khai. File này bị loại khỏi Git.
+- `/`: khám phá cửa hàng theo vị trí nhận hoa.
+- `/s/fleur`: cửa hàng Fleur được chuyển từ dữ liệu cũ; `/s/{slug}` cho các store khác.
+- `/workspace/{id}`: quản lý store theo membership. `/admin` giữ tương thích store Fleur.
+- `/platform`: console dành riêng cho `platform_admin`, cấp bằng CLI quản trị.
+- `/account/orders`: lịch sử mua ở tất cả các store, đặt lại đơn đã giao.
+- `/start`, `/inbox`: mở store và hộp thông báo.
 
-MySQL fleur_store đã được tạo trên máy hiện tại. Dữ liệu ban đầu có 6 sản phẩm, 4 danh mục, 2 sự kiện và 2 bài viết. Không tạo đơn hàng hay khách hàng giả trên dashboard.
+Thông tin MySQL/SMTP và tài khoản seed chỉ nằm trong env, bị loại khỏi Git. Không có tài khoản hoặc mật khẩu mặc định công khai.
 
 ## Chạy trên máy
 
@@ -33,7 +34,7 @@ Tài khoản quản trị chỉ được tạo nếu email chưa tồn tại. Đ
 - Giỏ hàng và yêu thích lưu trên trình duyệt của thiết bị.
 - Mã ưu đãi, phí giao hàng, checkout khách vãng lai hoặc người đã đăng nhập.
 - Ngày/khung giờ giao, thông tin người đặt/người nhận, thiệp viết tay, ghi chú.
-- COD: đơn mới chờ xác nhận; ghi nhận thanh toán khi giao hoàn thành.
+- COD: đơn mới chờ xác nhận; thu/hoàn tiền ghi nhận riêng bằng sổ giao dịch. Giao thành công không tự đánh dấu đã thu tiền.
 - Đăng ký/đăng nhập/đăng xuất, hồ sơ, địa chỉ mặc định, ngày sinh, lựa chọn tiếp thị, đổi mật khẩu.
 - Lịch sử đơn, huỷ đơn phù hợp trạng thái, tra cứu đơn bằng mã + email.
 - Tin tức, sự kiện, liên hệ, câu hỏi thường gặp, chính sách, quyền riêng tư, trang lỗi và metadata.
@@ -204,9 +205,9 @@ File này không tự được Next.js hoặc Vercel nạp. Để chạy app c�
 
 ### Xử lý hàng đợi
 
-Next.js after() xử lý tối đa 20 email sau thao tác đặt hàng, đổi trạng thái, gửi chương trình hoặc thử lại. Mỗi lượt có giới hạn thời gian; chương trình lớn có thể còn email chờ.
+Next.js after() xử lý email và sự kiện thông báo sau thao tác ghi dữ liệu; mỗi lượt email có giới hạn 20 thư và thời gian thực thi. Chương trình lớn có thể còn email chờ.
 
-vercel.json khai báo một cron mỗi ngày tại /api/email/worker, phù hợp gói Hobby, với tối đa 100 email trong giới hạn thời gian của một lượt. Endpoint cần Authorization: Bearer <CRON_SECRET>; Vercel tự gửi header khi cấu hình CRON_SECRET. Trên Hobby, cron không đảm bảo chạy đúng phút. Có thể nhấn **Xử lý hàng đợi** trong admin để tiếp tục ngay; muốn retry tự động thường xuyên cần scheduler gọi endpoint này hoặc lịch cron thường xuyên hơn trên gói hỗ trợ. Không xem nút gửi chương trình là bảo đảm toàn bộ 500 email được gửi tức thì.
+vercel.json khai báo một cron mỗi ngày tại /api/email/worker. Worker xử lý CRM automation, chu kỳ hóa đơn, email khôi phục tài khoản, inbox/push và email từng store theo ngân sách thời gian; không cam kết số email gửi trong một lượt. Endpoint cần Authorization: Bearer <CRON_SECRET>; Vercel tự gửi header khi cấu hình CRON_SECRET. Có thể nhấn **Xử lý hàng đợi** trong admin để tiếp tục ngay; muốn retry và automation chạy thường xuyên cần scheduler gọi endpoint này hoặc lịch cron thường xuyên hơn trên gói hỗ trợ. Không xem nút gửi chương trình là bảo đảm toàn bộ email được gửi tức thì.
 
 Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
 
