@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
+import { activeBank, createIntent } from "./sepay";
 import { cookies } from "next/headers";
 import { pool, query, mutate } from "./db";
 import { digest, ghostContext, HttpError, requirePermission } from "./auth";
@@ -398,6 +399,13 @@ async function finalize(raw: any, actor: Actor) {
           (b.collectMethod === "bank" ? "BANK-" : "CASH-") + reference,
         receivedAt: b.receivedAt,
       });
+    let payment: any = null;
+    const remaining = q.total - Number(b.collectAmount || 0);
+    if (b.collectMethod === "bank" && remaining > 0) {
+      const bank = await activeBank(tenantId(), c);
+      if (!bank) throw new HttpError(409, "Cửa hàng chưa cấu hình nhận chuyển khoản.");
+      payment = await createIntent(c, tenantId(), "order", actor.id, remaining, orderId, null, bank);
+    }
     await c.execute(
       "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
       [orderId, actor.id, b.initialStatus],
@@ -423,7 +431,7 @@ async function finalize(raw: any, actor: Actor) {
         throw new HttpError(403, "Phiên Ghost đã hết hạn hoặc bị thu hồi.");
     }
     await c.commit();
-    return { id: orderId, reference, total: q.total };
+    return { id: orderId, reference, total: q.total, payment };
   } catch (e) {
     await c.rollback();
     throw e;

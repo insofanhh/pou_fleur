@@ -1479,6 +1479,15 @@ function StoreSettings() {
                   .map((s) => s.trim())
                   .filter(Boolean),
               },
+              bank: String(f.bank_code || "").trim() ? {
+                bank_code: String(f.bank_code || "").trim(),
+                bank_name: String(f.bank_name || "").trim(),
+                account_number: String(f.account_number || "").trim(),
+                account_holder: String(f.account_holder || "").trim(),
+                enabled: f.bank_enabled === "on",
+                sepay_enabled: f.sepay_enabled === "on",
+                auto_confirm_status: String(f.auto_confirm_status || "confirmed"),
+              } : null,
             });
             await refresh();
             toast("Đã lưu cấu hình cửa hàng.");
@@ -1559,6 +1568,7 @@ function StoreSettings() {
           />
           Nhận đơn mới
         </label>
+        <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><div className="form-grid">{[["bank_code","Mã ngân hàng / BIN",data.bank?.bank_code||""],["bank_name","Tên ngân hàng",data.bank?.bank_name||""],["account_number","Số tài khoản",data.bank?.account_number||""],["account_holder","Chủ tài khoản",data.bank?.account_holder||""]].map(([name,label,value])=><label className="field" key={name}>{label}<input name={name} defaultValue={value}/></label>)}</div><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></select></label></div>
         <button className="button" disabled={busy}>
           Lưu cấu hình
         </button>
@@ -1760,6 +1770,7 @@ function ThemeEditor() {
 function Billing() {
   const { data, error, refresh } = useLoad("workspace/billing"),
     { toast } = useShop();
+  const [payment, setPayment] = useState<any>(null);
   if (!data) return <Loading error={error} />;
   return (
     <div>
@@ -1803,10 +1814,11 @@ function Billing() {
             : "Ngừng gia hạn cuối kỳ"}
         </button>
         <p className="small">
-          Thay đổi gói và hướng dẫn thanh toán: liên hệ quản trị nền tảng. Giá
-          gói được cấu hình bởi nền tảng.
+          Chọn gói bên dưới để bắt đầu dùng thử hoặc tạo mã QR thanh toán. Giá và hạn mức do nền tảng cấu hình.
         </p>
       </div>
+      <div className="panel"><h3>Gói dịch vụ</h3><div className="form-grid">{data.plans.map((p:any)=><div className="card" key={p.id}><strong>{p.name}</strong><p>{money(p.monthly_price)} / tháng</p><p className="small">Dùng thử {p.trial_days ?? 14} ngày</p><div className="button-row"><button className="button secondary" onClick={async()=>{try{await api("workspace/billing/start","POST",{plan_id:p.id,trial:true});toast("Đã kích hoạt thời gian trải nghiệm.");await refresh();}catch(e){toast((e as Error).message)}}}>Dùng thử</button><button className="button" onClick={async()=>{try{const r=await api("workspace/billing/start","POST",{plan_id:p.id,trial:false});setPayment(r.payment);await refresh();}catch(e){toast((e as Error).message)}}}>Thanh toán</button></div></div>)}</div></div>
+      {payment && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={()=>setPayment(null)} aria-label="Đóng">×</button><h2>Thanh toán gói dịch vụ</h2><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{width:280,maxWidth:"100%"}}/><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></div></div>}
       <div className="panel table-scroll">
         <h3>Hóa đơn dịch vụ</h3>
         <table>

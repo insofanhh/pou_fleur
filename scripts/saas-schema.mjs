@@ -156,6 +156,12 @@ export async function migrateSaaS(c) {
       ",'owner',role) FROM users WHERE role<>'customer'",
   );
   for (const sql of [
+    `CREATE TABLE IF NOT EXISTS store_bank_accounts(id INT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,bank_code VARCHAR(40) NOT NULL,bank_name VARCHAR(120) NOT NULL,account_number VARCHAR(40) NOT NULL,account_holder VARCHAR(160) NOT NULL,enabled BOOLEAN NOT NULL DEFAULT 1,sepay_enabled BOOLEAN NOT NULL DEFAULT 0,auto_confirm_status VARCHAR(30) NOT NULL DEFAULT 'confirmed',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY store_bank(store_id))`,
+    `CREATE TABLE IF NOT EXISTS payment_intents(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,order_id INT NULL,invoice_id INT NULL,kind VARCHAR(20) NOT NULL,reference_code VARCHAR(80) NOT NULL,amount INT NOT NULL,paid_amount INT NOT NULL DEFAULT 0,status VARCHAR(20) NOT NULL DEFAULT 'pending',expires_at DATETIME NOT NULL,paid_at DATETIME NULL,qr_payload TEXT NOT NULL,provider_reference VARCHAR(120) NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY intent_code(reference_code),INDEX intent_order(store_id,order_id,status),INDEX intent_invoice(store_id,invoice_id,status))`,
+    `CREATE TABLE IF NOT EXISTS sepay_webhook_events(id BIGINT AUTO_INCREMENT PRIMARY KEY,provider_event_id VARCHAR(120) NOT NULL,payload_hash CHAR(64) NOT NULL,processed BOOLEAN NOT NULL DEFAULT 0,error_message VARCHAR(500) NULL,received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,processed_at DATETIME NULL,UNIQUE KEY sepay_event(provider_event_id),UNIQUE KEY sepay_hash(payload_hash))`,
+    `CREATE TABLE IF NOT EXISTS platform_integrations(id INT AUTO_INCREMENT PRIMARY KEY,provider VARCHAR(40) NOT NULL,webhook_secret VARCHAR(255) NOT NULL,api_key VARCHAR(255) NOT NULL,enabled BOOLEAN NOT NULL DEFAULT 1,created_by INT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY provider_name(provider))`,
+    `CREATE TABLE IF NOT EXISTS plan_versions(id BIGINT AUTO_INCREMENT PRIMARY KEY,plan_id INT NOT NULL,name VARCHAR(80) NOT NULL,monthly_price INT NOT NULL,limits JSON NOT NULL,trial_days INT NOT NULL DEFAULT 14,effective_at DATETIME NOT NULL,actor_id INT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX plan_history(plan_id,effective_at))`,
+    `CREATE TABLE IF NOT EXISTS trial_claims(store_id INT PRIMARY KEY,trial_days INT NOT NULL DEFAULT 14,started_at DATETIME NOT NULL,ends_at DATETIME NOT NULL,claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS crm_automations(id INT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,name VARCHAR(160) NOT NULL,trigger_name VARCHAR(30) NOT NULL,template_id INT NOT NULL,delay_days INT NOT NULL DEFAULT 2,message TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT 0,INDEX rules(store_id,active))`,
     `CREATE TABLE IF NOT EXISTS identity_mail(id INT AUTO_INCREMENT PRIMARY KEY,recipient VARCHAR(190) NOT NULL,subject VARCHAR(240) NOT NULL,body TEXT NOT NULL,status VARCHAR(20) DEFAULT 'pending',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS oauth_requests(token_hash CHAR(64) PRIMARY KEY,state VARCHAR(100) NOT NULL,verifier VARCHAR(150) NOT NULL,nonce VARCHAR(100) NOT NULL,next_path VARCHAR(500) NOT NULL,link_user_id INT NULL,expires_at DATETIME NOT NULL)`,
@@ -176,6 +182,21 @@ export async function migrateSaaS(c) {
     `CREATE TABLE IF NOT EXISTS analytics_events(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NULL,event_key CHAR(36) UNIQUE NOT NULL,name VARCHAR(50) NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX metrics(store_id,name,created_at))`,
   ])
     await c.query(sql);
+  for (const [table, column, type] of [
+    ["plans", "trial_days", "INT NOT NULL DEFAULT 14"],
+    ["subscriptions", "trial_started_at", "DATETIME NULL"],
+    ["subscriptions", "trial_ends_at", "DATETIME NULL"],
+    ["subscriptions", "billing_anchor_day", "TINYINT NULL"],
+    ["subscriptions", "current_period_start", "DATE NULL"],
+    ["subscriptions", "current_period_end", "DATE NULL"],
+    ["subscriptions", "plan_version_id", "BIGINT NULL"],
+    ["invoices", "period_start", "DATE NULL"],
+    ["invoices", "period_end", "DATE NULL"],
+    ["invoices", "plan_version_id", "BIGINT NULL"],
+  ]) {
+    const [cols] = await c.query(`SHOW COLUMNS FROM ${table} LIKE '${column}'`);
+    if (!cols.length) await c.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
   const [outboxColumns] = await c.query(
     "SHOW COLUMNS FROM domain_outbox LIKE 'created_at'",
   );
@@ -188,12 +209,18 @@ export async function migrateSaaS(c) {
     [2, "Studio", 299000, { products: 300, staff: 10, storage_mb: 1000 }],
     [3, "Atelier", 599000, { products: 1000, staff: 30, storage_mb: 5000 }],
   ])
-    await c.execute("INSERT IGNORE INTO plans VALUES(?,?,?,?,1)", [
+    await c.execute("INSERT IGNORE INTO plans(id,name,monthly_price,limits,active,trial_days) VALUES(?,?,?,?,1,14)", [
       id,
       name,
       price,
       JSON.stringify(limits),
     ]);
+  const [planRows] = await c.query("SELECT id,name,monthly_price,limits FROM plans");
+  for (const p of planRows) {
+    const [versions] = await c.query("SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id LIMIT 1", [p.id]);
+    if (!versions.length)
+      await c.execute("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,effective_at) VALUES(?,?,?,?,NOW())", [p.id,p.name,p.monthly_price,p.limits]);
+  }
   await c.query(
     "INSERT IGNORE INTO subscriptions(store_id,plan_id,status) SELECT id,1,'free' FROM stores",
   );

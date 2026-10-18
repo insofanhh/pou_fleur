@@ -11,6 +11,7 @@ import { HttpError } from "./auth";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import type { Product, Promotion } from "./types";
+import { activeBank, createIntent } from "./sepay";
 export const itemSchema = z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(30),
@@ -35,7 +36,7 @@ export const checkoutSchema = quoteSchema.extend({
   deliveryMode: z.enum(["self", "gift"]).default("gift"),
   message: z.string().max(500).default(""),
   notes: z.string().max(1000).default(""),
-  paymentMethod: z.enum(["cod"]),
+  paymentMethod: z.enum(["cod", "bank"]),
   consent: z.boolean().default(false),
   idempotencyKey: z.string().uuid(),
   expectedTotal: z.number().int().nonnegative().optional(),
@@ -220,6 +221,12 @@ export async function createOrder(
       ],
     );
     const id = (result as { insertId: number }).insertId;
+    let payment: any = null;
+    if (body.paymentMethod === "bank") {
+      const bank = await activeBank(tenantId(), c);
+      if (!bank) throw new HttpError(409, "Cửa hàng chưa cấu hình nhận chuyển khoản.");
+      payment = await createIntent(c, tenantId(), "order", store.owner_id, quote.total, id, null, bank);
+    }
     for (const i of quote.items) {
       await c.execute(
         "INSERT INTO order_items(order_id,product_id,product_name,image,size,quantity,price) VALUES(?,?,?,?,?,?,?)",
@@ -278,7 +285,7 @@ export async function createOrder(
     });
     await enqueueOrderEmail(c, id, "order_confirmation");
     await c.commit();
-    return { reference, total: quote.total };
+    return { reference, total: quote.total, payment };
   } catch (e) {
     await c.rollback();
     if (

@@ -43,6 +43,8 @@ const tables = new Set([
   "order_payments",
   "order_drafts",
   "assets",
+  "store_bank_accounts",
+  "payment_intents",
 ]);
 const parser = new sqlParser.Parser();
 const condition = (table: string, id: number) => ({

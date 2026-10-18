@@ -1841,6 +1841,7 @@
   max-width: 1440px;
   margin: 0 auto;
 }
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:1000;padding:20px}.modal-card{position:relative;background:#fff;color:#171717;border-radius:20px;padding:28px;max-width:460px;width:100%;box-shadow:0 24px 80px rgba(0,0,0,.25);text-align:center}.modal-close{position:absolute;right:14px;top:10px;border:0;background:transparent;font-size:28px;cursor:pointer}.modal-card .button-row{justify-content:center;flex-wrap:wrap}
 .manual-nav {
   display: flex;
   gap: 22px;

@@ -7,6 +7,7 @@ import { Inbox, Join } from "@/components/pwa";
 import { storeBy, publicStore } from "@/lib/stores";
 import { currentUser } from "@/lib/auth";
 import { withStore } from "@/lib/tenant";
+import { activeBank } from "@/lib/sepay";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -118,7 +119,7 @@ export default async function Page({
       <Store
         data={{
           ...data,
-          store: publicStore(store),
+          store: { ...publicStore(store), bank: await activeBank(store.id) },
           features: {
             goong: !!process.env.GOONG_API_KEY,
             google:

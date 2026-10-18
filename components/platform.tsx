@@ -29,7 +29,9 @@ export default function Platform({
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState(""),
     [detail, setDetail] = useState<any>(null),
-    [mobile, setMobile] = useState(false);
+    [mobile, setMobile] = useState(false),
+    [sepay, setSepay] = useState<any>(null),
+    [sepayBusy, setSepayBusy] = useState(false);
   const data = loaded?.area === area ? loaded.data : null;
   const requestId = useRef(0);
   const activeArea = useRef(area);
@@ -236,12 +238,9 @@ export default function Platform({
               </div>
               <div className="panel">
                 <h3>Danh mục gói dịch vụ</h3>
-                {data.plans.map((p: any) => (
-                  <p key={p.id}>
-                    {p.name} · {money(p.monthly_price)} / tháng
-                  </p>
-                ))}
+                {data.plans.map((p: any) => <form className="form-grid" key={p.id} onSubmit={async e => { e.preventDefault(); const f:any=Object.fromEntries(new FormData(e.currentTarget)); try { await api("platform/plans/"+p.id,"PATCH",{name:f.name,monthly_price:Number(f.monthly_price),trial_days:Number(f.trial_days),limits:typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits}); toast("Đã cập nhật gói."); setLoaded(null); } catch(err) { toast((err as Error).message); } }}><label className="field">Tên gói<input name="name" defaultValue={p.name}/></label><label className="field">Giá / tháng<input name="monthly_price" type="number" defaultValue={p.monthly_price}/></label><label className="field">Dùng thử (ngày)<input name="trial_days" type="number" min="0" max="90" defaultValue={p.trial_days ?? 14}/></label><button className="button secondary">Lưu {p.name}</button></form>)}
               </div>
+              <div className="panel"><div className="flex-between"><h3>SePay webhook</h3><button className="button secondary" disabled={sepayBusy} onClick={async()=>{setSepayBusy(true);try{const r=await api("platform/sepay/credentials");setSepay(r)}catch(e){toast((e as Error).message)}finally{setSepayBusy(false)}}}>Kiểm tra cấu hình</button></div>{sepay && <><p className="small">Webhook URL: <code>{sepay.webhookUrl}</code></p>{sepay.configured ? <p>Đã tạo credential · API key kết thúc bằng <strong>••••{sepay.api_last4}</strong> · secret kết thúc bằng <strong>••••{sepay.secret_last4}</strong></p> : <p>Chưa có credential. Hãy tạo mới để dán vào SePay.</p>}<button className="button" disabled={sepayBusy} onClick={async()=>{setSepayBusy(true);try{const r=await api("platform/sepay/credentials","POST",{});setSepay(r);toast("Đã tạo credential SePay. Hãy copy và lưu ngay.")}catch(e){toast((e as Error).message)}finally{setSepayBusy(false)}}}>{sepay?.configured ? "Tạo lại credential" : "Tạo credential"}</button>{sepay?.webhookSecret && <div className="notice"><p><strong>Webhook secret</strong></p><input readOnly value={sepay.webhookSecret} onFocus={e=>e.currentTarget.select()}/><button className="button secondary" onClick={()=>navigator.clipboard.writeText(sepay.webhookSecret)}>Copy secret</button><p><strong>API key</strong></p><input readOnly value={sepay.apiKey} onFocus={e=>e.currentTarget.select()}/><button className="button secondary" onClick={()=>navigator.clipboard.writeText(sepay.apiKey)}>Copy API key</button><p className="small">Credential chỉ hiển thị đầy đủ một lần. Nếu tạo lại, credential cũ sẽ bị vô hiệu hóa.</p></div>}</> }</div>
             </>
           ) : area === "stores" ? (
             <>

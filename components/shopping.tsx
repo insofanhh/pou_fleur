@@ -600,6 +600,7 @@ export function Checkout({ data }: { data: Catalog }) {
   const [giftLocation, setGiftLocation] = useState<DeliveryLocation | null>(
     null,
   );
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "bank">("cod");
   const customerName = buyerName ?? user?.name ?? "";
   const customerPhone = buyerPhone ?? user?.phone ?? "";
   const receivingSelf = deliveryMode === "self";
@@ -649,7 +650,7 @@ export function Checkout({ data }: { data: Catalog }) {
         consent: f.consent === "on",
         idempotencyKey: key.current,
         expectedTotal: quote?.total,
-        paymentMethod: "cod",
+        paymentMethod,
       });
       setSuccess({ ...result, email: f.email });
       setCart([]);
@@ -675,8 +676,7 @@ export function Checkout({ data }: { data: Catalog }) {
             chọn.
           </p>
           <div className="notice">
-            Thanh toán khi nhận hoa ·{" "}
-            {money(success.total || quote?.total || 0)}
+            {success.payment ? <>Vui lòng quét mã QR để thanh toán · {money(success.total || quote?.total || 0)}<br /><img src={success.payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 220, maxWidth: "100%" }} /></> : <>Thanh toán khi nhận hoa · {money(success.total || quote?.total || 0)}</>}
             <br />
             Vui lòng lưu mã đơn để tra cứu. Cửa hàng sẽ gửi cập nhật đơn qua
             email đã cung cấp.
@@ -886,12 +886,15 @@ export function Checkout({ data }: { data: Catalog }) {
               <span>04</span> Thanh toán
             </h3>
             <label className="payment-option">
-              <input type="radio" name="payment" defaultChecked />
+              <input type="radio" name="payment" value="cod" checked={paymentMethod === "cod"} onChange={() => setPaymentMethod("cod")} />
               Thanh toán khi nhận hoa (COD)<span>Tiền mặt khi giao hàng</span>
             </label>
+            {data.store?.bank?.enabled && <label className="payment-option">
+              <input type="radio" name="payment" value="bank" checked={paymentMethod === "bank"} onChange={() => setPaymentMethod("bank")} />
+              Chuyển khoản ngân hàng<span>Quét mã QR VietQR, đơn sẽ cập nhật khi nhận tiền</span>
+            </label>}
             <p className="small">
-              Bạn chỉ thanh toán khi nhận hoa. Các phương thức thanh toán trực
-              tuyến sẽ xuất hiện khi cửa hàng kết nối nhà cung cấp.
+              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 10 phút. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : "Bạn chỉ thanh toán khi nhận hoa."}
             </p>
             <label className="check-field">
               <input name="consent" type="checkbox" />

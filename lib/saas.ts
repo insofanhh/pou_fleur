@@ -31,6 +31,7 @@ import {
 import defaults from "./email-defaults.json";
 import { changeOrder, calculate } from "./commerce";
 import { endpointHash } from "./domain-events";
+import { activeBank, createIntent, vietQrUrl } from "./sepay";
 
 const id = z.coerce.number().int().positive();
 const day = z
@@ -231,13 +232,13 @@ export async function saasAPI(
       !u?.memberships?.some((m) => m.store_id === s.id)
     )
       throw new HttpError(404, "Cửa hàng chưa mở.");
-    return publicStore(s);
+    return { ...publicStore(s), bank: await activeBank(s.id) };
   }
   if (key === "workspace/settings") {
     await storeOwner();
     const s = await storeBy(tenantId());
     if (method === "GET")
-      return { ...s, features: { goong: !!process.env.GOONG_API_KEY } };
+      return { ...s, bank: await activeBank(s.id), features: { goong: !!process.env.GOONG_API_KEY, sepay: !!process.env.SEPAY_WEBHOOK_SECRET } };
     if (method === "PATCH") {
       const v = z
         .object({
@@ -250,6 +251,7 @@ export async function saasAPI(
           radius_km: z.number().min(1).max(200),
           settings: settingsSchema,
           version: id,
+          bank: z.object({ bank_code: z.string().trim().min(2).max(40), bank_name: z.string().trim().min(2).max(120), account_number: z.string().regex(/^\d{4,30}$/), account_holder: z.string().trim().min(2).max(160), enabled: z.boolean(), sepay_enabled: z.boolean(), auto_confirm_status: z.enum(["confirmed","preparing","ready"]) }).nullable().optional(),
         })
         .parse(b);
       const r = await mutate(
@@ -269,9 +271,18 @@ export async function saasAPI(
       );
       if (!r.affectedRows)
         throw new HttpError(409, "Thông tin đã thay đổi. Hãy tải lại.");
+      if (v.bank) {
+        await mutate("INSERT INTO store_bank_accounts(store_id,bank_code,bank_name,account_number,account_holder,enabled,sepay_enabled,auto_confirm_status) VALUES(?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE bank_code=VALUES(bank_code),bank_name=VALUES(bank_name),account_number=VALUES(account_number),account_holder=VALUES(account_holder),enabled=VALUES(enabled),sepay_enabled=VALUES(sepay_enabled),auto_confirm_status=VALUES(auto_confirm_status)", [s.id,v.bank.bank_code,v.bank.bank_name,v.bank.account_number,v.bank.account_holder,v.bank.enabled?1:0,v.bank.sepay_enabled?1:0,v.bank.auto_confirm_status]);
+      }
       await storeAudit(s.owner_id, "settings", "stores", String(s.id));
       return resultOK;
     }
+  }
+  if (key === "payment-intents" && method === "GET") {
+    const code = z.string().regex(/^FLR-(ORD|SUB)-\d+-[A-Z0-9]+$/).parse(url.searchParams.get("code") || "");
+    const rows = await query<any[]>("SELECT p.*,o.reference order_reference FROM payment_intents p LEFT JOIN orders o ON o.id=p.order_id WHERE p.reference_code=?", [code]);
+    if (!rows[0]) throw new HttpError(404, "Không tìm thấy mã thanh toán.");
+    return { ...rows[0], expired: new Date(rows[0].expires_at).getTime() < Date.now() };
   }
   if (key === "workspace/submit" && method === "POST") {
     await storeOwner();
@@ -450,6 +461,36 @@ export async function saasAPI(
       String(tenantId()),
     );
     return resultOK;
+  }
+  if (key === "workspace/billing/start" && method === "POST") {
+    const owner = await storeOwner();
+    const v = z.object({ plan_id: id, trial: z.boolean().default(false) }).parse(b);
+    const sid = tenantId();
+    const c = await pool.getConnection();
+    try {
+      await c.beginTransaction();
+      const [plans]: any = await c.execute("SELECT * FROM plans WHERE id=? AND active=1", [v.plan_id]);
+      const plan = plans[0];
+      if (!plan) throw new HttpError(404, "Gói dịch vụ không tồn tại.");
+      if (v.trial) {
+        const [claimed]: any = await c.execute("SELECT store_id FROM trial_claims WHERE store_id=? FOR UPDATE", [sid]);
+        if (claimed.length) throw new HttpError(409, "Cửa hàng đã dùng ưu đãi trải nghiệm.");
+        const days = Number(plan.trial_days || 14);
+        await c.execute("INSERT INTO trial_claims(store_id,trial_days,started_at,ends_at) VALUES(?,?,NOW(),DATE_ADD(NOW(),INTERVAL ? DAY))", [sid, days, days]);
+        await c.execute("UPDATE subscriptions SET plan_id=?,status='free',trial_started_at=NOW(),trial_ends_at=DATE_ADD(NOW(),INTERVAL ? DAY),billing_anchor_day=DAY(CURDATE()),current_period_start=CURDATE(),current_period_end=DATE_ADD(CURDATE(),INTERVAL ? DAY),plan_version_id=(SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1),version=version+1 WHERE store_id=?", [v.plan_id, days, days, v.plan_id, sid]);
+        await c.commit();
+        return { ok: true, trial: true, trialDays: days };
+      }
+      const bank = await activeBank(sid, c);
+      if (!bank) throw new HttpError(409, "Cửa hàng chưa cấu hình tài khoản nhận chuyển khoản.");
+      const period = new Date().toISOString().slice(0, 7);
+      await c.execute("INSERT INTO invoices(store_id,period_key,plan_name,amount,due_date,period_start,period_end,plan_version_id) VALUES(?,?,?,?,CURDATE(),CURDATE(),LAST_DAY(CURDATE()),(SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1)) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)", [sid, period, plan.name, plan.monthly_price, v.plan_id]);
+      const [inv]: any = await c.execute("SELECT id FROM invoices WHERE store_id=? AND period_key=?", [sid, period]);
+      const payment = await createIntent(c, sid, "subscription", owner.id, Number(plan.monthly_price), null, inv[0].id, bank);
+      await c.execute("UPDATE subscriptions SET plan_id=?,status='past_due',billing_anchor_day=DAY(CURDATE()),plan_version_id=(SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1),version=version+1 WHERE store_id=?", [v.plan_id, v.plan_id, sid]);
+      await c.commit();
+      return { ok: true, invoiceId: inv[0].id, payment };
+    } catch (e) { await c.rollback(); throw e; } finally { c.release(); }
   }
   if (key === "workspace/automations" && method === "GET") {
     await requirePermission("crm");
@@ -861,6 +902,20 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
   const actor = await platformActor();
   return withSystem(async () => {
     const key = path.join("/");
+    if (key === "sepay/credentials" && method === "GET") {
+      const rows: any = await query("SELECT enabled,created_at,updated_at,RIGHT(webhook_secret,4) secret_last4,RIGHT(api_key,4) api_last4 FROM platform_integrations WHERE provider='sepay'");
+      return { webhookUrl: new URL("/api/sepay/webhook", process.env.APP_ORIGIN || url.origin).toString(), configured: !!rows[0], ...rows[0] };
+    }
+    if (key === "sepay/credentials" && method === "POST") {
+      const webhookSecret = "flr_whsec_" + randomBytes(32).toString("base64url");
+      const apiKey = "flr_sepay_" + randomBytes(32).toString("base64url");
+      await mutate("INSERT INTO platform_integrations(provider,webhook_secret,api_key,enabled,created_by) VALUES('sepay',?,?,1,?) ON DUPLICATE KEY UPDATE webhook_secret=VALUES(webhook_secret),api_key=VALUES(api_key),enabled=1,created_by=VALUES(created_by)", [webhookSecret, apiKey, actor.id]);
+      return { webhookUrl: new URL("/api/sepay/webhook", process.env.APP_ORIGIN || url.origin).toString(), webhookSecret, apiKey, warning: "Chỉ hiển thị credential đầy đủ lần này. Hãy lưu vào SePay ngay." };
+    }
+    if (key === "sepay/credentials/disable" && method === "POST") {
+      await mutate("UPDATE platform_integrations SET enabled=0 WHERE provider='sepay'");
+      return resultOK;
+    }
     if (key === "overview" && method === "GET")
       return {
         stats: (
@@ -1152,12 +1207,12 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
             staff: z.number().int().min(1).max(10000),
             storage_mb: z.number().int().min(1).max(1000000),
           }),
+          trial_days: z.number().int().min(0).max(90).default(14),
         })
         .parse(b);
-      await mutate(
-        "UPDATE plans SET name=?,monthly_price=?,limits=? WHERE id=?",
-        [v.name, v.monthly_price, JSON.stringify(v.limits), id.parse(path[1])],
-      );
+      const planId = id.parse(path[1]);
+      await mutate("UPDATE plans SET name=?,monthly_price=?,limits=?,trial_days=? WHERE id=?", [v.name, v.monthly_price, JSON.stringify(v.limits), v.trial_days, planId]);
+      await mutate("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,trial_days,effective_at,actor_id) VALUES(?,?,?,?,?,NOW(),?)", [planId,v.name,v.monthly_price,JSON.stringify(v.limits),v.trial_days,actor.id]);
       return resultOK;
     }
     if (path[0] === "users")
