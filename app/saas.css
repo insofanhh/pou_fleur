@@ -253,9 +253,22 @@
 }
 .google-login {
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: center;
   margin: 26px 0 18px;
   width: 100%;
+}
+.google-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 .button-row {
   display: flex;

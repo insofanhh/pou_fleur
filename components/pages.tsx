@@ -50,6 +50,17 @@ export function Auth({
     setError("");
     setSent(false);
   }, [mode]);
+  const googleError =
+    {
+      google_not_configured:
+        "Đăng nhập Google chưa được cấu hình. Hãy thêm GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET vào môi trường triển khai.",
+      provider_cancelled: "Bạn đã huỷ đăng nhập Google.",
+      link_required:
+        "Email đã tồn tại. Đăng nhập bằng mật khẩu rồi liên kết Google trong tài khoản.",
+      identity_conflict: "Tài khoản Google này đang liên kết với tài khoản khác.",
+      unverified: "Google chưa xác minh địa chỉ email này.",
+      expired: "Phiên đăng nhập Google đã hết hạn. Vui lòng thử lại.",
+    } as Record<string, string>;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -111,19 +122,20 @@ export function Auth({
         {!forgot && googleEnabled && (
           <a
             className="button secondary google-login"
+            aria-label={register ? "Đăng ký với Google" : "Đăng nhập với Google"}
             href={
               "/api/auth/google?next=" +
               encodeURIComponent(params.get("next") || "")
             }
           >
-            Tiếp tục với Google
+            <span className="google-mark" aria-hidden="true">G</span>
+            {register ? "Đăng ký với Google" : "Đăng nhập với Google"}
           </a>
         )}
         {params.get("error") && (
           <p className="error">
-            {params.get("error") === "link_required"
-              ? "Email đã tồn tại. Đăng nhập bằng mật khẩu rồi liên kết Google trong tài khoản."
-              : "Chưa thể đăng nhập Google. Kiểm tra cấu hình hoặc thử lại."}
+            {googleError[params.get("error") || ""] ||
+              "Chưa thể đăng nhập Google. Kiểm tra cấu hình hoặc thử lại."}
           </p>
         )}
         {sent ? (
