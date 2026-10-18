@@ -145,6 +145,8 @@ try {
   await page
     .getByLabel("Ghi chú nội bộ — khách không nhìn thấy", { exact: true })
     .fill("Chuẩn bị giấy trắng");
+  const labels = "Nhãn (phân cách bằng dấu phẩy, tối đa 6)";
+  await page.getByLabel(labels, { exact: true }).fill("Khách VIP, Giao gấp");
   await page.screenshot({
     path: ".local/manual-ui/desktop-editor.png",
     fullPage: true,
@@ -256,6 +258,9 @@ try {
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
   await expect(paymentStatus).toHaveValue("partially_paid");
+  await expect(
+    page.getByRole("button", { name: "Tạo đơn hàng", exact: true }),
+  ).toBeVisible();
   check(
     (await page
       .getByRole("button", { name: "Tạo đơn hàng", exact: true })
@@ -304,6 +309,55 @@ try {
     true,
     "Finalized draft opens order panel with deposit and internal note",
   );
+  const panel = page.getByRole("dialog");
+  const panelAssignee = panel.getByLabel("Người phụ trách", { exact: true });
+  await expect(panelAssignee).toBeEnabled();
+  await expect(panelAssignee).toHaveValue(otherAssignee);
+  check(
+    await panelAssignee
+      .locator("option:checked")
+      .innerText()
+      .then((name) => name.trim().length > 0 && !/^\d+$/.test(name.trim())),
+    "Order details show the assignee name selected in the manual editor",
+  );
+  await expect(panel.getByLabel(labels, { exact: true })).toHaveValue(
+    "Khách VIP, Giao gấp",
+  );
+  check(true, "Labels entered in Internal store are shown in order assignment");
+  await panelAssignee.selectOption(String(signedIn.user.id));
+  await panel.getByLabel(labels, { exact: true }).fill("Khách VIP, Sinh nhật");
+  await panel
+    .getByRole("button", { name: "Lưu phân công", exact: true })
+    .click();
+  await expect(panel).toHaveCount(0);
+  const [[savedAssignment]] = await db.execute(
+    "SELECT assigned_to,tags FROM orders WHERE id=?",
+    [createdId],
+  );
+  const savedTags =
+    typeof savedAssignment.tags === "string"
+      ? JSON.parse(savedAssignment.tags)
+      : savedAssignment.tags;
+  check(
+    savedAssignment.assigned_to === signedIn.user.id &&
+      savedTags.join(", ") === "Khách VIP, Sinh nhật",
+    "Selecting an assignee by name and editing labels updates the same stored order",
+  );
+  await page.reload();
+  await expect(panel).toBeVisible();
+  await expect(panelAssignee).toHaveValue(String(signedIn.user.id));
+  await expect(panel.getByLabel(labels, { exact: true })).toHaveValue(
+    "Khách VIP, Sinh nhật",
+  );
+  check(
+    true,
+    "Reopening order details shows the latest saved assignee and labels",
+  );
+  await panelAssignee.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: ".local/manual-ui/assignment-panel.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Đóng", exact: true }).click();
   await page
     .getByLabel("Nguồn tạo đơn", { exact: true })

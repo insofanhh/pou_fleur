@@ -1198,7 +1198,7 @@ export default function ManualOrderEditor() {
                         </select>
                       </Field>
                     </div>
-                    <Field label="Tags (phân cách bằng dấu phẩy, tối đa 6)">
+                    <Field label="Nhãn (phân cách bằng dấu phẩy, tối đa 6)">
                       <input
                         value={form.tags.join(",")}
                         onChange={(e) =>

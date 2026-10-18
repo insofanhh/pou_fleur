@@ -623,16 +623,34 @@ export async function saasAPI(
           [orderId],
         ),
       };
-    if (path[3] === "assignment" && method === "PATCH") {
+    if (path[3] === "assignment" && ["GET", "PATCH"].includes(method)) {
+      const [order] = await query<any[]>(
+        "SELECT o.assigned_to,o.tags,o.version,u.name assigned_name FROM orders o LEFT JOIN users u ON u.id=o.assigned_to WHERE o.id=?",
+        [orderId],
+      );
+      if (!order) throw new HttpError(404, "Không tìm thấy đơn.");
+      if (method === "GET")
+        return {
+          ...order,
+          staff: await query(
+            "SELECT m.user_id id,u.name FROM store_memberships m JOIN users u ON u.id=m.user_id WHERE m.store_id=? AND m.status='active' AND u.active=1 ORDER BY u.name,m.user_id",
+            [tenantId()],
+          ),
+        };
       const assignee = b.assigned_to === null ? null : id.parse(b.assigned_to);
-      if (assignee) {
+      // An existing inactive assignee may be kept while editing labels, but
+      // assigning someone new requires an active account in this store.
+      if (assignee && assignee !== order.assigned_to) {
         const [m] = await query<any[]>(
-          "SELECT user_id FROM store_memberships WHERE store_id=? AND user_id=? AND status='active'",
+          "SELECT m.user_id FROM store_memberships m JOIN users u ON u.id=m.user_id WHERE m.store_id=? AND m.user_id=? AND m.status='active' AND u.active=1",
           [tenantId(), assignee],
         );
         if (!m) throw new HttpError(400, "Nhân sự không thuộc cửa hàng.");
       }
-      const tags = z.array(z.string().max(30)).max(6).parse(b.tags);
+      const tags = z
+        .array(z.string().trim().min(1).max(30))
+        .max(6)
+        .parse(b.tags);
       const r = await mutate(
         "UPDATE orders SET assigned_to=?,tags=?,version=version+1 WHERE id=? AND version=?",
         [assignee, JSON.stringify(tags), orderId, id.parse(b.version)],

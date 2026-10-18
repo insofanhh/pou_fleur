@@ -549,6 +549,130 @@ try {
     400,
   );
   check(true, "Invalid assignee cannot be attached to the store order");
+  const assignmentPath = "workspace/orders/" + reassigned.id + "/assignment";
+  const assignmentInfo = await owner(assignmentPath, "GET", undefined, sid);
+  check(
+    assignmentInfo.assigned_to === sm.user.id &&
+      assignmentInfo.assigned_name &&
+      assignmentInfo.staff.length === 2 &&
+      assignmentInfo.staff.every((s) =>
+        [me.user.id, sm.user.id].includes(s.id),
+      ),
+    "Assignment details resolve the saved member name and list only current-store staff",
+  );
+  await owner(assignmentPath, "GET", undefined, 1, 404);
+  check(true, "Assignment details cannot be read through a different store");
+  await owner(
+    assignmentPath,
+    "PATCH",
+    { assigned_to: 999999, tags: [], version: assignmentInfo.version },
+    sid,
+    400,
+  );
+  await owner(
+    assignmentPath,
+    "PATCH",
+    {
+      assigned_to: sm.user.id,
+      tags: ["x".repeat(31)],
+      version: assignmentInfo.version,
+    },
+    sid,
+    400,
+  );
+  await owner(
+    assignmentPath,
+    "PATCH",
+    {
+      assigned_to: sm.user.id,
+      tags: Array(7).fill("Nhãn"),
+      version: assignmentInfo.version,
+    },
+    sid,
+    400,
+  );
+  check(true, "Assignment edits validate staff membership and label limits");
+  await owner(
+    assignmentPath,
+    "PATCH",
+    {
+      assigned_to: me.user.id,
+      tags: [" Khách VIP ", "Giao gấp"],
+      version: assignmentInfo.version,
+    },
+    sid,
+  );
+  const changedAssignment = await owner(assignmentPath, "GET", undefined, sid);
+  check(
+    changedAssignment.assigned_to === me.user.id &&
+      (typeof changedAssignment.tags === "string"
+        ? JSON.parse(changedAssignment.tags)
+        : changedAssignment.tags
+      ).join(",") === "Khách VIP,Giao gấp",
+    "Assignment edit saves the selected member and normalized labels on the order",
+  );
+  await owner(
+    assignmentPath,
+    "PATCH",
+    { assigned_to: null, tags: [], version: assignmentInfo.version },
+    sid,
+    409,
+  );
+  await owner(
+    assignmentPath,
+    "PATCH",
+    { assigned_to: sm.user.id, tags: [], version: changedAssignment.version },
+    sid,
+  );
+  await db.execute(
+    "UPDATE store_memberships SET status='inactive' WHERE store_id=? AND user_id=?",
+    [sid, sm.user.id],
+  );
+  try {
+    const inactive = await owner(assignmentPath, "GET", undefined, sid);
+    check(
+      inactive.assigned_name &&
+        inactive.assigned_to === sm.user.id &&
+        !inactive.staff.some((s) => s.id === sm.user.id),
+      "Inactive saved assignee retains a name but is excluded from active choices",
+    );
+    await owner(
+      assignmentPath,
+      "PATCH",
+      {
+        assigned_to: sm.user.id,
+        tags: ["Theo dõi"],
+        version: inactive.version,
+      },
+      sid,
+    );
+    const unassignedInfo = await owner(
+      "workspace/orders/" + unassigned.id + "/assignment",
+      "GET",
+      undefined,
+      sid,
+    );
+    await owner(
+      "workspace/orders/" + unassigned.id + "/assignment",
+      "PATCH",
+      {
+        assigned_to: sm.user.id,
+        tags: [],
+        version: unassignedInfo.version,
+      },
+      sid,
+      400,
+    );
+    check(
+      true,
+      "Labels may retain an inactive assignee while new inactive assignments are rejected",
+    );
+  } finally {
+    await db.execute(
+      "UPDATE store_memberships SET status='active' WHERE store_id=? AND user_id=?",
+      [sid, sm.user.id],
+    );
+  }
   await owner(
     "workspace/manual-orders/quote",
     "POST",

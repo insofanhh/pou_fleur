@@ -412,6 +412,11 @@ function OrderPanel({
 }) {
   const { data } = useLoad("workspace/orders/" + o.id + "/timeline"),
     { user, toast } = useShop();
+  const {
+    data: assignment,
+    error: assignmentError,
+    refresh: reloadAssignment,
+  } = useLoad("workspace/orders/" + o.id + "/assignment");
   const [paymentError, setPaymentError] = useState(""),
     [busy, setBusy] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -573,6 +578,9 @@ function OrderPanel({
           className="panel"
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!assignment || busy) return;
+            setBusy(true);
+            setPaymentError("");
             try {
               const f = Object.fromEntries(new FormData(e.currentTarget));
               await api("workspace/orders/" + o.id + "/assignment", "PATCH", {
@@ -581,37 +589,80 @@ function OrderPanel({
                   .split(",")
                   .map((x) => x.trim())
                   .filter(Boolean),
-                version: o.version,
+                version: assignment.version,
               });
               await refresh();
               close();
               toast("Đã lưu người phụ trách và nhãn.");
             } catch (e) {
               setPaymentError((e as Error).message);
+            } finally {
+              setBusy(false);
             }
           }}
         >
           <h3>Phân công & nhãn</h3>
-          <label className="field">
-            ID nhân sự phụ trách
-            <input
-              name="assigned_to"
-              type="number"
-              min="1"
-              defaultValue={o.assigned_to || ""}
-            />
-          </label>
-          <label className="field">
-            Nhãn, ngăn cách bằng dấu phẩy
-            <input
-              name="tags"
-              defaultValue={(typeof o.tags === "string"
-                ? JSON.parse(o.tags)
-                : o.tags || []
-              ).join(", ")}
-            />
-          </label>
-          <button className="button secondary">Lưu phân công</button>
+          {!assignment && !assignmentError && (
+            <p className="small" role="status">
+              Đang tải phân công…
+            </p>
+          )}
+          {assignmentError && (
+            <p className="error" role="alert">
+              {assignmentError}{" "}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void reloadAssignment()}
+              >
+                Thử lại
+              </button>
+            </p>
+          )}
+          <fieldset
+            className="manual-fieldset"
+            disabled={!assignment || busy}
+            key={assignment?.version ?? "loading"}
+          >
+            <label className="field">
+              Người phụ trách
+              <select
+                name="assigned_to"
+                aria-label="Người phụ trách"
+                defaultValue={assignment?.assigned_to || ""}
+              >
+                <option value="">Chưa phân công</option>
+                {assignment?.assigned_to &&
+                  !assignment.staff.some(
+                    (s: any) => s.id === assignment.assigned_to,
+                  ) && (
+                    <option value={assignment.assigned_to}>
+                      {assignment.assigned_name || "Nhân sự đã ngừng hoạt động"}{" "}
+                      (không còn hoạt động)
+                    </option>
+                  )}
+                {assignment?.staff.map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Nhãn (phân cách bằng dấu phẩy, tối đa 6)
+              <input
+                name="tags"
+                defaultValue={(typeof assignment?.tags === "string"
+                  ? JSON.parse(assignment.tags)
+                  : assignment?.tags || []
+                ).join(", ")}
+              />
+            </label>
+            <p className="small">Mỗi nhãn tối đa 30 ký tự.</p>
+            <button className="button secondary">
+              {busy ? "Đang lưu…" : "Lưu phân công"}
+            </button>
+          </fieldset>
         </form>
         {user?.role === "owner" && (
           <form
