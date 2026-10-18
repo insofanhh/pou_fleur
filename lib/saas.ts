@@ -445,7 +445,7 @@ export async function saasAPI(
     return {
       subscription: (
         await query<any[]>(
-          "SELECT s.*,p.name,p.limits,p.monthly_price FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.store_id=?",
+          "SELECT s.*,p.name,p.limits,p.monthly_price,COALESCE(s.trial_ends_at,s.current_period_end,s.period_end) expires_at,CASE WHEN COALESCE(s.trial_ends_at,s.current_period_end,s.period_end) IS NULL THEN NULL ELSE GREATEST(0,DATEDIFF(DATE(COALESCE(s.trial_ends_at,s.current_period_end,s.period_end)),CURDATE())) END days_remaining FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.store_id=?",
           [tenantId()],
         )
       )[0],

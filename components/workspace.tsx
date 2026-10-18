@@ -1857,6 +1857,12 @@ const billingLimitMeta: Record<string, { label: string; unit: string; descriptio
 function billingLimits(value: any) {
   return typeof value === "string" ? JSON.parse(value) : value || {};
 }
+function billingRemainingLabel(subscription: any) {
+  if (!subscription.expires_at || subscription.days_remaining === null || subscription.days_remaining === undefined)
+    return "Không giới hạn";
+  const days = Number(subscription.days_remaining);
+  return days <= 0 ? "Hết hạn hôm nay" : `Còn ${days} ngày sử dụng`;
+}
 function BillingCards() {
   const { data, error, refresh } = useLoad("workspace/billing"),
     { toast } = useShop();
@@ -1880,7 +1886,7 @@ function BillingCards() {
   return <div className="billing-page">
     <section className="billing-current panel">
       <div className="billing-current-heading"><div><span className="eyebrow">GÓI ĐANG SỬ DỤNG</span><h2>{data.subscription.name}</h2><p>{money(Number(data.subscription.monthly_price))} / tháng · {displayLabel("subscription", data.subscription.status)}</p></div><span className="tag">{data.subscription.cancel_at_period_end ? "Sắp dừng gia hạn" : "Đang hoạt động"}</span></div>
-      <p className="small">Kết thúc kỳ: {data.subscription.period_end || "Không giới hạn với gói miễn phí"}</p>
+      <p className="small billing-period">{data.subscription.expires_at ? <>Kết thúc kỳ: {data.subscription.expires_at} · <strong>{billingRemainingLabel(data.subscription)}</strong></> : billingRemainingLabel(data.subscription)}</p>
       <div className="billing-usage-grid">{usageRows.map((row) => { const meta = billingLimitMeta[row.key]; return <div className="billing-usage-card" key={row.key}><div className="flex-between"><strong>{meta.label}</strong><span>{row.used.toLocaleString("vi-VN")} / {row.limit.toLocaleString("vi-VN")} {meta.unit}</span></div><div className="usage-track"><span style={{ width: row.percent + "%" }} /></div><small>{meta.description} · đã dùng {row.percent}%</small></div>; })}</div>
       <div className="button-row"><button className="button secondary" onClick={async () => { try { await api("workspace/billing/cancel", "POST", { cancel: !data.subscription.cancel_at_period_end }); await refresh(); } catch (e) { toast((e as Error).message); } }}>{data.subscription.cancel_at_period_end ? "Tiếp tục gia hạn" : "Ngừng gia hạn cuối kỳ"}</button></div>
     </section>
