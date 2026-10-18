@@ -41,7 +41,7 @@ export async function adminNotifications() {
               title: source.title,
               detail: row.detail,
               createdAt: Number(row.createdAt),
-              href: `/admin/${source.area}`,
+              href: `/admin/${source.area === "users" ? "crm" : source.area}`,
             }) satisfies AdminNotification,
         );
       }),
