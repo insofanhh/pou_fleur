@@ -383,6 +383,7 @@ export function StartStore() {
         </Link>
       ) : (
         <form
+          aria-busy={busy}
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);
@@ -435,7 +436,8 @@ export function StartStore() {
           </label>
           {error && <p className="error">{error}</p>}
           <button className="button" disabled={busy}>
-            {busy ? "Đang tạo…" : "Tạo cửa hàng"}
+            {busy && <span className="button-spinner" aria-hidden="true" />}
+            {busy ? "Đang tạo cửa hàng…" : "Tạo cửa hàng"}
           </button>
         </form>
       )}
