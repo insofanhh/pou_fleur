@@ -4,6 +4,8 @@ Next.js App Router, React, TypeScript và MySQL/TiDB. Một marketplace, nhiều
 
 Hướng dẫn cài mới, migration, Google/Goong/PWA và phát hành: [docs/SAAS-SETUP.md](docs/SAAS-SETUP.md). Phạm vi và kết quả kiểm thử: [docs/SAAS-VERIFICATION.md](docs/SAAS-VERIFICATION.md).
 
+Quản trị tài khoản, khóa/xóa mềm/khôi phục và truy cập hỗ trợ Ghost: [docs/PLATFORM-USERS.md](docs/PLATFORM-USERS.md).
+
 - `/`: khám phá cửa hàng theo vị trí nhận hoa.
 - `/s/fleur`: cửa hàng Fleur được chuyển từ dữ liệu cũ; `/s/{slug}` cho các store khác.
 - `/workspace/{id}`: quản lý store theo membership. `/admin` giữ tương thích store Fleur.

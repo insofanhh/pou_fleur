@@ -34,6 +34,17 @@ export async function migrateSaaS(c) {
   await c.query(
     `CREATE TABLE IF NOT EXISTS platform_memberships(user_id INT PRIMARY KEY,role VARCHAR(40) NOT NULL DEFAULT 'platform_admin')`,
   );
+  await c.query(`CREATE TABLE IF NOT EXISTS platform_user_states(
+    user_id INT PRIMARY KEY,version INT NOT NULL DEFAULT 1,deleted_at DATETIME NULL)`);
+  await c.query(`CREATE TABLE IF NOT EXISTS platform_audit_logs(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,actor_id INT NOT NULL,target_id INT NULL,
+    action VARCHAR(100) NOT NULL,metadata JSON NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX target_audit(target_id,id))`);
+  await c.query(`CREATE TABLE IF NOT EXISTS ghost_sessions(
+    token_hash CHAR(64) PRIMARY KEY,admin_session_hash CHAR(64) NOT NULL,actor_id INT NOT NULL,
+    target_id INT NOT NULL,reason VARCHAR(500) NOT NULL,expires_at DATETIME NOT NULL,
+    ended_at DATETIME NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX ghost_admin_session(admin_session_hash),INDEX ghost_target(target_id))`);
   await c.query(
     `CREATE TABLE IF NOT EXISTS auth_identities(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NULL,provider VARCHAR(40) NOT NULL,subject VARCHAR(190) NOT NULL,UNIQUE KEY identity_subject(provider,subject))`,
   );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
+import PlatformUsers from "./platform-users";
 import {
   Menu,
   Store,
@@ -62,6 +63,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     [filter, setFilter] = useState(""),
     [detail, setDetail] = useState<any>(null),
     [mobile, setMobile] = useState(false);
+  const [usersRefresh, setUsersRefresh] = useState(0);
   const merchantDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = merchantDialog.current;
@@ -82,6 +84,10 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     };
   }, [detail?.store.id]);
   async function refresh() {
+    if (area === "users") {
+      setUsersRefresh((v) => v + 1);
+      return;
+    }
     try {
       setData(await api("platform/" + area));
       setError("");
@@ -183,7 +189,9 @@ export default function Platform({ area = "overview" }: { area?: string }) {
               Làm mới
             </button>
           </div>
-          {error ? (
+          {area === "users" ? (
+            <PlatformUsers refreshKey={usersRefresh} />
+          ) : error ? (
             <p className="error">{error}</p>
           ) : !data ? (
             <p>Đang tải dữ liệu…</p>
@@ -445,41 +453,6 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                 </table>
               </div>
             </>
-          ) : area === "users" ? (
-            <div className="panel table-scroll">
-              <input
-                aria-label="Tìm tài khoản"
-                placeholder="Tìm tên hoặc email…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <table>
-                <thead>
-                  <tr>
-                    <th>Tên</th>
-                    <th>Email</th>
-                    <th>Trạng thái</th>
-                    <th>Ngày tạo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data
-                    .filter((u: any) =>
-                      JSON.stringify(u)
-                        .toLowerCase()
-                        .includes(search.toLowerCase()),
-                    )
-                    .map((u: any) => (
-                      <tr key={u.id}>
-                        <td>{u.name}</td>
-                        <td>{u.email}</td>
-                        <td>{u.active ? "Hoạt động" : "Khóa"}</td>
-                        <td>{u.created_at}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
           ) : (
             <div className="dashboard-grid">
               {["google", "goong", "push", "smtp"].map((k) => (

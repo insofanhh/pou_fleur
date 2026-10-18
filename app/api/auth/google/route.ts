@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
   const origin = process.env.APP_ORIGIN || req.nextUrl.origin;
   const callback = origin + "/api/auth/google";
   const jar = await cookies();
+  if (jar.get("fleur_ghost")?.value)
+    return NextResponse.redirect(
+      new URL("/account?error=ghost_identity_blocked", origin),
+    );
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET)
     return NextResponse.redirect(
       new URL("/login?error=google_not_configured", origin),

@@ -57,6 +57,8 @@ export async function membership(area?: string) {
 export async function platformActor() {
   const user = await currentUser();
   if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
+  if (user.platformRole !== "platform_admin")
+    throw new HttpError(403, "Chỉ quản trị nền tảng được thực hiện.");
   const [m] = await query<any[]>(
     "SELECT role FROM platform_memberships WHERE user_id=?",
     [user.id],

@@ -23,6 +23,8 @@ import {
   throttle,
   digest,
   permissions,
+  ghostContext,
+  guardGhostAction,
 } from "@/lib/auth";
 import {
   calculate,
@@ -57,6 +59,7 @@ async function handle(
         throw new HttpError(400, "Dữ liệu không hợp lệ.");
       }
     }
+    await guardGhostAction(key, method);
     let result: unknown = await saasAPI(
       path,
       method,
@@ -77,7 +80,15 @@ async function handle(
     if (key === "catalog/products" && method === "GET")
       result = await publicProducts();
     else if (key === "auth/me" && method === "GET")
-      result = { user: await currentUser(), permissions };
+      result = {
+        user: await currentUser(),
+        permissions,
+        ghost:
+          (await ghostContext()) ||
+          ((await cookies()).get("fleur_ghost")?.value
+            ? { valid: false, targetName: "người dùng" }
+            : null),
+      };
     else if (key === "auth/forgot-password" && method === "POST") {
       const email = z.email().toLowerCase().parse(body.email);
       await requestPasswordReset(email);
@@ -129,7 +140,7 @@ async function handle(
       result = { user: await currentUser() };
     } else if (key === "auth/logout" && method === "POST") {
       const user = await currentUser();
-      if (user)
+      if (user && !(await cookies()).get("fleur_ghost")?.value)
         await mutate("DELETE FROM push_subscriptions WHERE user_id=?", [
           user.id,
         ]);

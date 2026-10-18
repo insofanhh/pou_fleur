@@ -694,6 +694,130 @@
   font-size: 11px;
   margin-top: 8px;
 }
+.platform-users-toolbar .search-field {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+}
+.platform-users-toolbar .search-field:focus-within {
+  border-color: #222;
+}
+.platform-users-toolbar .search-field input {
+  border: 0;
+  padding: 13px 0;
+  background: transparent;
+}
+.platform-users-toolbar > .button {
+  margin-left: auto;
+}
+.platform-users-list {
+  min-width: 0;
+}
+.platform-users-count {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #777;
+}
+.platform-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.platform-user-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.platform-user-dialog {
+  width: 720px;
+  margin: auto;
+  background: white;
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.platform-user-dialog p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #777;
+  overflow-wrap: anywhere;
+  margin: 12px 0 22px;
+}
+.platform-user-dialog h3 {
+  margin: 22px 0 14px;
+}
+.platform-user-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.platform-user-fields > .field {
+  min-width: 0;
+}
+.platform-user-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.platform-user-check input {
+  accent-color: #222;
+}
+.platform-user-audit {
+  max-height: 250px;
+  overflow: auto;
+  border-top: 1px solid #eee;
+}
+.ghost-banner {
+  position: fixed;
+  z-index: 200;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(900px, calc(100% - 32px));
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  color: white;
+  background: #202123;
+  border-radius: 14px;
+  box-shadow: 0 8px 40px #0003;
+  font-size: 13px;
+}
+.ghost-banner p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #ccc;
+}
+.ghost-banner .button {
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .platform-users-toolbar .search-field {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .platform-users-toolbar > .button {
+    margin-left: 0;
+  }
+  .platform-user-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ghost-banner {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px;
+    gap: 12px;
+  }
+}
 .platform-shell td form {
   min-width: 180px;
   display: grid;

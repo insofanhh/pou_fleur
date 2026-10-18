@@ -49,6 +49,7 @@ Ngày: 18/10/2026. Branch triển khai: `codex/saas-platform`.
 | Email | 21 kiểm tra renderer/MIME/transaction/concurrency/consent/suppression/retry đạt bằng transport giả; không gửi thư thật |
 | Dependency audit | `npm audit --omit=dev`: 0 lỗ hổng |
 | Admin được chỉ định | Đăng nhập và truy cập API console local thành công cho `adminfleur@platform.com` |
+| Quản trị tài khoản và Ghost | 31 assertions API đạt; UI tạo/sửa/khóa/xóa mềm/khôi phục, lịch sử, Ghost/quay lại admin và bố cục 360px/390px đạt; hướng dẫn tại [PLATFORM-USERS.md](PLATFORM-USERS.md) |
 
 Lần kiểm tra UI đầu phát hiện bài test đếm số ngày ngay sau click trước khi React cập nhật. Đã đổi sang assertion chờ đủ bảy ô ngày; UI và suite tích hợp được chạy lại. Không thêm sleep cố định để che lỗi.
 
@@ -60,11 +61,11 @@ Các kết quả trên không thay thế kiểm thử tải hoặc đo latency p
 
 Database cũ `fleur_store` trên cổng 3306 đã được backup, restore vào database riêng trên cổng 3310 và đối chiếu fingerprint trước migration. Sau migration, đối chiếu lại dữ liệu nguồn và chạy migration lần hai thành công.
 
-- Backup local: `.local/backups/fleur_store-1792297361778.sql`.
-- Database restore drill: `fleur_restore_1792297361778`.
-- Fingerprint dữ liệu cũ: `112dc12f4a1d733a7c1eaf503b6d61e253da468517e02c48a00bc3bea41c1c6c`.
+- Backup local gần nhất, trước migration quản trị tài khoản/Ghost: `.local/backups/fleur_store-1792299009492.sql`.
+- Database restore drill: `fleur_restore_1792299009492`.
+- Fingerprint dữ liệu nghiệp vụ gần nhất: `2f83cbe624ae98a6fe4ec3a7dab753d87f1d8db3afa54ef98bda28414c758d00`.
 - Báo cáo: `.local/migration-report.json`, `restoreVerified`, `migrationRerunVerified`, `sourceVerified` đều `true`.
-- Tài khoản platform được tạo sau lần đối chiếu này nên số users local hiện tăng thêm một; không phải sai lệch dữ liệu cũ.
+- Fingerprint gần nhất đã bao gồm tài khoản platform tạo trong đợt SaaS trước; không thay đổi dữ liệu user/đơn trong migration Ghost.
 
 Tài khoản platform local là `adminfleur@platform.com`. Mật khẩu ngẫu nhiên lưu tại `.local/platform-admin-credentials.txt`, không in log/chat và không commit. Chưa tạo tài khoản đó trên TiDB production.
 

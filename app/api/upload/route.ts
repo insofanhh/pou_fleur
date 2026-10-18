@@ -6,7 +6,7 @@ import { put } from "@vercel/blob";
 import { productBlobAuth } from "@/lib/product-blob";
 import { uploadFailure } from "@/lib/upload-errors";
 import { MAX_IMAGE_BYTES } from "@/lib/product-images";
-import { requirePermission, HttpError } from "@/lib/auth";
+import { requirePermission, HttpError, guardGhostAction } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -20,6 +20,7 @@ async function upload(req: NextRequest) {
     )
       throw new HttpError(403, "Nguồn yêu cầu không hợp lệ.");
     await requirePermission("products");
+    await guardGhostAction("upload", "POST");
     if (
       Number(req.headers.get("content-length") || 0) >
       MAX_IMAGE_BYTES + 100000

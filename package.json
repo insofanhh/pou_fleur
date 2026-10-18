@@ -24,7 +24,9 @@
     "test:tenant": "tsx scripts/test-tenant.ts",
     "test:saas": "node scripts/test-saas.mjs",
     "test:saas:ui": "node scripts/test-saas-ui.mjs",
-    "test:integration": "node scripts/test-saas.mjs && tsx scripts/test-tenant-db.ts && tsx scripts/test-saas-events.ts && node scripts/test-saas-ui.mjs"
+    "test:platform-users": "node scripts/test-platform-users.mjs",
+    "test:platform-users:ui": "node scripts/test-platform-users-ui.mjs",
+    "test:integration": "node scripts/test-saas.mjs && tsx scripts/test-tenant-db.ts && tsx scripts/test-saas-events.ts && node scripts/test-platform-users.mjs && node scripts/test-saas-ui.mjs && node scripts/test-platform-users-ui.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

@@ -1,6 +1,7 @@
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
 import { broadcast } from "./broadcasts";
+import { platformUsers, stopGhost } from "./platform-users";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { query, mutate, pool } from "./db";
@@ -98,6 +99,8 @@ export async function saasAPI(
   fingerprint = "local",
 ): Promise<any | undefined> {
   const key = path.join("/");
+  if (key === "auth/ghost/stop" && method === "POST")
+    return withSystem(stopGhost);
   if (key === "workspace/broadcasts" && method === "POST") return broadcast(b);
   if (key === "workspace/order-list" && method === "GET") return orderList(url);
   if (key === "stores/cart-info" && method === "GET") {
@@ -1156,10 +1159,8 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       );
       return resultOK;
     }
-    if (key === "users" && method === "GET")
-      return query(
-        "SELECT id,name,email,active,created_at FROM users ORDER BY id DESC LIMIT 500",
-      );
+    if (path[0] === "users")
+      return platformUsers(path.slice(1), method, b, url, actor);
     if (key === "health" && method === "GET")
       return {
         jobs: await query(
