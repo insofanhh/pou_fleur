@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
@@ -17,6 +17,7 @@ import {
   Settings,
   ArrowUpRight,
   Ghost,
+  LogOut,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 
@@ -36,7 +37,8 @@ export default function Platform({
   area?: string;
 }) {
   const area = usePathname().split("/")[2] || initialArea;
-  const { user, ready, toast } = useShop(),
+  const router = useRouter();
+  const { user, setUser, ready, toast } = useShop(),
     [loaded, setLoaded] = useState<{ area: string; data: any } | null>(null),
     [error, setError] = useState(""),
     [search, setSearch] = useState(""),
@@ -173,12 +175,24 @@ export default function Platform({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <p>
-            {user.name}
-            <br />
-            <small>admin@platform</small>
-          </p>
-          <Link href="/account">Tài khoản của tôi</Link>
+          <div className="admin-user">
+            <span className="avatar">{user.name.charAt(0)}</span>
+            <div>
+              <strong>{user.name}</strong>
+              <small>Quản trị nền tảng</small>
+            </div>
+            <button
+              aria-label="Đăng xuất"
+              className="icon-button"
+              onClick={async () => {
+                await api("auth/logout", "POST", {});
+                setUser(null);
+                router.push("/login");
+              }}
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
         </div>
       </aside>
       <div className="admin-main">
