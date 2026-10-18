@@ -417,6 +417,83 @@ try {
       adjustmentReason: "Ưu đãi khách quen",
     }),
   );
+  const optionalReason = input({
+    customerId: details.customer_id,
+    discountType: "amount",
+    discountValue: 10000,
+    shipping: 20000,
+    adjustmentReason: "   ",
+    collectMethod: "bank",
+    paymentReference: "   ",
+  });
+  const optionalQuote = await quote(optionalReason);
+  const optionalPayload = {
+    ...optionalReason,
+    collectAmount: optionalQuote.total,
+    quoteToken: optionalQuote.token,
+    idempotencyKey: randomUUID(),
+  };
+  const automaticBank = await owner(
+    "workspace/manual-orders",
+    "POST",
+    optionalPayload,
+    sid,
+  );
+  const sameBank = await owner(
+    "workspace/manual-orders",
+    "POST",
+    optionalPayload,
+    sid,
+  );
+  const [[automaticReceipt]] = await db.query(
+    "SELECT o.reference,o.adjustment,o.payment_status,p.reference receipt,p.method,p.amount FROM orders o JOIN order_payments p ON p.order_id=o.id WHERE o.id=?",
+    [automaticBank.id],
+  );
+  const optionalAdjustment =
+    typeof automaticReceipt.adjustment === "string"
+      ? JSON.parse(automaticReceipt.adjustment)
+      : automaticReceipt.adjustment;
+  check(
+    optionalQuote.total === optionalQuote.subtotal - 10000 + 20000 &&
+      optionalAdjustment.reason === "",
+    "Discount and shipping override can be quoted and saved with an empty reason",
+  );
+  check(
+    automaticReceipt.receipt === "BANK-" + automaticReceipt.reference &&
+      automaticReceipt.method === "bank" &&
+      Number(automaticReceipt.amount) === optionalQuote.total &&
+      automaticReceipt.payment_status === "paid" &&
+      sameBank.id === automaticBank.id,
+    "Blank bank reference generates an internal receipt and retries reuse the order",
+  );
+  const shortReason = await quote(
+    input({
+      discountType: "percent",
+      discountValue: 10,
+      adjustmentReason: "VIP",
+    }),
+  );
+  check(
+    shortReason.discount === Math.round(shortReason.subtotal * 0.1),
+    "Optional reason accepts short notes",
+  );
+  const suppliedReference = "BANK-EXTERNAL-" + randomUUID();
+  const suppliedBank = await create(
+    input({
+      customerId: details.customer_id,
+      collectAmount: 1000,
+      collectMethod: "bank",
+      paymentReference: suppliedReference,
+    }),
+  );
+  const [[suppliedReceipt]] = await db.query(
+    "SELECT reference FROM order_payments WHERE order_id=?",
+    [suppliedBank.id],
+  );
+  check(
+    suppliedReceipt.reference === suppliedReference,
+    "A supplied bank reference is preserved",
+  );
   await owner(
     "workspace/manual-orders/quote",
     "POST",
@@ -550,13 +627,17 @@ try {
     consent.marketing_consent === 0,
     "Manual order never grants marketing consent",
   );
-  // A bank-reference failure occurs after inserts: verify the entire transaction rolls back.
+  // An invalid supplied reference still fails after inserts and rolls everything back.
   const before = await db.query(
     "SELECT COUNT(*) n FROM orders WHERE store_id=?",
     [sid],
   );
   await create(
-    input({ collectAmount: 1000, collectMethod: "bank" }),
+    input({
+      collectAmount: 1000,
+      collectMethod: "bank",
+      paymentReference: "abc",
+    }),
     owner,
     {},
     400,

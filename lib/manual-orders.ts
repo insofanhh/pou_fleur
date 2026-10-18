@@ -152,11 +152,8 @@ async function quote(c: PoolConnection, b: Input, actor: Actor, lock = false) {
     throw new HttpError(400, "Chỉ chọn mã ưu đãi hoặc giảm giá thủ công.");
   const totals = await calculateTotals(c, items, b.code, lock);
   if (b.discountType !== "none") {
-    if (
-      b.adjustmentReason.length < 5 ||
-      (b.discountType === "percent" && b.discountValue > 100)
-    )
-      throw new HttpError(400, "Giảm giá cần lý do và giá trị hợp lệ.");
+    if (b.discountType === "percent" && b.discountValue > 100)
+      throw new HttpError(400, "Phần trăm giảm giá không được vượt 100%.");
     totals.discount = Math.min(
       totals.subtotal,
       b.discountType === "percent"
@@ -165,8 +162,6 @@ async function quote(c: PoolConnection, b: Input, actor: Actor, lock = false) {
     );
   }
   if (b.shipping !== undefined) {
-    if (b.adjustmentReason.length < 5)
-      throw new HttpError(400, "Sửa phí giao cần lý do từ 5 ký tự.");
     totals.shipping = b.shipping;
   }
   totals.total = totals.subtotal - totals.discount + totals.shipping;
@@ -398,15 +393,11 @@ async function finalize(raw: any, actor: Actor) {
         kind: "collect",
         amount: b.collectAmount,
         method: b.collectMethod,
-        reference: b.paymentReference || "CASH-" + reference,
+        reference:
+          b.paymentReference ||
+          (b.collectMethod === "bank" ? "BANK-" : "CASH-") + reference,
         receivedAt: b.receivedAt,
       });
-    if (
-      b.collectAmount &&
-      b.collectMethod === "bank" &&
-      b.paymentReference.length < 5
-    )
-      throw new HttpError(400, "Nhập mã tham chiếu chuyển khoản từ 5 ký tự.");
     await c.execute(
       "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
       [orderId, actor.id, b.initialStatus],

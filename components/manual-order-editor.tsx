@@ -1044,7 +1044,7 @@ export default function ManualOrderEditor() {
                       textField(
                         "adjustmentReason",
                         "Lý do giảm giá / sửa phí giao",
-                        { required: true, minLength: 5, maxLength: 500 },
+                        { maxLength: 500, placeholder: "Không bắt buộc" },
                       )}
                     <Field label="Trạng thái thanh toán">
                       <select
@@ -1112,9 +1112,9 @@ export default function ManualOrderEditor() {
                               "paymentReference",
                               "Mã tham chiếu / biên nhận",
                               {
-                                required: form.collectMethod === "bank",
                                 minLength: 5,
                                 maxLength: 100,
+                                placeholder: "Để trống để tự tạo khi lưu đơn",
                               },
                             )}
                             <Field label="Thời điểm nhận tiền (bỏ trống: hiện tại)">
@@ -1144,8 +1144,9 @@ export default function ManualOrderEditor() {
                             </Field>
                             <p className="small">
                               Ghi nhận tiền store đã nhận. Hệ thống không tự xác
-                              minh giao dịch ngân hàng. Tiền mặt được tạo mã
-                              biên nhận nếu để trống.
+                              minh giao dịch ngân hàng. Mã biên nhận nội bộ sẽ
+                              tự tạo nếu để trống, cho cả tiền mặt và chuyển
+                              khoản.
                             </p>
                           </>
                         )}

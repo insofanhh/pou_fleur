@@ -181,9 +181,11 @@ try {
   await page
     .getByLabel("Phí giao riêng (đ, bỏ trống để tự tính)", { exact: true })
     .fill("27000");
-  await page
-    .getByLabel("Lý do giảm giá / sửa phí giao", { exact: true })
-    .fill("Ưu đãi khách thân thiết");
+  const reason = page.getByLabel("Lý do giảm giá / sửa phí giao", {
+    exact: true,
+  });
+  await expect(reason).toHaveValue("");
+  await expect(reason).not.toHaveAttribute("required");
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
@@ -200,7 +202,7 @@ try {
       (await summary
         .innerText()
         .then((s) => s.includes("50.000") && s.includes("27.000"))),
-    "Paid review uses the discounted total including custom shipping",
+    "Paid review accepts blank adjustment reason and uses discounted total including shipping",
   );
   await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("260000");
   await expect(received).toHaveValue(String(fullTotal + 10000));
@@ -226,6 +228,14 @@ try {
   check(true, "Choosing unpaid clears a previously populated payment amount");
   await paymentStatus.selectOption("partially_paid");
   await received.fill("100000");
+  await page
+    .getByLabel("Phương thức đã nhận", { exact: true })
+    .selectOption("bank");
+  const reference = page.getByLabel("Mã tham chiếu / biên nhận", {
+    exact: true,
+  });
+  await expect(reference).toHaveValue("");
+  await expect(reference).not.toHaveAttribute("required");
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
@@ -254,6 +264,20 @@ try {
     created.payment_status === "partially_paid" &&
       Number(created.collected) === 100000,
     "Created order payment status agrees with its actual collection ledger",
+  );
+  const [[receipt]] = await db.execute(
+    "SELECT p.reference,p.method,o.reference order_reference,o.adjustment FROM order_payments p JOIN orders o ON o.id=p.order_id WHERE o.id=?",
+    [createdId],
+  );
+  const adjustment =
+    typeof receipt.adjustment === "string"
+      ? JSON.parse(receipt.adjustment)
+      : receipt.adjustment;
+  check(
+    receipt.method === "bank" &&
+      receipt.reference === "BANK-" + receipt.order_reference &&
+      adjustment.reason === "",
+    "UI creates a bank-paid order with auto receipt and no adjustment reason",
   );
   check(
     true,
@@ -377,6 +401,17 @@ try {
         status +
         " creates the matching order status and payment ledger",
     );
+    if (status === "paid") {
+      const [[cash]] = await db.execute(
+        "SELECT p.reference,p.method,o.reference order_reference FROM order_payments p JOIN orders o ON o.id=p.order_id WHERE o.id=?",
+        [orderId],
+      );
+      check(
+        cash.method === "cash" &&
+          cash.reference === "CASH-" + cash.order_reference,
+        "Cash payment continues generating an internal receipt automatically",
+      );
+    }
   }
   await page.goto(base + "/workspace/" + fixture.sid + "/orders/new?drafts=1");
   await page.getByRole("heading", { name: "Đơn nháp", exact: true }).waitFor();
