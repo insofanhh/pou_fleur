@@ -1230,7 +1230,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
     }
     if (path[0] === "users")
       return platformUsers(path.slice(1), method, b, url, actor);
-    if (key === "health" && method === "GET")
+    if ((key === "health" || key === "config") && method === "GET")
       return {
         jobs: await query(
           "SELECT status,COUNT(*) count FROM domain_outbox GROUP BY status",
