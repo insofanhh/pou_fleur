@@ -16,8 +16,18 @@ type Account = {
   version: number;
   deleted_at: string | null;
   created_at: string;
+  memberships: Array<{
+    store_id: number;
+    store_name: string;
+    role: string;
+    status: string;
+  }>;
 };
 type Mode = "view" | "edit" | "delete" | "ghost" | "restore" | "create";
+function platformMembershipLabel(membership: { role: string; store_name: string }) {
+  const role = membership.role === "owner" ? "Quản trị cửa hàng" : displayLabel("role", membership.role);
+  return role + " · " + membership.store_name;
+}
 export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
   const { user: actor, toast } = useShop();
   const [search, setSearch] = useState(""),
@@ -173,7 +183,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
             <thead>
               <tr>
                 <th>Tài khoản</th>
-                <th>Quyền nền tảng</th>
+                <th>Quyền & cửa hàng</th>
                 <th>Trạng thái</th>
                 <th>Ngày tạo</th>
                 <th>Thao tác</th>
@@ -192,7 +202,16 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                     <small>{u.email}</small>
                   </td>
                   <td>
-                    {u.platformAdmin ? "Quản trị nền tảng" : "Người dùng"}
+                    <div className="platform-user-role-list">
+                      {u.platformAdmin && <span>Quản trị nền tảng</span>}
+                      {u.memberships.map((membership) => (
+                        <span key={membership.store_id}>
+                          {platformMembershipLabel(membership)}
+                          {membership.status !== "active" && " · Đã thu hồi"}
+                        </span>
+                      ))}
+                      {!u.platformAdmin && !u.memberships.length && <span>Người dùng</span>}
+                    </div>
                   </td>
                   <td>
                     <span className="tag">
@@ -310,7 +329,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
               {dialog.detail.memberships.length ? (
                 dialog.detail.memberships.map((m: any) => (
                   <p key={m.store_id}>
-                    {m.store_name} · {displayLabel("role", m.role)} ·{" "}
+                    {platformMembershipLabel(m)} ·{" "}
                     {m.status === "active" ? "Hoạt động" : "Đã thu hồi"}
                   </p>
                 ))

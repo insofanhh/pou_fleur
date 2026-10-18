@@ -148,11 +148,23 @@ export async function platformUsers(
       `SELECT COUNT(*) total FROM users u LEFT JOIN platform_user_states st ON st.user_id=u.id ${where}`,
       args,
     );
+    const users = await query<any[]>(
+      `SELECT ${profile} FROM users u LEFT JOIN platform_user_states st ON st.user_id=u.id ${where} ORDER BY u.id DESC LIMIT 20 OFFSET ${20 * (page - 1)}`,
+      args,
+    );
+    const memberships = users.length
+      ? await query<any[]>(
+          "SELECT m.user_id,m.role,m.status,s.id store_id,s.name store_name FROM store_memberships m JOIN stores s ON s.id=m.store_id WHERE m.user_id IN (" +
+            users.map(() => "?").join(",") +
+            ") ORDER BY s.name,m.user_id",
+          users.map((u) => u.id),
+        )
+      : [];
     return {
-      users: await query(
-        `SELECT ${profile} FROM users u LEFT JOIN platform_user_states st ON st.user_id=u.id ${where} ORDER BY u.id DESC LIMIT 20 OFFSET ${20 * (page - 1)}`,
-        args,
-      ),
+      users: users.map((user) => ({
+        ...user,
+        memberships: memberships.filter((membership) => membership.user_id === user.id),
+      })),
       total: count.total,
       page,
       pages: Math.max(1, Math.ceil(count.total / 20)),
