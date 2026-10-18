@@ -41,7 +41,7 @@ export default function WorkspaceView({ area }: { area: string }) {
   if (area === "analytics") return <Analytics />;
   if (area === "settings") return <StoreSettings />;
   if (area === "theme") return <ThemeEditor />;
-  if (area === "billing") return <Billing />;
+  if (area === "billing") return <BillingCards />;
   return <Team />;
 }
 function useLoad(path: string, live = false) {
@@ -1848,6 +1848,46 @@ function Billing() {
       </div>
     </div>
   );
+}
+const billingLimitMeta: Record<string, { label: string; unit: string; description: string }> = {
+  products: { label: "Sản phẩm đang bán", unit: "sản phẩm", description: "Sản phẩm active trong cửa hàng" },
+  staff: { label: "Nhân sự hoạt động", unit: "người", description: "Bao gồm chủ store và nhân sự active" },
+  storage_mb: { label: "Dung lượng lưu trữ", unit: "MB", description: "Ảnh và file đã upload" },
+};
+function billingLimits(value: any) {
+  return typeof value === "string" ? JSON.parse(value) : value || {};
+}
+function BillingCards() {
+  const { data, error, refresh } = useLoad("workspace/billing"),
+    { toast } = useShop();
+  const [payment, setPayment] = useState<any>(null);
+  if (!data) return <Loading error={error} />;
+  const currentLimits = billingLimits(data.subscription.limits);
+  const usage = data.usage || {};
+  const usageRows = Object.keys(billingLimitMeta).map((key) => {
+    const limit = Number(currentLimits[key] || 0);
+    const used = Number(usage[key] || 0);
+    return { key, limit, used, percent: limit ? Math.min(100, Math.round((used / limit) * 100)) : 0 };
+  });
+  async function start(planId: number, trial: boolean) {
+    try {
+      const result = await api("workspace/billing/start", "POST", { plan_id: planId, trial });
+      if (result.payment) setPayment(result.payment);
+      toast(trial ? "Đã kích hoạt thời gian dùng thử." : "Đã tạo mã QR thanh toán.");
+      await refresh();
+    } catch (e) { toast((e as Error).message); }
+  }
+  return <div className="billing-page">
+    <section className="billing-current panel">
+      <div className="billing-current-heading"><div><span className="eyebrow">GÓI ĐANG SỬ DỤNG</span><h2>{data.subscription.name}</h2><p>{money(Number(data.subscription.monthly_price))} / tháng · {displayLabel("subscription", data.subscription.status)}</p></div><span className="tag">{data.subscription.cancel_at_period_end ? "Sắp dừng gia hạn" : "Đang hoạt động"}</span></div>
+      <p className="small">Kết thúc kỳ: {data.subscription.period_end || "Không giới hạn với gói miễn phí"}</p>
+      <div className="billing-usage-grid">{usageRows.map((row) => { const meta = billingLimitMeta[row.key]; return <div className="billing-usage-card" key={row.key}><div className="flex-between"><strong>{meta.label}</strong><span>{row.used.toLocaleString("vi-VN")} / {row.limit.toLocaleString("vi-VN")} {meta.unit}</span></div><div className="usage-track"><span style={{ width: row.percent + "%" }} /></div><small>{meta.description} · đã dùng {row.percent}%</small></div>; })}</div>
+      <div className="button-row"><button className="button secondary" onClick={async () => { try { await api("workspace/billing/cancel", "POST", { cancel: !data.subscription.cancel_at_period_end }); await refresh(); } catch (e) { toast((e as Error).message); } }}>{data.subscription.cancel_at_period_end ? "Tiếp tục gia hạn" : "Ngừng gia hạn cuối kỳ"}</button></div>
+    </section>
+    <section className="billing-plans-section"><div className="section-heading"><div><span className="eyebrow">LỰA CHỌN CỦA BẠN</span><h2>Các gói dịch vụ</h2><p className="small">So sánh giá và hạn mức trước khi nâng cấp hoặc trải nghiệm.</p></div></div><div className="billing-plan-grid">{data.plans.map((plan: any) => { const limits = billingLimits(plan.limits); const isCurrent = Number(plan.id) === Number(data.subscription.plan_id); return <article className={"billing-plan-card" + (isCurrent ? " is-current" : "")} key={plan.id}><div className="billing-plan-header"><div><span className="eyebrow">GÓI {plan.id}</span><h3>{plan.name}</h3></div>{isCurrent && <span className="tag">Đang dùng</span>}</div><div className="billing-plan-price">{money(Number(plan.monthly_price))}<small>/ tháng</small></div><p className="small">Dùng thử {plan.trial_days ?? 14} ngày</p><div className="billing-plan-limits">{Object.keys(billingLimitMeta).map((key) => { const meta = billingLimitMeta[key]; return <div key={key}><span>{meta.label}</span><strong>{Number(limits[key] || 0).toLocaleString("vi-VN")} {meta.unit}</strong></div>; })}</div><div className="button-row">{!isCurrent && <><button className="button secondary" onClick={() => void start(Number(plan.id), true)}>Dùng thử</button><button className="button" onClick={() => void start(Number(plan.id), false)}>Thanh toán</button></>}{isCurrent && <span className="small">Gói hiện tại</span>}</div></article>; })}</div></section>
+    {payment && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={() => setPayment(null)} aria-label="Đóng">×</button><h2>Thanh toán gói dịch vụ</h2><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></div></div>}
+    <section className="panel table-scroll"><h3>Hóa đơn dịch vụ</h3><table><thead><tr><th>Kỳ</th><th>Gói</th><th>Tổng</th><th>Đã thu</th><th>Hạn</th><th>Trạng thái</th></tr></thead><tbody>{data.invoices.map((invoice: any) => <tr key={invoice.id}><td>{invoice.period_key}</td><td>{invoice.plan_name}</td><td>{money(invoice.amount)}</td><td>{money(invoice.paid)}</td><td>{invoice.due_date}</td><td>{displayLabel("invoice", invoice.status)}</td></tr>)}</tbody></table></section>
+  </div>;
 }
 function Team() {
   const { data, error, refresh } = useLoad("workspace/team"),

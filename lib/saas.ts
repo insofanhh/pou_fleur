@@ -434,6 +434,10 @@ export async function saasAPI(
   }
   if (key === "workspace/billing" && method === "GET") {
     await storeOwner();
+    const usage = (await query<any[]>(
+      "SELECT (SELECT COUNT(*) FROM products WHERE active=1) products,(SELECT COUNT(*) FROM store_memberships WHERE store_id=? AND status='active') staff,(SELECT COALESCE(SUM(size),0) FROM assets) storage_bytes",
+      [tenantId()],
+    ))[0];
     return {
       subscription: (
         await query<any[]>(
@@ -446,6 +450,11 @@ export async function saasAPI(
         [tenantId()],
       ),
       plans: await query("SELECT * FROM plans WHERE active=1"),
+      usage: {
+        products: Number(usage?.products || 0),
+        staff: Number(usage?.staff || 0),
+        storage_mb: Number(usage?.storage_bytes || 0) / 1048576,
+      },
     };
   }
   if (key === "workspace/billing/cancel" && method === "POST") {
