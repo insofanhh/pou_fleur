@@ -203,7 +203,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                   </td>
                   <td>
                     <div className="platform-user-role-list">
-                      {u.platformAdmin && <span>Quản trị nền tảng</span>}
+                      {!!u.platformAdmin && <span>Quản trị nền tảng</span>}
                       {u.memberships.map((membership) => (
                         <span key={membership.store_id}>
                           {platformMembershipLabel(membership)}
