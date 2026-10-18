@@ -149,15 +149,19 @@ export default function StoreShell({ children }: { children: ReactNode }) {
       {children}
       {marketplace ? (
         <footer className="market-footer">
-          <Link className="logo" href="/">
-            fleurious<span>®</span>
-          </Link>
-          <p>Kết nối những tiệm hoa và những điều đẹp đẽ.</p>
-          <div>
-            <Link href="/start">Mở cửa hàng</Link>
-            <Link href="/account/orders">Đơn hàng</Link>
-            <Link href="/privacy">Quyền riêng tư</Link>
-            <Link href="/inbox">Thông báo</Link>
+          <div className="market-footer-main">
+            <div className="market-footer-brand">
+              <Link className="logo" href="/">
+                fleurious<span>®</span>
+              </Link>
+              <p>Kết nối những tiệm hoa và những điều đẹp đẽ.</p>
+            </div>
+            <nav className="market-footer-nav" aria-label="Liên kết cuối trang">
+              <Link href="/start">Mở cửa hàng</Link>
+              <Link href="/account/orders">Đơn hàng</Link>
+              <Link href="/privacy">Quyền riêng tư</Link>
+              <Link href="/inbox">Thông báo</Link>
+            </nav>
           </div>
           <small>© {new Date().getFullYear()} Fleurious</small>
         </footer>

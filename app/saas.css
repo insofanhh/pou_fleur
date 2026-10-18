@@ -1423,13 +1423,23 @@
   padding: 60px 6vw;
   border-top: 1px solid #eee;
 }
-.market-footer > p {
+.market-footer-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 48px;
+}
+.market-footer-brand {
+  min-width: 240px;
+}
+.market-footer-brand p {
   color: #777;
   font-size: 13px;
-  margin: 20px 0 36px;
+  margin: 20px 0 0;
 }
-.market-footer > div {
+.market-footer-nav {
   display: flex;
+  align-items: center;
   gap: 32px;
   flex-wrap: wrap;
   font-size: 13px;
@@ -1734,7 +1744,12 @@
   .market-footer {
     padding: 44px 22px;
   }
-  .market-footer > div {
+  .market-footer-main {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 30px;
+  }
+  .market-footer-nav {
     gap: 20px;
     font-size: 12px;
   }
