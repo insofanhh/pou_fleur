@@ -170,6 +170,7 @@ export default function ManualOrderEditor() {
         ...empty,
         items: [],
         tags: [],
+        assignedTo: opts.currentUserId,
         deliveryDate: date || "",
         deliverySlot: opts.settings.slots[0] || "",
       };
@@ -1031,11 +1032,12 @@ export default function ManualOrderEditor() {
                                   ? 100
                                   : 100000000,
                             })}
-                          {textField(
-                            "shipping",
-                            "Phí giao riêng (đ, bỏ trống để tự tính)",
-                            { type: "number", min: 0, max: 100000000 },
-                          )}
+                          {textField("shipping", "Phí giao riêng (đ)", {
+                            type: "number",
+                            min: 0,
+                            max: 100000000,
+                            placeholder: "Để trống: 0 đ",
+                          })}
                         </>
                       )}
                     </div>

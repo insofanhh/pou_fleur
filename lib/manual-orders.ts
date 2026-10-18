@@ -61,7 +61,7 @@ export const manualInput = z.object({
   message: z.string().max(500).default(""),
   notes: z.string().max(1000).default(""),
   internalNotes: z.string().max(2000).default(""),
-  assignedTo: positiveId.nullable().default(null),
+  assignedTo: positiveId.nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(30)).max(6).default([]),
   initialStatus: z.enum(["pending", "confirmed"]).default("pending"),
   collectAmount: integer.default(0),
@@ -161,9 +161,8 @@ async function quote(c: PoolConnection, b: Input, actor: Actor, lock = false) {
         : b.discountValue,
     );
   }
-  if (b.shipping !== undefined) {
-    totals.shipping = b.shipping;
-  }
+  // Manual orders use only the entered delivery fee, never storefront rates.
+  totals.shipping = b.shipping ?? 0;
   totals.total = totals.subtotal - totals.discount + totals.shipping;
   if (totals.total > 2000000000)
     throw new HttpError(400, "Giá trị đơn vượt giới hạn.");
@@ -291,10 +290,11 @@ async function finalize(raw: any, actor: Actor) {
         409,
         "Giá đã thay đổi. Vui lòng tính lại và rà soát đơn.",
       );
-    if (b.assignedTo) {
+    const assignedTo = b.assignedTo === undefined ? current.id : b.assignedTo;
+    if (assignedTo) {
       const [ms]: any = await c.execute(
-        "SELECT user_id FROM store_memberships WHERE store_id=? AND user_id=? AND status='active'",
-        [tenantId(), b.assignedTo],
+        "SELECT m.user_id FROM store_memberships m JOIN users u ON u.id=m.user_id WHERE m.store_id=? AND m.user_id=? AND m.status='active' AND u.active=1",
+        [tenantId(), assignedTo],
       );
       if (!ms.length) throw new HttpError(400, "Nhân sự không thuộc cửa hàng.");
     }
@@ -309,7 +309,7 @@ async function finalize(raw: any, actor: Actor) {
       discountType: b.discountType,
       discountValue: b.discountValue,
       reason: b.adjustmentReason,
-      shippingOverride: b.shipping ?? null,
+      shippingOverride: b.shipping ?? 0,
       ghost: ghost
         ? {
             actorId: ghost.actorId,
@@ -351,7 +351,7 @@ async function finalize(raw: any, actor: Actor) {
         actor.id,
         b.initialStatus === "confirmed" ? actor.id : null,
         store.name,
-        b.assignedTo,
+        assignedTo,
         JSON.stringify(b.tags),
         hash,
         JSON.stringify(adjustment),
@@ -497,6 +497,7 @@ export async function manualOrdersAPI(
     const store = await storeBy(tenantId());
     return {
       capabilities: orderCapabilities(actor.role),
+      currentUserId: actor.id,
       settings: store.settings,
       requiresCoordinates: store.lat !== null && store.lng !== null,
       staff: await query(

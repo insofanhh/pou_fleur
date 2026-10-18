@@ -141,7 +141,9 @@ try {
     sid,
   );
   check(
-    opts.capabilities.collect && opts.staff.length === 2,
+    opts.capabilities.collect &&
+      opts.staff.length === 2 &&
+      opts.currentUserId === me.user.id,
     "Owner capabilities and staff scoped to store",
   );
   await outsider("workspace/manual-orders/options", "GET", undefined, sid, 401);
@@ -204,8 +206,8 @@ try {
   });
   const q = await quote(mixed);
   check(
-    q.subtotal === 820000 && q.total === 855000,
-    "Catalog size and custom item share totals",
+    q.subtotal === 820000 && q.total === 820000 && q.shipping === 0,
+    "Manual order has no fixed delivery fee when shipping is omitted",
   );
   const key = randomUUID(),
     payload = { ...mixed, idempotencyKey: key, quoteToken: q.token };
@@ -228,6 +230,10 @@ try {
   check(
     details.user_id === null && details.customer_id && details.email === null,
     "Phone-only customer is linked to CRM without claiming a user account",
+  );
+  check(
+    details.assigned_to === me.user.id,
+    "Manual order defaults assignee to the signed-in store member",
   );
   check(
     details.payment_status === "partially_paid" &&
@@ -494,6 +500,55 @@ try {
     suppliedReceipt.reference === suppliedReference,
     "A supplied bank reference is preserved",
   );
+  const explicitZero = await quote(input({ shipping: 0 }));
+  check(
+    explicitZero.shipping === 0 && explicitZero.total === explicitZero.subtotal,
+    "Explicit zero delivery fee stays zero",
+  );
+  const highSubtotal = await quote(
+    input({
+      shipping: 50000,
+      items: [
+        {
+          type: "custom",
+          name: "Hoa sự kiện",
+          quantity: 1,
+          size: "S",
+          price: 2000000,
+        },
+      ],
+    }),
+  );
+  check(
+    highSubtotal.shipping === 50000 && highSubtotal.total === 2050000,
+    "Entered fee applies even above the storefront free-shipping threshold",
+  );
+  const unassigned = await create(
+    input({ customerId: details.customer_id, assignedTo: null }),
+  );
+  const reassigned = await create(
+    input({ customerId: details.customer_id, assignedTo: sm.user.id }),
+  );
+  const [[unassignedRow]] = await db.query(
+    "SELECT assigned_to FROM orders WHERE id=?",
+    [unassigned.id],
+  );
+  const [[reassignedRow]] = await db.query(
+    "SELECT assigned_to FROM orders WHERE id=?",
+    [reassigned.id],
+  );
+  check(
+    unassignedRow.assigned_to === null &&
+      reassignedRow.assigned_to === sm.user.id,
+    "Explicit unassigned and another store member are preserved",
+  );
+  await create(
+    input({ customerId: details.customer_id, assignedTo: 999999 }),
+    owner,
+    {},
+    400,
+  );
+  check(true, "Invalid assignee cannot be attached to the store order");
   await owner(
     "workspace/manual-orders/quote",
     "POST",
@@ -725,10 +780,20 @@ try {
   await owner("platform/users/" + sm.user.id + "/ghost", "POST", {
     reason: "Kiểm thử tạo đơn thủ công trong store",
   });
+  const ghostOptions = await owner(
+    "workspace/manual-orders/options",
+    "GET",
+    undefined,
+    sid,
+  );
+  check(
+    ghostOptions.currentUserId === sm.user.id,
+    "Ghost default assignee resolves to the supported store member",
+  );
   const ghostInput = input({ customerId: details.customer_id });
   const ghostOrder = await create(ghostInput, owner);
   const [[ghostRow]] = await db.query(
-    "SELECT created_by,adjustment FROM orders WHERE id=?",
+    "SELECT created_by,assigned_to,adjustment FROM orders WHERE id=?",
     [ghostOrder.id],
   );
   const adjustment =
@@ -737,6 +802,7 @@ try {
       : ghostRow.adjustment;
   check(
     ghostRow.created_by === sm.user.id &&
+      ghostRow.assigned_to === sm.user.id &&
       adjustment.ghost.actorId === me.user.id &&
       adjustment.ghost.targetId === sm.user.id &&
       adjustment.ghost.sessionHash,

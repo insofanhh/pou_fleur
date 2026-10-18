@@ -9,7 +9,7 @@ Ngày cập nhật: 18/10/2026. Bản đầu hỗ trợ đơn giao tận nơi, n
 3. Chọn sản phẩm, size và số lượng; có thể thêm thiết kế riêng, yêu cầu và ảnh tham khảo. Thiết kế riêng không xuất bản ra catalog, không theo dõi tồn nguyên liệu.
 4. Chọn giao tặng/giao cho tôi, ngày, slot, địa chỉ và lời nhắn. Store có cấu hình tọa độ yêu cầu tọa độ người nhận để kiểm tra bán kính; bản đầu có input vĩ độ/kinh độ nhập tay.
 5. Chọn mã ưu đãi hoặc giảm thủ công, phí giao riêng nếu được cấp quyền. Lý do giảm giá/sửa phí giao là tùy chọn; sửa giá riêng của sản phẩm catalog vẫn cần lý do. Chủ store có thể ghi nhận tiền mặt/chuyển khoản đã nhận, một phần hoặc đủ; không phải chức năng tự trừ tiền hay xác minh chuyển khoản. Mã tham chiếu/biên nhận có thể để trống: máy chủ tự tạo mã nội bộ `CASH-<mã đơn>` hoặc `BANK-<mã đơn>` khi lưu đơn. Nếu tự nhập mã, dùng từ 5 đến 100 ký tự. Mã do hệ thống tạo không phải mã xác nhận từ ngân hàng.
-6. Nhập phân công, tag và ghi chú nội bộ. **Tính giá & rà soát** rồi **Tạo đơn hàng** / **Tạo và xác nhận**. Thành công mở chi tiết đơn ở Kanban.
+6. Người phụ trách mặc định là tài khoản store đang đăng nhập (khi Ghost dùng tài khoản đang được hỗ trợ). Có thể chọn nhân sự khác hoặc Chưa phân công; mở nháp giữ lựa chọn đã lưu. Nhập tag và ghi chú nội bộ. **Tính giá & rà soát** rồi **Tạo đơn hàng** / **Tạo và xác nhận**. Thành công mở chi tiết đơn ở Kanban.
 
 **Lưu nháp** cho phép thiếu thông tin nhưng chưa giữ tồn/slot, chưa ghi doanh thu, chưa gửi email hoặc tạo khách CRM. Nháp có tiền đã nhận bị từ chối: cần tạo đơn để khoản tiền được ghi vào sổ giao dịch. Mở lại từ **Đơn nháp**; hai người sửa cùng lúc được bảo vệ bằng version. Nháp cũ được cảnh báo sau 7 ngày, chỉ lưu trữ bằng thao tác chủ động.
 
@@ -30,6 +30,7 @@ Editor và người mua không được tạo đơn. Ghost dùng quyền của u
 ## Tính nhất quán
 
 - Giá và lịch được kiểm tra ở server. Store, sản phẩm và slot được bảo vệ trong transaction; các đơn tranh tồn/slot không thể vượt giới hạn.
+- Phí giao của đơn thủ công chỉ lấy từ **Phí giao riêng**; bỏ trống hoặc nhập 0 là 0 đồng. Không áp dụng phí giao cố định/ngưỡng miễn phí của trang mua hàng. Rà soát, tổng cần thu, sổ thu và đơn lưu đều dùng cùng phí đã nhập. Quyền sửa phí vẫn theo quyền điều chỉnh giá của store.
 - Chốt nguyên tử: đơn, dòng hàng, tồn, promotion usage, CRM, khoản thu, lịch sử và outbox. Lỗi một bước rollback toàn bộ.
 - Có customer_id theo store, tách khỏi user_id. Nhập email của một tài khoản không tự đưa đơn vào lịch sử tài khoản đó. Bản đầu không có luồng xác minh nhận đơn thủ công về tài khoản người mua.
 - Email tùy chọn: không có email thì hiển thị lý do bỏ qua; có email thì dùng template và outbox hiện tại. Xác nhận ngay gửi một confirmation, không gửi thêm email trạng thái trùng ở bước tạo.

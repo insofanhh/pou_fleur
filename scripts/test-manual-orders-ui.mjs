@@ -39,6 +39,11 @@ try {
     data: { email: "owner@example.test", password: "SaaS-Testing-2026-Only" },
   });
   assert(login.ok());
+  const signedIn = await (
+    await context.request.get(base + "/api/auth/me", {
+      headers: { "x-fleur-store": String(fixture.sid) },
+    })
+  ).json();
   await page.goto(base + "/workspace/" + fixture.sid + "/board");
   await page.getByRole("link", { name: "Tạo đơn hàng", exact: true }).click();
   await page
@@ -48,6 +53,9 @@ try {
     page.url().includes("/orders/new"),
     "Create button opens editor in current workspace",
   );
+  const assignee = page.getByLabel("Người phụ trách", { exact: true });
+  await expect(assignee).toHaveValue(String(signedIn.user.id));
+  check(true, "New order preselects the signed-in store member as assignee");
   const paymentStatus = page.getByLabel("Trạng thái thanh toán", {
     exact: true,
   });
@@ -141,6 +149,14 @@ try {
     path: ".local/manual-ui/desktop-editor.png",
     fullPage: true,
   });
+  const otherAssignee = await assignee
+    .locator("option")
+    .evaluateAll(
+      (options, current) =>
+        options.find((o) => o.value && o.value !== String(current)).value,
+      signedIn.user.id,
+    );
+  await assignee.selectOption(otherAssignee);
   await page.getByRole("button", { name: "Lưu nháp", exact: true }).click();
   await expect(page).toHaveURL(/draft=\d+/);
   await page
@@ -152,6 +168,8 @@ try {
     ).startsWith("Khách UI"),
     "Draft reload preserves customer and form",
   );
+  await expect(assignee).toHaveValue(otherAssignee);
+  check(true, "Draft reload preserves a manually selected assignee");
   const received = page.getByLabel("Số tiền thực tế đã nhận (đ)", {
     exact: true,
   });
@@ -171,16 +189,14 @@ try {
   await expect(received).not.toHaveValue("0");
   const originalTotal = Number(await received.inputValue());
   check(
-    originalTotal > 250000,
-    "Choosing paid automatically fills the server total before review",
+    originalTotal === 451000,
+    "Paid amount uses only product totals when delivery fee is blank",
   );
   await page
     .getByLabel("Giảm giá thủ công", { exact: true })
     .selectOption("amount");
   await page.getByLabel("Giá trị giảm", { exact: true }).fill("50000");
-  await page
-    .getByLabel("Phí giao riêng (đ, bỏ trống để tự tính)", { exact: true })
-    .fill("27000");
+  await page.getByLabel("Phí giao riêng (đ)", { exact: true }).fill("27000");
   const reason = page.getByLabel("Lý do giảm giá / sửa phí giao", {
     exact: true,
   });
@@ -257,13 +273,18 @@ try {
   await expect(page.getByRole("dialog")).toContainText("100.000");
   const createdId = Number(new URL(page.url()).searchParams.get("order"));
   const [[created]] = await db.execute(
-    "SELECT payment_status,(SELECT SUM(amount) FROM order_payments WHERE order_id=o.id AND kind='collect') collected FROM orders o WHERE id=?",
+    "SELECT payment_status,assigned_to,shipping,(SELECT SUM(amount) FROM order_payments WHERE order_id=o.id AND kind='collect') collected FROM orders o WHERE id=?",
     [createdId],
   );
   check(
     created.payment_status === "partially_paid" &&
       Number(created.collected) === 100000,
     "Created order payment status agrees with its actual collection ledger",
+  );
+  check(
+    Number(created.shipping) === 27000 &&
+      String(created.assigned_to) === otherAssignee,
+    "Saved order retains the entered delivery fee and chosen assignee",
   );
   const [[receipt]] = await db.execute(
     "SELECT p.reference,p.method,o.reference order_reference,o.adjustment FROM order_payments p JOIN orders o ON o.id=p.order_id WHERE o.id=?",
@@ -295,6 +316,7 @@ try {
   for (const status of ["paid", "unpaid"]) {
     await page.goto(base + "/workspace/" + fixture.sid + "/orders/new");
     await paymentStatus.waitFor();
+    await expect(assignee).toHaveValue(String(signedIn.user.id));
     await paymentStatus.selectOption(status);
     await expect(received).toHaveValue("0");
     await page
@@ -320,6 +342,23 @@ try {
     if (status === "paid") {
       await expect(received).not.toHaveValue("0");
       const shipping = Number(await received.inputValue()) - 300000;
+      check(
+        shipping === 0,
+        "New manual orders never inherit the fixed storefront delivery fee",
+      );
+      const deliveryFee = page.getByLabel("Phí giao riêng (đ)", {
+        exact: true,
+      });
+      await deliveryFee.fill("45000");
+      await expect(received).toHaveValue("345000");
+      await deliveryFee.fill("");
+      await expect(received).toHaveValue("300000");
+      await deliveryFee.fill("0");
+      await expect(received).toHaveValue("300000");
+      check(
+        true,
+        "Changing, clearing, or zeroing delivery fee updates the paid amount",
+      );
       let releaseOld, oldStarted;
       const held = new Promise((resolve) => {
         releaseOld = resolve;
