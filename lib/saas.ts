@@ -4,7 +4,7 @@ import { recordOrderPayment } from "./order-payments";
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
 import { broadcast } from "./broadcasts";
-import { platformUsers, stopGhost } from "./platform-users";
+import { platformUsers, startGhost, stopGhost } from "./platform-users";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { query, mutate, pool } from "./db";
@@ -836,6 +836,8 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       );
     if (path[0] === "stores" && path[1]) {
       const sid = id.parse(path[1]);
+      if (path[2] === "ghost" && path.length === 3 && method === "POST")
+        return startGhost(actor.id, null, b, sid);
       if (method === "GET")
         return {
           store: await storeBy(sid),

@@ -34,6 +34,93 @@ async function audit(
   );
 }
 
+export async function startGhost(
+  actorId: number,
+  uid: number | null,
+  body: any,
+  storeId?: number,
+) {
+  const why = reason.parse(body.reason);
+  const jar = await cookies();
+  if (jar.get("fleur_ghost")?.value)
+    throw new HttpError(409, "Hãy kết thúc phiên Ghost hiện tại trước.");
+  const session = jar.get("fleur_session")?.value;
+  if (!session) throw new HttpError(401, "Vui lòng đăng nhập.");
+  const token = randomBytes(32).toString("hex");
+  const c = await pool.getConnection();
+  try {
+    await c.beginTransaction();
+    const [source]: any = await c.execute(
+      "SELECT s.user_id FROM sessions s JOIN users u ON u.id=s.user_id JOIN platform_memberships p ON p.user_id=u.id WHERE s.token_hash=? AND s.user_id=? AND s.expires_at>NOW() AND u.active=1 AND p.role='platform_admin' FOR UPDATE",
+      [digest(session), actorId],
+    );
+    if (!source.length) throw new HttpError(403, "Quyền quản trị đã thay đổi.");
+    if (storeId) {
+      const [stores]: any = await c.execute(
+        "SELECT owner_id FROM stores WHERE id=? FOR UPDATE",
+        [storeId],
+      );
+      if (!stores.length) throw new HttpError(404, "Không tìm thấy cửa hàng.");
+      uid = stores[0].owner_id;
+    }
+    const [users]: any = await c.execute(
+      "SELECT u.id,u.active,st.deleted_at,EXISTS(SELECT 1 FROM platform_memberships p WHERE p.user_id=u.id) platformAdmin FROM users u LEFT JOIN platform_user_states st ON st.user_id=u.id WHERE u.id=? FOR UPDATE",
+      [uid],
+    );
+    const target = users[0];
+    if (!target) throw new HttpError(404, "Không tìm thấy tài khoản.");
+    if (uid === actorId || target.platformAdmin)
+      throw new HttpError(403, "Không thể Ghost tài khoản quản trị nền tảng.");
+    if (!target.active || target.deleted_at)
+      throw new HttpError(409, "Tài khoản đã khóa hoặc đã xóa.");
+    if (storeId) {
+      const [members]: any = await c.execute(
+        "SELECT user_id FROM store_memberships WHERE store_id=? AND user_id=? AND role='owner' AND status='active' FOR UPDATE",
+        [storeId, uid],
+      );
+      if (!members.length)
+        throw new HttpError(
+          409,
+          "Chủ cửa hàng không còn quyền truy cập workspace này.",
+        );
+    }
+    await c.execute(
+      "UPDATE ghost_sessions SET ended_at=NOW() WHERE admin_session_hash=? AND ended_at IS NULL",
+      [digest(session)],
+    );
+    await c.execute(
+      "INSERT INTO ghost_sessions(token_hash,admin_session_hash,actor_id,target_id,reason,expires_at) VALUES(?,?,?,?,?,DATE_ADD(NOW(),INTERVAL 20 MINUTE))",
+      [digest(token), digest(session), actorId, uid, why],
+    );
+    await audit(c, actorId, uid!, "ghost:start", {
+      reason: why,
+      ...(storeId ? { storeId, sessionHash: digest(token) } : {}),
+    });
+    await c.commit();
+  } catch (e) {
+    await c.rollback();
+    throw e;
+  } finally {
+    c.release();
+  }
+  jar.set("fleur_ghost", token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: (process.env.APP_ORIGIN || "").startsWith("https://"),
+    path: "/",
+    maxAge: 604800,
+  });
+  const targetUser = await currentUser();
+  return {
+    ok: true,
+    redirect: storeId
+      ? `/workspace/${storeId}/overview`
+      : targetUser
+        ? loginDestination(targetUser, null)
+        : "/",
+  };
+}
+
 export async function platformUsers(
   path: string[],
   method: string,
@@ -92,65 +179,8 @@ export async function platformUsers(
       ),
     };
   }
-  if (uid && path[1] === "ghost" && path.length === 2 && method === "POST") {
-    const why = reason.parse(body.reason);
-    const jar = await cookies();
-    if (jar.get("fleur_ghost")?.value)
-      throw new HttpError(409, "Hãy kết thúc phiên Ghost hiện tại trước.");
-    const session = jar.get("fleur_session")?.value;
-    if (!session) throw new HttpError(401, "Vui lòng đăng nhập.");
-    const token = randomBytes(32).toString("hex");
-    const c = await pool.getConnection();
-    try {
-      await c.beginTransaction();
-      const [source]: any = await c.execute(
-        "SELECT s.user_id FROM sessions s JOIN users u ON u.id=s.user_id JOIN platform_memberships p ON p.user_id=u.id WHERE s.token_hash=? AND s.user_id=? AND s.expires_at>NOW() AND u.active=1 AND p.role='platform_admin' FOR UPDATE",
-        [digest(session), actor.id],
-      );
-      if (!source.length)
-        throw new HttpError(403, "Quyền quản trị đã thay đổi.");
-      const [users]: any = await c.execute(
-        "SELECT u.id,u.active,st.deleted_at,EXISTS(SELECT 1 FROM platform_memberships p WHERE p.user_id=u.id) platformAdmin FROM users u LEFT JOIN platform_user_states st ON st.user_id=u.id WHERE u.id=? FOR UPDATE",
-        [uid],
-      );
-      const target = users[0];
-      if (!target) throw new HttpError(404, "Không tìm thấy tài khoản.");
-      if (uid === actor.id || target.platformAdmin)
-        throw new HttpError(
-          403,
-          "Không thể Ghost tài khoản quản trị nền tảng.",
-        );
-      if (!target.active || target.deleted_at)
-        throw new HttpError(409, "Tài khoản đã khóa hoặc đã xóa.");
-      await c.execute(
-        "UPDATE ghost_sessions SET ended_at=NOW() WHERE admin_session_hash=? AND ended_at IS NULL",
-        [digest(session)],
-      );
-      await c.execute(
-        "INSERT INTO ghost_sessions(token_hash,admin_session_hash,actor_id,target_id,reason,expires_at) VALUES(?,?,?,?,?,DATE_ADD(NOW(),INTERVAL 20 MINUTE))",
-        [digest(token), digest(session), actor.id, uid, why],
-      );
-      await audit(c, actor.id, uid, "ghost:start", { reason: why });
-      await c.commit();
-    } catch (e) {
-      await c.rollback();
-      throw e;
-    } finally {
-      c.release();
-    }
-    jar.set("fleur_ghost", token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: (process.env.APP_ORIGIN || "").startsWith("https://"),
-      path: "/",
-      maxAge: 604800,
-    });
-    const targetUser = await currentUser();
-    return {
-      ok: true,
-      redirect: targetUser ? loginDestination(targetUser, null) : "/",
-    };
-  }
+  if (uid && path[1] === "ghost" && path.length === 2 && method === "POST")
+    return startGhost(actor.id, uid, body);
   const create = !uid && !path.length && method === "POST";
   const edit = !!uid && path.length === 1 && method === "PATCH";
   const remove = !!uid && path.length === 1 && method === "DELETE";
@@ -341,6 +371,7 @@ export async function platformUsers(
 }
 
 export async function stopGhost() {
+  let storeId: number | undefined;
   const jar = await cookies(),
     token = jar.get("fleur_ghost")?.value,
     session = jar.get("fleur_session")?.value;
@@ -350,13 +381,23 @@ export async function stopGhost() {
       [digest(token), digest(session)],
     );
     if (g) {
+      const [start] = await query<any[]>(
+        "SELECT metadata FROM platform_audit_logs WHERE actor_id=? AND target_id=? AND action='ghost:start' AND JSON_UNQUOTE(JSON_EXTRACT(metadata,'$.sessionHash'))=? ORDER BY id DESC LIMIT 1",
+        [g.actor_id, g.target_id, digest(token)],
+      );
+      const metadata =
+        typeof start?.metadata === "string"
+          ? JSON.parse(start.metadata)
+          : start?.metadata;
+      if (Number.isSafeInteger(metadata?.storeId) && metadata.storeId > 0)
+        storeId = metadata.storeId;
       await mutate(
         "UPDATE ghost_sessions SET ended_at=NOW() WHERE token_hash=?",
         [digest(token)],
       );
       await mutate(
-        "INSERT INTO platform_audit_logs(actor_id,target_id,action,metadata) VALUES(?,?,'ghost:stop',JSON_OBJECT())",
-        [g.actor_id, g.target_id],
+        "INSERT INTO platform_audit_logs(actor_id,target_id,action,metadata) VALUES(?,?,'ghost:stop',?)",
+        [g.actor_id, g.target_id, JSON.stringify(storeId ? { storeId } : {})],
       );
     }
   }
@@ -366,7 +407,9 @@ export async function stopGhost() {
     ok: true,
     redirect:
       user?.platformRole === "platform_admin"
-        ? "/platform/users"
+        ? storeId
+          ? "/platform/stores"
+          : "/platform/users"
         : user
           ? "/"
           : "/login",

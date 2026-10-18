@@ -731,6 +731,11 @@
   align-items: center;
   gap: 6px;
 }
+.platform-store-ghost {
+  gap: 8px;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
 .platform-user-dialog {
   width: 720px;
   margin: auto;

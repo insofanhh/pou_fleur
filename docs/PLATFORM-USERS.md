@@ -18,6 +18,8 @@ Nếu hết hạn, user bị khóa, user được nâng thành platform admin, a
 
 Nhật ký platform lưu admin thực, user đích, thời điểm và lý do bắt đầu/kết thúc; yêu cầu ghi dữ liệu trong Ghost có method/path để đối chiếu nhật ký nghiệp vụ. Không lưu mật khẩu, token hoặc toàn bộ request body vào nhật ký. Hồ sơ user hiển thị các sự kiện quản trị gần nhất.
 
+Tại `/platform/stores`, nút **Ghost** ở cột **Thao tác** mở phiên bằng tài khoản chủ cửa hàng. Máy chủ tự xác định chủ hiện tại và kiểm tra membership `owner` đang hoạt động; không nhận tài khoản hoặc đường dẫn chuyển hướng từ client. Sau khi nhập lý do, chuyển thẳng tới workspace của store được chọn, kể cả khi chủ có nhiều store. **Quay lại admin** đưa về danh sách store. Nhật ký bắt đầu/kết thúc có thêm store ID; phiên được đối chiếu bằng hash, không lưu token gốc. Chủ bị khóa/xóa hoặc có quyền platform không thể được Ghost. Các giới hạn của Ghost tài khoản vẫn áp dụng. Tính năng này dùng các bảng hiện có, không cần migration bổ sung.
+
 ## Migration và kiểm thử
 
 Chạy migration SaaS trước khi deploy phiên bản này. Migration bổ sung ba bảng độc lập, có thể chạy lại: `platform_user_states`, `platform_audit_logs`, `ghost_sessions`. Không đổi mật khẩu hoặc dữ liệu đơn cũ. Với production cần backup/restore drill và staging như [SAAS-SETUP.md](SAAS-SETUP.md).
@@ -29,8 +31,11 @@ Trên database QA `fleur_saas_test` cổng 3310, cấu hình `TEST_ORIGIN` trỏ
 ```sh
 npm run test:platform-users
 npm run test:platform-users:ui
+npm run test:platform-store-ghost
 ```
 
-Hai suite được đưa vào `npm run test:integration`. API kiểm tra CRUD, quyền, version, thu hồi session, cookie Ghost, hết hạn và audit. UI thao tác CRUD/Ghost thật trên fixture QA và kiểm tra desktop/mobile. Các suite không gửi email/push ra ngoài.
+Các suite được đưa vào `npm run test:integration`. API kiểm tra CRUD, quyền, version, thu hồi session, cookie Ghost, hết hạn và audit. UI thao tác CRUD/Ghost thật trên fixture QA và kiểm tra desktop/mobile. Suite Ghost store kiểm tra xác định chủ, chọn đúng workspace khi có nhiều store, quyền truy cập, audit và quay lại danh sách store. Các suite không gửi email/push ra ngoài.
+
+Ghost từ danh sách store đã đạt 15 kiểm tra API/UI trên production build QA ngày 18/10/2026, gồm desktop 1440px và mobile 390px. Hồi quy Ghost tài khoản cũ đạt 31 assertions API và các workflow UI desktop/mobile; `npm test` và build production đạt. Ảnh kiểm tra: `.local/screenshots/store-ghost-*`.
 
 Kết quả ngày 18/10/2026 trên production build QA: 31 assertions API và toàn bộ luồng UI mới đạt; suite hồi quy 55 API SaaS, SQL isolation, 5 queue/CRM/billing checks và 57 UI assertions cũng đạt. `npm test` và build Turbopack đạt. Log local: `.local/platform-users-final-integration.log`; ảnh desktop/mobile: `.local/screenshots/platform-users-*`.

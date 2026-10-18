@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
 import PlatformUsers from "./platform-users";
+import PlatformDialog from "./platform-dialog";
 import {
   Menu,
   Store,
@@ -12,6 +13,7 @@ import {
   Users,
   Activity,
   ArrowUpRight,
+  Ghost,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 export default function Platform({ area = "overview" }: { area?: string }) {
@@ -23,6 +25,14 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     [detail, setDetail] = useState<any>(null),
     [mobile, setMobile] = useState(false);
   const [usersRefresh, setUsersRefresh] = useState(0);
+  const [ghostStore, setGhostStore] = useState<any>(null),
+    [ghostBusy, setGhostBusy] = useState(false),
+    [ghostError, setGhostError] = useState("");
+  function openStoreGhost(store: any) {
+    setDetail(null);
+    setGhostError("");
+    setGhostStore(store);
+  }
   const merchantDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = merchantDialog.current;
@@ -250,6 +260,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                       <th>GMV</th>
                       <th>Khách hàng</th>
                       <th>Đơn gần nhất</th>
+                      <th>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -284,6 +295,18 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                           <td>{money(s.gmv)}</td>
                           <td>{s.customers}</td>
                           <td>{s.last_order || "—"}</td>
+                          <td>
+                            <button
+                              className="button secondary platform-store-ghost"
+                              aria-label={"Ghost cửa hàng " + s.name}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openStoreGhost(s);
+                              }}
+                            >
+                              <Ghost size={16} aria-hidden="true" /> Ghost
+                            </button>
+                          </td>
                         </tr>
                       ))}
                   </tbody>
@@ -440,6 +463,71 @@ export default function Platform({ area = "overview" }: { area?: string }) {
           )}
         </main>
       </div>
+      {ghostStore && (
+        <PlatformDialog
+          title="Ghost tài khoản cửa hàng"
+          onClose={() => {
+            if (!ghostBusy) setGhostStore(null);
+          }}
+        >
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (ghostBusy) return;
+              const reason = new FormData(e.currentTarget).get("reason");
+              setGhostBusy(true);
+              setGhostError("");
+              try {
+                const result = await api(
+                  "platform/stores/" + ghostStore.id + "/ghost",
+                  "POST",
+                  { reason },
+                );
+                window.location.assign(result.redirect);
+              } catch (e) {
+                setGhostError((e as Error).message);
+                setGhostBusy(false);
+              }
+            }}
+          >
+            <h3>{ghostStore.name}</h3>
+            <p>Chủ cửa hàng: {ghostStore.owner_email}</p>
+            <p>
+              Bạn sẽ truy cập workspace bằng tài khoản chủ cửa hàng. Phiên hỗ
+              trợ tối đa 20 phút và được ghi nhật ký. Các giới hạn của phiên
+              Ghost vẫn áp dụng.
+            </p>
+            <label className="field">
+              Lý do hỗ trợ
+              <textarea
+                name="reason"
+                minLength={5}
+                maxLength={500}
+                required
+                disabled={ghostBusy}
+              />
+            </label>
+            {ghostError && (
+              <p className="error" role="alert">
+                {ghostError}
+              </p>
+            )}
+            <div className="button-row">
+              <button className="button" disabled={ghostBusy}>
+                {ghostBusy ? "Đang mở workspace…" : "Bắt đầu Ghost"}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={ghostBusy}
+                onClick={() => setGhostStore(null)}
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        </PlatformDialog>
+      )}
       {detail && (
         <dialog
           ref={merchantDialog}
