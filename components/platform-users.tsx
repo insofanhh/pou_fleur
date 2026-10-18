@@ -2,6 +2,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Search, Plus, Ghost, Pencil, Trash2, RotateCcw } from "lucide-react";
 import { api, useShop } from "./context";
+import { displayLabel, auditAction } from "@/lib/display-labels";
 import PlatformDialog from "./platform-dialog";
 
 type Account = {
@@ -17,22 +18,6 @@ type Account = {
   created_at: string;
 };
 type Mode = "view" | "edit" | "delete" | "ghost" | "restore" | "create";
-const auditLabels: Record<string, string> = {
-  "user:create": "Tạo tài khoản",
-  "user:update": "Cập nhật tài khoản",
-  "user:delete": "Xóa mềm tài khoản",
-  "user:restore": "Khôi phục tài khoản",
-  "ghost:start": "Bắt đầu Ghost",
-  "ghost:stop": "Kết thúc Ghost",
-  "ghost:request": "Thao tác trong phiên Ghost",
-};
-const roles: Record<string, string> = {
-  owner: "Chủ cửa hàng",
-  admin: "Quản trị cửa hàng",
-  manager: "Quản lý",
-  editor: "Biên tập viên",
-  support: "Chăm sóc khách hàng",
-};
 export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
   const { user: actor, toast } = useShop();
   const [search, setSearch] = useState(""),
@@ -325,7 +310,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
               {dialog.detail.memberships.length ? (
                 dialog.detail.memberships.map((m: any) => (
                   <p key={m.store_id}>
-                    {m.store_name} · {roles[m.role] || m.role} ·{" "}
+                    {m.store_name} · {displayLabel("role", m.role)} ·{" "}
                     {m.status === "active" ? "Hoạt động" : "Đã thu hồi"}
                   </p>
                 ))
@@ -337,7 +322,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                 {dialog.detail.audit.length ? (
                   dialog.detail.audit.map((a: any) => (
                     <p key={a.id}>
-                      <strong>{auditLabels[a.action] || a.action}</strong>
+                      <strong>{auditAction(a.action)}</strong>
                       <br />
                       {a.actor_name} · {a.created_at}
                     </p>

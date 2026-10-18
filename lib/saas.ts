@@ -1,4 +1,5 @@
 import { manualOrdersAPI } from "./manual-orders";
+import { displayLabel } from "./display-labels";
 import { recordOrderPayment } from "./order-payments";
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
@@ -908,7 +909,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
               sid,
               s.owner_id,
               "store:" + sid + ":" + (s.version + 1),
-              "Trạng thái cửa hàng: " + status,
+              "Trạng thái cửa hàng: " + displayLabel("store", status),
               reason,
               "/workspace/" + sid + "/settings",
             ],

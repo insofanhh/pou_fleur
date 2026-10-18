@@ -12,7 +12,14 @@ import { useSearchParams } from "next/navigation";
 import Link, { storeRef, useScopedRouter } from "./routing";
 import { api, useShop } from "./context";
 import { money } from "./home";
-import { Plus, Trash2, ArrowLeft, FileText, Check } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ArrowLeft,
+  FileText,
+  Check,
+  ImagePlus,
+} from "lucide-react";
 
 const empty = {
   customerId: null as number | null,
@@ -631,22 +638,55 @@ export default function ManualOrderEditor() {
                                 }
                               />
                             </Field>
-                            <Field label="Ảnh tham khảo (tùy chọn)">
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                onChange={(e) =>
-                                  void upload(index, e.target.files?.[0])
-                                }
-                              />
-                            </Field>
-                            {i.image && (
-                              <img
-                                className="manual-reference"
-                                src={i.image}
-                                alt="Ảnh tham khảo thiết kế"
-                              />
-                            )}
+                            <div className="manual-field">
+                              <span>Ảnh tham khảo (tùy chọn)</span>
+                              <label className="manual-upload">
+                                <input
+                                  type="file"
+                                  aria-label="Ảnh tham khảo (tùy chọn)"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  disabled={busy}
+                                  onChange={(e) => {
+                                    void upload(index, e.target.files?.[0]);
+                                    e.target.value = "";
+                                  }}
+                                />
+                                {i.image ? (
+                                  <img
+                                    className="manual-reference"
+                                    src={i.image}
+                                    alt="Ảnh tham khảo thiết kế"
+                                  />
+                                ) : (
+                                  <span className="manual-upload-icon">
+                                    <ImagePlus size={24} aria-hidden="true" />
+                                  </span>
+                                )}
+                                <span className="manual-upload-copy">
+                                  <strong>
+                                    {i.image
+                                      ? "Thay ảnh tham khảo"
+                                      : "Chọn ảnh tham khảo"}
+                                  </strong>
+                                  <small>
+                                    JPG, PNG hoặc WebP · Tối đa 4 MB
+                                  </small>
+                                </span>
+                              </label>
+                              {i.image && (
+                                <button
+                                  className="text-button manual-upload-remove"
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    itemChange(index, { image: "" })
+                                  }
+                                >
+                                  <Trash2 size={14} aria-hidden="true" /> Xóa
+                                  ảnh tham khảo
+                                </button>
+                              )}
+                            </div>
                             <small>
                               Thiết kế riêng chưa theo dõi tồn nguyên liệu.
                             </small>
@@ -756,8 +796,8 @@ export default function ManualOrderEditor() {
                   <>
                     <div className="manual-mode">
                       {[
-                        ["gift", "Gửi đến người bạn thương"],
-                        ["self", "Giao cho tôi"],
+                        ["gift", "Gửi hoa tới người khách thương"],
+                        ["self", "Giao cho khách"],
                       ].map(([value, label]) => (
                         <label key={value}>
                           <input

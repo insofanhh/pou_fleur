@@ -1,4 +1,5 @@
 "use client";
+import { displayLabel, auditAction } from "@/lib/display-labels";
 import WorkspaceView, { workspaceAreas } from "./workspace";
 
 import Link, { useLocalPath } from "./routing";
@@ -736,9 +737,10 @@ export default function Admin({ data }: { data: Catalog }) {
                           ) : area === "audit" ? (
                             <>
                               <td>{r.user_name || "Hệ thống"}</td>
-                              <td>{r.action}</td>
+                              <td>{auditAction(r.action, r.entity)}</td>
                               <td>
-                                {r.entity} #{r.entity_id}
+                                {displayLabel("entity", r.entity)} #
+                                {r.entity_id}
                               </td>
                               <td>{r.created_at}</td>
                             </>

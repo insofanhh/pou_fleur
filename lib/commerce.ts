@@ -1,4 +1,5 @@
 import { tenantId } from "./tenant";
+import { orderLabels } from "./display-labels";
 import { validateFulfillment } from "./fulfillment";
 import { assertStoreOpen } from "./stores";
 import { emit } from "./domain-events";
@@ -376,7 +377,7 @@ export async function changeOrder(
     );
     await emit(c, "order:" + id + ":" + (o.version + 1), {
       userId: o.user_id,
-      title: "Đơn " + o.reference + " · " + status,
+      title: "Đơn " + o.reference + " · " + orderLabels[status],
       body: "Cửa hàng đã cập nhật trạng thái đơn hoa của bạn.",
     });
     await enqueueOrderEmail(c, id, "order_status", o.status);

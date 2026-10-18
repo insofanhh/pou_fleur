@@ -1,4 +1,5 @@
 "use client";
+import { orderLabels, displayLabel } from "@/lib/display-labels";
 import { loginDestination } from "@/lib/login-redirect";
 import Link, { useScopedRouter } from "./routing";
 import FlowerImage from "./flower-image";
@@ -22,24 +23,11 @@ import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
 import { Breadcrumb, Empty, Field } from "./shopping";
 import { money, ProductCard } from "./home";
-export const statusNames: Record<string, string> = {
-  pending: "Chờ xác nhận",
-  confirmed: "Đã xác nhận",
-  preparing: "Đang chuẩn bị",
-  ready: "Sẵn sàng giao",
-  shipping: "Đang giao",
-  delivered: "Đã giao",
-  cancelled: "Đã huỷ",
-  unpaid: "Chưa thanh toán",
-  partially_paid: "Thu một phần",
-  partially_refunded: "Hoàn một phần",
-  paid: "Đã thanh toán",
-  refunded: "Đã hoàn tiền",
-};
+export const statusNames = orderLabels;
 export function Status({ value }: { value: string }) {
   return (
     <span className={"status status-" + value}>
-      {statusNames[value] || value}
+      {statusNames[value] || "Chưa xác định"}
     </span>
   );
 }
@@ -314,7 +302,7 @@ export function Account() {
           )}
           {user.memberships?.map((m) => (
             <Link key={m.store_id} href={"/workspace/" + m.store_id}>
-              {m.name} · {m.role}
+              {m.name} · {displayLabel("role", m.role)}
             </Link>
           ))}
           <Link href="/wishlist">

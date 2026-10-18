@@ -13,48 +13,7 @@ import {
   Activity,
   ArrowUpRight,
 } from "lucide-react";
-const statusLabels: Record<
-  "store" | "subscription" | "invoice" | "task" | "notification" | "email",
-  Record<string, string>
-> = {
-  store: {
-    draft: "Bản nháp",
-    pending: "Chờ duyệt",
-    approved: "Đã duyệt",
-    rejected: "Đã từ chối",
-    suspended: "Tạm đình chỉ",
-    closed: "Đã đóng",
-  },
-  subscription: {
-    free: "Miễn phí",
-    active: "Đang hoạt động",
-    past_due: "Quá hạn thanh toán",
-    restricted: "Bị hạn chế",
-    cancelled: "Đã hủy",
-  },
-  invoice: {
-    open: "Chờ thanh toán",
-    paid: "Đã thanh toán",
-    void: "Đã hủy",
-  },
-  task: { open: "Chưa hoàn tất", done: "Đã hoàn tất" },
-  notification: {
-    pending: "Chờ xử lý",
-    working: "Đang xử lý",
-    done: "Đã xử lý",
-  },
-  email: {
-    pending: "Chờ gửi",
-    sending: "Đang gửi",
-    sent: "Đã gửi",
-    failed: "Gửi thất bại",
-    uncertain: "Chưa xác định kết quả gửi",
-    cancelled: "Đã hủy",
-  },
-};
-function statusText(kind: keyof typeof statusLabels, value: string) {
-  return statusLabels[kind][value] || "Không xác định";
-}
+import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 export default function Platform({ area = "overview" }: { area?: string }) {
   const { user, ready, toast } = useShop(),
     [data, setData] = useState<any>(null),
@@ -651,7 +610,8 @@ export default function Platform({ area = "overview" }: { area?: string }) {
             <h3>Nhật ký</h3>
             {detail.audit.map((a: any) => (
               <p key={a.id}>
-                {a.created_at} · {a.action} · {a.entity}
+                {a.created_at} · {auditAction(a.action, a.entity)} ·{" "}
+                {statusText("entity", a.entity)}
               </p>
             ))}
           </div>

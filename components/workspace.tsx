@@ -4,6 +4,7 @@ import { api, useShop } from "./context";
 import { Status, statusNames } from "./pages";
 import { money } from "./home";
 import Link from "./routing";
+import { displayLabel } from "@/lib/display-labels";
 import ManualOrderEditor from "./manual-order-editor";
 const statuses = [
   "pending",
@@ -1110,7 +1111,8 @@ function Analytics() {
               <h3>Phân nhóm khách hàng</h3>
               {data.segments.map((s: any) => (
                 <p key={s.segment}>
-                  {s.segment}: <strong>{s.count}</strong>
+                  {displayLabel("segment", s.segment)}:{" "}
+                  <strong>{s.count}</strong>
                 </p>
               ))}
             </div>
@@ -1118,7 +1120,8 @@ function Analytics() {
               <h3>Tương tác cửa hàng</h3>
               {data.funnel.map((s: any) => (
                 <p key={s.name}>
-                  {s.name}: <strong>{s.count}</strong>
+                  {displayLabel("interaction", s.name)}:{" "}
+                  <strong>{s.count}</strong>
                 </p>
               ))}
               <p className="small">
@@ -1140,7 +1143,7 @@ function StoreSettings() {
     <div className="panel">
       <div className="flex-between">
         <h2>{data.name}</h2>
-        <span className="tag">{data.status}</span>
+        <span className="tag">{displayLabel("store", data.status)}</span>
       </div>
       <form
         key={data.version}
@@ -1461,20 +1464,24 @@ function Billing() {
         <h2>Gói {data.subscription.name}</h2>
         <p>
           {money(data.subscription.monthly_price)} / tháng ·{" "}
-          {data.subscription.status}
+          {displayLabel("subscription", data.subscription.status)}
         </p>
         <p>
           Kết thúc kỳ:{" "}
           {data.subscription.period_end || "Không giới hạn với gói miễn phí"}
         </p>
-        <p>
-          Hạn mức:{" "}
-          {JSON.stringify(
+        <div>
+          <h3>Hạn mức gói</h3>
+          {Object.entries(
             typeof data.subscription.limits === "string"
               ? JSON.parse(data.subscription.limits)
-              : data.subscription.limits,
-          )}
-        </p>
+              : data.subscription.limits || {},
+          ).map(([key, value]) => (
+            <p key={key}>
+              {displayLabel("limit", key)}: <strong>{String(value)}</strong>
+            </p>
+          ))}
+        </div>
         <button
           className="button secondary"
           onClick={async () => {
@@ -1518,7 +1525,7 @@ function Billing() {
                 <td>{money(i.amount)}</td>
                 <td>{money(i.paid)}</td>
                 <td>{i.due_date}</td>
-                <td>{i.status}</td>
+                <td>{displayLabel("invoice", i.status)}</td>
               </tr>
             ))}
           </tbody>
@@ -1548,9 +1555,9 @@ function Team() {
                 {m.email} · ID {m.id}
               </small>
             </div>
-            <span>{m.status}</span>
+            <span>{displayLabel("member", m.status)}</span>
             {m.role === "owner" || user?.role !== "owner" ? (
-              <span>{m.role}</span>
+              <span>{displayLabel("role", m.role)}</span>
             ) : (
               <>
                 <select
@@ -1569,7 +1576,9 @@ function Team() {
                   }}
                 >
                   {["admin", "manager", "editor", "support"].map((r) => (
-                    <option key={r}>{r}</option>
+                    <option key={r} value={r}>
+                      {displayLabel("role", r)}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -1620,7 +1629,9 @@ function Team() {
             Vai trò
             <select name="role">
               {["admin", "manager", "editor", "support"].map((r) => (
-                <option key={r}>{r}</option>
+                <option key={r} value={r}>
+                  {displayLabel("role", r)}
+                </option>
               ))}
             </select>
           </label>
@@ -1637,7 +1648,14 @@ function Team() {
         <h3>Lời mời</h3>
         {data.invitations.map((i: any) => (
           <p key={i.id}>
-            {i.email} · {i.role} · {i.status} · hết hạn {i.expires_at}
+            {i.email} · {displayLabel("role", i.role)} ·{" "}
+            {displayLabel(
+              "invitation",
+              i.status === "pending" && Date.parse(i.expires_at) < Date.now()
+                ? "expired"
+                : i.status,
+            )}{" "}
+            · hết hạn {i.expires_at}
           </p>
         ))}
       </div>
@@ -1706,8 +1724,8 @@ function Automations() {
             <div>
               <strong>{r.name}</strong>
               <small>
-                {r.trigger_name} · {r.delay_days} ngày ·{" "}
-                {r.active ? "Đang bật" : "Tạm dừng"}
+                {displayLabel("automation", r.trigger_name)} · {r.delay_days}{" "}
+                ngày · {r.active ? "Đang bật" : "Tạm dừng"}
               </small>
             </div>
             <button
@@ -1724,7 +1742,7 @@ function Automations() {
                 }
               }}
             >
-              {r.active ? "Tạm dừng" : "Bật rule"}
+              {r.active ? "Tạm dừng" : "Bật quy tắc"}
             </button>
           </div>
         ))}

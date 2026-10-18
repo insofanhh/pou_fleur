@@ -65,7 +65,56 @@ try {
     .getByLabel("Tên thiết kế riêng", { exact: true })
     .fill("Bó hoa trắng UI");
   await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("250000");
-  await page.getByLabel("Giao cho tôi", { exact: true }).check();
+  const upload = page.getByLabel("Ảnh tham khảo (tùy chọn)", { exact: true });
+  let uploadRequests = 0;
+  await page.route("**/api/upload?purpose=order-reference", async (route) => {
+    uploadRequests++;
+    assert.equal(
+      route.request().headers()["x-fleur-store"],
+      String(fixture.sid),
+    );
+    await route.fulfill({ json: { url: "/favicon.ico" } });
+  });
+  await upload.setInputFiles({
+    name: "invalid.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("invalid"),
+  });
+  await expect(
+    page.getByText("Ảnh JPG, PNG hoặc WebP tối đa 4 MB.", { exact: true }),
+  ).toBeVisible();
+  check(uploadRequests === 0, "Invalid reference file rejected before upload");
+  const image = {
+    name: "reference.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jA1sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  };
+  await upload.setInputFiles(image);
+  await expect(
+    page.getByAltText("Ảnh tham khảo thiết kế", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Xóa ảnh tham khảo", exact: true })
+    .click();
+  await expect(
+    page.getByAltText("Ảnh tham khảo thiết kế", { exact: true }),
+  ).toHaveCount(0);
+  await upload.setInputFiles(image);
+  await expect(
+    page.getByAltText("Ảnh tham khảo thiết kế", { exact: true }),
+  ).toBeVisible();
+  check(
+    uploadRequests === 2,
+    "Reference image previews, removes, and accepts the same file again",
+  );
+  await page
+    .getByRole("button", { name: "Xóa ảnh tham khảo", exact: true })
+    .click();
+  await page.unroute("**/api/upload?purpose=order-reference");
+  await page.getByLabel("Giao cho khách", { exact: true }).check();
   check(
     (await page.getByLabel("Tên người nhận", { exact: true }).count()) === 0,
     "Self delivery hides repeated recipient inputs",
@@ -162,6 +211,15 @@ try {
     check(
       await page.getByLabel("Tên người nhận", { exact: true }).isVisible(),
       "Gift recipient shown by default at " + width,
+    );
+    await expect(
+      page.getByLabel("Gửi hoa tới người khách thương", { exact: true }),
+    ).toBeChecked();
+    check(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+      "Upload and delivery labels fit mobile at " + width,
     );
     await page
       .getByLabel("Ngày giao hoa", { exact: true })
