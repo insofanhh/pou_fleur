@@ -305,9 +305,6 @@ export function Account() {
               {label}
             </button>
           ))}
-          <a href="/api/auth/google?link=1&next=/account">
-            Liên kết tài khoản Google
-          </a>
           <Link href="/start">Mở cửa hàng của bạn</Link>
           {user.platformRole === "platform_admin" && (
             <Link href="/platform">Quản trị nền tảng</Link>
