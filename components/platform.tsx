@@ -12,6 +12,48 @@ import {
   Activity,
   ArrowUpRight,
 } from "lucide-react";
+const statusLabels: Record<
+  "store" | "subscription" | "invoice" | "task" | "notification" | "email",
+  Record<string, string>
+> = {
+  store: {
+    draft: "Bản nháp",
+    pending: "Chờ duyệt",
+    approved: "Đã duyệt",
+    rejected: "Đã từ chối",
+    suspended: "Tạm đình chỉ",
+    closed: "Đã đóng",
+  },
+  subscription: {
+    free: "Miễn phí",
+    active: "Đang hoạt động",
+    past_due: "Quá hạn thanh toán",
+    restricted: "Bị hạn chế",
+    cancelled: "Đã hủy",
+  },
+  invoice: {
+    open: "Chờ thanh toán",
+    paid: "Đã thanh toán",
+    void: "Đã hủy",
+  },
+  task: { open: "Chưa hoàn tất", done: "Đã hoàn tất" },
+  notification: {
+    pending: "Chờ xử lý",
+    working: "Đang xử lý",
+    done: "Đã xử lý",
+  },
+  email: {
+    pending: "Chờ gửi",
+    sending: "Đang gửi",
+    sent: "Đã gửi",
+    failed: "Gửi thất bại",
+    uncertain: "Chưa xác định kết quả gửi",
+    cancelled: "Đã hủy",
+  },
+};
+function statusText(kind: keyof typeof statusLabels, value: string) {
+  return statusLabels[kind][value] || "Không xác định";
+}
 export default function Platform({ area = "overview" }: { area?: string }) {
   const { user, ready, toast } = useShop(),
     [data, setData] = useState<any>(null),
@@ -224,7 +266,9 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                     "suspended",
                     "closed",
                   ].map((v) => (
-                    <option key={v}>{v}</option>
+                    <option key={v} value={v}>
+                      {statusText("store", v)}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -261,10 +305,13 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                             <small>{s.owner_email}</small>
                           </td>
                           <td>
-                            <span className="tag">{s.status}</span>
+                            <span className="tag">
+                              {statusText("store", s.status)}
+                            </span>
                           </td>
                           <td>
-                            {s.plan} · {s.subscription_status}
+                            {s.plan} ·{" "}
+                            {statusText("subscription", s.subscription_status)}
                           </td>
                           <td>{s.orders_count}</td>
                           <td>{money(s.gmv)}</td>
@@ -324,7 +371,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                         <td>{i.plan_name}</td>
                         <td>{money(i.amount)}</td>
                         <td>{money(i.paid)}</td>
-                        <td>{i.status}</td>
+                        <td>{statusText("invoice", i.status)}</td>
                         <td>
                           {i.status === "open" && (
                             <form
@@ -445,7 +492,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                 <h3>Hàng đợi thông báo</h3>
                 {data.jobs?.map((r: any) => (
                   <p key={r.status}>
-                    {r.status}: {r.count}
+                    {statusText("notification", r.status)}: {r.count}
                   </p>
                 ))}
               </div>
@@ -453,7 +500,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                 <h3>Hàng đợi email</h3>
                 {data.emails?.map((r: any) => (
                   <p key={r.status}>
-                    {r.status}: {r.count}
+                    {statusText("email", r.status)}: {r.count}
                   </p>
                 ))}
               </div>
@@ -495,7 +542,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
           <p>
             {detail.store.address} · {detail.store.phone}
           </p>
-          <p>Trạng thái: {detail.store.status}</p>
+          <p>Trạng thái: {statusText("store", detail.store.status)}</p>
           <Link href={"/s/" + detail.store.slug} target="_blank">
             Xem storefront ↗
           </Link>
@@ -515,7 +562,9 @@ export default function Platform({ area = "overview" }: { area?: string }) {
               Chuyển trạng thái
               <select name="status">
                 {["approved", "rejected", "suspended", "closed"].map((s) => (
-                  <option key={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {statusText("store", s)}
+                  </option>
                 ))}
               </select>
             </label>
@@ -560,7 +609,9 @@ export default function Platform({ area = "overview" }: { area?: string }) {
               <select name="status" defaultValue={detail.subscription?.status}>
                 {["free", "active", "past_due", "restricted", "cancelled"].map(
                   (s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {statusText("subscription", s)}
+                    </option>
                   ),
                 )}
               </select>
@@ -582,7 +633,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
                 <strong>{t.title}</strong>
                 <p>{t.note}</p>
                 <small>
-                  {t.due_date} · {t.status}
+                  {t.due_date} · {statusText("task", t.status)}
                 </small>
                 <button
                   className="text-button"
