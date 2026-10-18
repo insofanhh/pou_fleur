@@ -48,6 +48,15 @@ try {
     page.url().includes("/orders/new"),
     "Create button opens editor in current workspace",
   );
+  const paymentStatus = page.getByLabel("Trạng thái thanh toán", {
+    exact: true,
+  });
+  await expect(paymentStatus).toHaveValue("Chưa thanh toán");
+  await expect(paymentStatus).toHaveJSProperty("readOnly", true);
+  check(
+    true,
+    "New order starts unpaid with status derived from received money",
+  );
   await page
     .getByLabel("Tên người đặt", { exact: true })
     .fill("Khách UI " + Date.now());
@@ -149,12 +158,42 @@ try {
   await page
     .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
     .fill("100000");
+  await expect(paymentStatus).toHaveValue("Chờ tính giá");
+  const quoteResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/workspace/manual-orders/quote") &&
+      response.request().method() === "POST",
+  );
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
+  const quoted = await (await quoteResponse).json();
   await page
     .getByRole("heading", { name: "Rà soát đơn hàng", exact: true })
     .waitFor();
+  await expect(paymentStatus).toHaveValue("Thu một phần");
+  check(true, "Partial receipt is classified against server-calculated total");
+  await page
+    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
+    .fill(String(quoted.total));
+  await expect(paymentStatus).toHaveValue("Chờ tính giá");
+  await page
+    .getByRole("button", { name: "Tính giá & rà soát", exact: true })
+    .click();
+  await expect(paymentStatus).toHaveValue("Đã thanh toán");
+  check(true, "Receiving the full quoted total displays paid");
+  await page
+    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
+    .fill("0");
+  await expect(paymentStatus).toHaveValue("Chưa thanh toán");
+  check(true, "Clearing received money resets status to unpaid");
+  await page
+    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
+    .fill("100000");
+  await page
+    .getByRole("button", { name: "Tính giá & rà soát", exact: true })
+    .click();
+  await expect(paymentStatus).toHaveValue("Thu một phần");
   check(
     (await page
       .getByRole("button", { name: "Tạo đơn hàng", exact: true })
@@ -263,6 +302,9 @@ try {
       (await sp.getByLabel("Giảm giá thủ công", { exact: true }).count()) === 0,
     "Support UI hides collection and price override",
   );
+  await expect(
+    sp.getByLabel("Trạng thái thanh toán", { exact: true }),
+  ).toHaveValue("Chưa thanh toán");
   await sp.screenshot({
     path: ".local/manual-ui/mobile-support.png",
     fullPage: true,

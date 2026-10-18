@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import Link, { storeRef, useScopedRouter } from "./routing";
 import { api, useShop } from "./context";
 import { money } from "./home";
+import { orderLabels } from "@/lib/display-labels";
 import {
   Plus,
   Trash2,
@@ -93,6 +94,13 @@ export default function ManualOrderEditor() {
     date = params.get("date"),
     customer = params.get("customer");
   const cap = options?.capabilities || {};
+  const paymentStatus = !Number(form.collectAmount)
+    ? orderLabels.unpaid
+    : !quote
+      ? "Chờ tính giá"
+      : Number(form.collectAmount) === Number(quote.total)
+        ? orderLabels.paid
+        : orderLabels.partially_paid;
   function change(patch: any) {
     leaving.current = false;
     setForm((f: any) => ({ ...f, ...patch }));
@@ -935,6 +943,17 @@ export default function ManualOrderEditor() {
                         "Lý do giảm giá / sửa phí giao",
                         { required: true, minLength: 5, maxLength: 500 },
                       )}
+                    <Field label="Trạng thái thanh toán">
+                      <input
+                        readOnly
+                        value={paymentStatus}
+                        aria-describedby="manual-payment-status-help"
+                      />
+                    </Field>
+                    <p id="manual-payment-status-help" className="small">
+                      Tự động xác định theo số tiền đã nhận và tổng đơn sau khi
+                      tính giá. Trạng thái được lưu khi tạo đơn thành công.
+                    </p>
                     {cap.collect ? (
                       <>
                         <div className="form-grid">

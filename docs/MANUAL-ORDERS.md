@@ -35,6 +35,7 @@ Editor và người mua không được tạo đơn. Ghost dùng quyền của u
 - Email tùy chọn: không có email thì hiển thị lý do bỏ qua; có email thì dùng template và outbox hiện tại. Xác nhận ngay gửi một confirmation, không gửi thêm email trạng thái trùng ở bước tạo.
 - Không tự bật marketing consent. Automation/email campaign bỏ qua liên hệ thiếu email; CRM, lịch sử mua và báo cáo dùng customer_id.
 - Sổ thu/hoàn độc lập với giao hàng. Hủy đơn đã cọc vẫn hiển thị tiền cần xử lý hoàn. Hủy chỉ hoàn tồn catalog; dòng custom không tác động tồn.
+- Mục **Giá & thanh toán** hiển thị **Trạng thái thanh toán** tự động theo số tiền đã nhận: chưa thanh toán, thu một phần hoặc đã thanh toán. Khi đã nhập tiền nhưng chưa có tổng từ server, hiển thị **Chờ tính giá**. Đây là trường chỉ đọc, không cho gán trạng thái khác với sổ thu tiền; trạng thái chính thức được ghi khi tạo đơn thành công.
 - Đơn có thiết kế riêng không tự đặt lại bằng giá cũ: thông báo liên hệ cửa hàng để báo giá. Tạo nháp tự động từ đơn cũ/yêu cầu báo giá là phần mở rộng.
 - Public order history không trả internal_notes, adjustment, hash yêu cầu hoặc thông tin nhân viên tạo.
 - Báo cáo store có nguồn web/manual và kênh tiếp nhận. Số tiền thu lấy từ ledger, doanh thu giữ quy tắc đơn đã giao hiện tại.
