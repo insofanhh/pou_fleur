@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
 import {
@@ -20,6 +20,25 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     [filter, setFilter] = useState(""),
     [detail, setDetail] = useState<any>(null),
     [mobile, setMobile] = useState(false);
+  const merchantDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = merchantDialog.current;
+    if (!detail || !dialog) return;
+    const { overflow, paddingRight } = document.body.style;
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbar > 0)
+      document.body.style.paddingRight =
+        parseFloat(getComputedStyle(document.body).paddingRight) +
+        scrollbar +
+        "px";
+    document.body.style.overflow = "hidden";
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      document.body.style.overflow = overflow;
+      document.body.style.paddingRight = paddingRight;
+    };
+  }, [detail?.store.id]);
   async function refresh() {
     try {
       setData(await api("platform/" + area));
@@ -443,170 +462,176 @@ export default function Platform({ area = "overview" }: { area?: string }) {
         </main>
       </div>
       {detail && (
-        <div className="modal-backdrop" onClick={() => setDetail(null)}>
-          <div
-            className="modal merchant-detail"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Hồ sơ cửa hàng"
-            onClick={(e) => e.stopPropagation()}
+        <dialog
+          ref={merchantDialog}
+          className="modal merchant-detail"
+          aria-label="Hồ sơ cửa hàng"
+          onCancel={(e) => {
+            e.preventDefault();
+            setDetail(null);
+          }}
+          onClick={(e) => {
+            if (e.target !== e.currentTarget) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (
+              e.clientX < rect.left ||
+              e.clientX > rect.right ||
+              e.clientY < rect.top ||
+              e.clientY > rect.bottom
+            )
+              setDetail(null);
+          }}
+        >
+          <div className="flex-between">
+            <h2>{detail.store.name}</h2>
+            <button
+              className="icon-button"
+              aria-label="Đóng"
+              onClick={() => setDetail(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <p>
+            {detail.store.address} · {detail.store.phone}
+          </p>
+          <p>Trạng thái: {detail.store.status}</p>
+          <Link href={"/s/" + detail.store.slug} target="_blank">
+            Xem storefront ↗
+          </Link>
+          <form
+            className="panel"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = Object.fromEntries(new FormData(e.currentTarget));
+              void action("stores/" + detail.store.id + "/status", "PATCH", {
+                ...f,
+                version: detail.store.version,
+              });
+            }}
           >
-            <div className="flex-between">
-              <h2>{detail.store.name}</h2>
-              <button aria-label="Đóng" onClick={() => setDetail(null)}>
-                ✕
-              </button>
-            </div>
-            <p>
-              {detail.store.address} · {detail.store.phone}
-            </p>
-            <p>Trạng thái: {detail.store.status}</p>
-            <Link href={"/s/" + detail.store.slug} target="_blank">
-              Xem storefront ↗
-            </Link>
+            <h3>Vận hành store</h3>
+            <label className="field">
+              Chuyển trạng thái
+              <select name="status">
+                {["approved", "rejected", "suspended", "closed"].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Lý do
+              <textarea name="reason" minLength={5} required />
+            </label>
+            <button className="button">Cập nhật trạng thái</button>
+          </form>
+          <form
+            className="panel"
+            key={detail.subscription?.version}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f: any = Object.fromEntries(new FormData(e.currentTarget));
+              void action(
+                "stores/" + detail.store.id + "/subscription",
+                "PATCH",
+                {
+                  ...f,
+                  plan_id: Number(f.plan_id),
+                  period_end: f.period_end || null,
+                  version: detail.subscription.version,
+                },
+              );
+            }}
+          >
+            <h3>Gói dịch vụ</h3>
+            <label className="field">
+              Gói
+              <select
+                name="plan_id"
+                defaultValue={detail.subscription?.plan_id}
+              >
+                <option value="1">Khởi đầu</option>
+                <option value="2">Studio</option>
+                <option value="3">Atelier</option>
+              </select>
+            </label>
+            <label className="field">
+              Trạng thái
+              <select name="status" defaultValue={detail.subscription?.status}>
+                {["free", "active", "past_due", "restricted", "cancelled"].map(
+                  (s) => (
+                    <option key={s}>{s}</option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label className="field">
+              Cuối kỳ
+              <input
+                type="date"
+                name="period_end"
+                defaultValue={detail.subscription?.period_end || ""}
+              />
+            </label>
+            <button className="button secondary">Lưu gói</button>
+          </form>
+          <div className="panel">
+            <h3>Merchant CRM · Việc chăm sóc</h3>
+            {detail.tasks.map((t: any) => (
+              <div key={t.id}>
+                <strong>{t.title}</strong>
+                <p>{t.note}</p>
+                <small>
+                  {t.due_date} · {t.status}
+                </small>
+                <button
+                  className="text-button"
+                  onClick={() =>
+                    void action(
+                      "stores/" + detail.store.id + "/tasks/" + t.id,
+                      "PATCH",
+                      { status: t.status === "open" ? "done" : "open" },
+                    )
+                  }
+                >
+                  {t.status === "open" ? "Hoàn tất" : "Mở lại"}
+                </button>
+              </div>
+            ))}
             <form
-              className="panel"
               onSubmit={(e) => {
                 e.preventDefault();
                 const f = Object.fromEntries(new FormData(e.currentTarget));
-                void action("stores/" + detail.store.id + "/status", "PATCH", {
+                void action("stores/" + detail.store.id + "/tasks", "POST", {
                   ...f,
-                  version: detail.store.version,
+                  due_date: f.due_date || null,
                 });
               }}
             >
-              <h3>Vận hành store</h3>
               <label className="field">
-                Chuyển trạng thái
-                <select name="status">
-                  {["approved", "rejected", "suspended", "closed"].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
+                Việc cần làm
+                <input name="title" required />
               </label>
               <label className="field">
-                Lý do
-                <textarea name="reason" minLength={5} required />
+                Ghi chú
+                <textarea name="note" />
               </label>
-              <button className="button">Cập nhật trạng thái</button>
+              <label className="field">
+                Hạn
+                <input name="due_date" type="date" />
+              </label>
+              <button className="button secondary">Thêm công việc</button>
             </form>
-            <form
-              className="panel"
-              key={detail.subscription?.version}
-              onSubmit={(e) => {
-                e.preventDefault();
-                const f: any = Object.fromEntries(
-                  new FormData(e.currentTarget),
-                );
-                void action(
-                  "stores/" + detail.store.id + "/subscription",
-                  "PATCH",
-                  {
-                    ...f,
-                    plan_id: Number(f.plan_id),
-                    period_end: f.period_end || null,
-                    version: detail.subscription.version,
-                  },
-                );
-              }}
-            >
-              <h3>Gói dịch vụ</h3>
-              <label className="field">
-                Gói
-                <select
-                  name="plan_id"
-                  defaultValue={detail.subscription?.plan_id}
-                >
-                  <option value="1">Khởi đầu</option>
-                  <option value="2">Studio</option>
-                  <option value="3">Atelier</option>
-                </select>
-              </label>
-              <label className="field">
-                Trạng thái
-                <select
-                  name="status"
-                  defaultValue={detail.subscription?.status}
-                >
-                  {[
-                    "free",
-                    "active",
-                    "past_due",
-                    "restricted",
-                    "cancelled",
-                  ].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                Cuối kỳ
-                <input
-                  type="date"
-                  name="period_end"
-                  defaultValue={detail.subscription?.period_end || ""}
-                />
-              </label>
-              <button className="button secondary">Lưu gói</button>
-            </form>
-            <div className="panel">
-              <h3>Merchant CRM · Việc chăm sóc</h3>
-              {detail.tasks.map((t: any) => (
-                <div key={t.id}>
-                  <strong>{t.title}</strong>
-                  <p>{t.note}</p>
-                  <small>
-                    {t.due_date} · {t.status}
-                  </small>
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      void action(
-                        "stores/" + detail.store.id + "/tasks/" + t.id,
-                        "PATCH",
-                        { status: t.status === "open" ? "done" : "open" },
-                      )
-                    }
-                  >
-                    {t.status === "open" ? "Hoàn tất" : "Mở lại"}
-                  </button>
-                </div>
-              ))}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = Object.fromEntries(new FormData(e.currentTarget));
-                  void action("stores/" + detail.store.id + "/tasks", "POST", {
-                    ...f,
-                    due_date: f.due_date || null,
-                  });
-                }}
-              >
-                <label className="field">
-                  Việc cần làm
-                  <input name="title" required />
-                </label>
-                <label className="field">
-                  Ghi chú
-                  <textarea name="note" />
-                </label>
-                <label className="field">
-                  Hạn
-                  <input name="due_date" type="date" />
-                </label>
-                <button className="button secondary">Thêm công việc</button>
-              </form>
-            </div>
-            <div className="panel">
-              <h3>Nhật ký</h3>
-              {detail.audit.map((a: any) => (
-                <p key={a.id}>
-                  {a.created_at} · {a.action} · {a.entity}
-                </p>
-              ))}
-            </div>
           </div>
-        </div>
+          <div className="panel">
+            <h3>Nhật ký</h3>
+            {detail.audit.map((a: any) => (
+              <p key={a.id}>
+                {a.created_at} · {a.action} · {a.entity}
+              </p>
+            ))}
+          </div>
+        </dialog>
       )}
     </div>
   );

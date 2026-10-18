@@ -656,9 +656,28 @@
   font: inherit;
 }
 .merchant-detail {
-  max-width: 760px;
-  max-height: 90vh;
+  width: 760px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 28px;
+  background: white;
   overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.platform-shell .admin-main {
+  min-width: 0;
+}
+.merchant-detail > .flex-between {
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.merchant-detail > .flex-between h2 {
+  min-width: 0;
+}
+.merchant-detail > .flex-between .icon-button {
+  flex-shrink: 0;
 }
 .merchant-detail > .panel {
   margin-top: 22px;
