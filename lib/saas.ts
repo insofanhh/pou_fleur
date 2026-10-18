@@ -176,6 +176,8 @@ export async function saasAPI(
           .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
           .refine((s) => !/^\d+$/.test(s), "Đường dẫn không được chỉ gồm số"),
         address: z.string().min(10).max(500),
+        lat: z.number().min(-90).max(90).nullable().optional(),
+        lng: z.number().min(-180).max(180).nullable().optional(),
         phone: z.string().min(9).max(30),
       })
       .parse(b);
@@ -183,12 +185,14 @@ export async function saasAPI(
     try {
       await c.beginTransaction();
       const [r]: any = await c.execute(
-        "INSERT INTO stores(slug,name,owner_id,address,phone,settings,theme) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO stores(slug,name,owner_id,address,lat,lng,phone,settings,theme) VALUES(?,?,?,?,?,?,?,?,?)",
         [
           v.slug,
           v.name,
           u.id,
           v.address,
+          v.lat ?? null,
+          v.lng ?? null,
           v.phone,
           JSON.stringify(defaultSettings),
           JSON.stringify(defaultTheme),

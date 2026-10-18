@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { api, useShop } from "./context";
 import FlowerImage from "./flower-image";
+import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
 export default function Marketplace() {
   const [stores, setStores] = useState<any[]>([]),
     [error, setError] = useState(""),
@@ -363,7 +364,9 @@ export function StoreMap({
 export function StartStore() {
   const { user, ready } = useShop(),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [address, setAddress] = useState(""),
+    [location, setLocation] = useState<DeliveryLocation | null>(null);
   return (
     <main className="page narrow">
       <span className="eyebrow">YOUR NEXT CHAPTER</span>
@@ -384,10 +387,15 @@ export function StartStore() {
             e.preventDefault();
             setBusy(true);
             try {
+              const form = Object.fromEntries(new FormData(e.currentTarget));
               const d = await api(
                 "stores",
                 "POST",
-                Object.fromEntries(new FormData(e.currentTarget)),
+                {
+                  ...form,
+                  lat: location?.lat ?? null,
+                  lng: location?.lng ?? null,
+                },
               );
               window.location.href = "/workspace/" + d.id + "/settings";
             } catch (e) {
@@ -411,10 +419,16 @@ export function StartStore() {
               placeholder="ten-tiem-hoa"
             />
           </label>
-          <label className="field">
-            Địa chỉ cửa hàng
-            <input required name="address" minLength={10} />
-          </label>
+          <DeliveryAddress
+            value={address}
+            onChange={setAddress}
+            location={location}
+            onLocation={setLocation}
+            enabled
+            label="Địa chỉ cửa hàng"
+            className=""
+            selectionHint="Đã chọn vị trí cửa hàng. Bạn vẫn có thể bổ sung số nhà hoặc hướng dẫn trong địa chỉ."
+          />
           <label className="field">
             Điện thoại
             <input required name="phone" minLength={9} />
