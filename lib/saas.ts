@@ -226,7 +226,11 @@ export async function saasAPI(
           );
       });
       await c.commit();
-      return { id: r.insertId, slug: v.slug };
+      return {
+        id: r.insertId,
+        slug: v.slug,
+        status: approvalRequired ? "pending" : "approved",
+      };
     } catch (e) {
       await c.rollback();
       throw e;

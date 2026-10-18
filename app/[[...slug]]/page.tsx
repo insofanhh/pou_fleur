@@ -1,6 +1,6 @@
 import { catalogForRoute } from "@/lib/catalog";
 import Store from "@/components/store";
-import Marketplace, { StartStore } from "@/components/marketplace";
+import Marketplace, { PendingStore, StartStore } from "@/components/marketplace";
 import Platform from "@/components/platform";
 import MultiCart from "@/components/multi-cart";
 import { Inbox, Join } from "@/components/pwa";
@@ -79,6 +79,8 @@ export default async function Page({
   if (!slug.length) return <Marketplace />;
   if (slug[0] === "cart" && slug.length === 1) return <MultiCart />;
   if (slug[0] === "start" && slug.length === 1) return <StartStore />;
+  if (slug[0] === "start" && slug[1] === "pending" && slug.length === 2)
+    return <PendingStore />;
   if (slug[0] === "inbox" && slug.length === 1) return <Inbox />;
   if (slug[0] === "join" && slug.length === 1) return <Join />;
   if (

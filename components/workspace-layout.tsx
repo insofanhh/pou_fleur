@@ -36,7 +36,7 @@ export default async function WorkspaceLayout({
       const user = await currentUser();
       if (!user)
         redirect("/login?next=" + encodeURIComponent("/workspace/" + store.id));
-      redirect("/start?pending=" + store.id);
+      redirect("/start/pending?store=" + store.id);
     }
   }
   const data = await withStore(store.id, () => catalogForRoute("admin"));

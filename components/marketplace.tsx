@@ -6,8 +6,10 @@ import {
   MapPin,
   LocateFixed,
   ArrowUpRight,
+  ArrowRight,
   Search,
   Flower2,
+  Clock3,
 } from "lucide-react";
 import { api, useShop } from "./context";
 import FlowerImage from "./flower-image";
@@ -362,14 +364,29 @@ export function StoreMap({
     </aside>
   );
 }
+export function PendingStore() {
+  return (
+    <main className="page">
+      <div className="empty pending-store-page" role="status">
+        <Clock3 aria-hidden="true" />
+        <h2>Cửa hàng đang chờ admin platform duyệt.</h2>
+        <p>Bạn sẽ vào được workspace sau khi cửa hàng được chấp thuận.</p>
+        <Link className="button" href="/">
+          Tiếp tục khám phá <ArrowRight size={18} />
+        </Link>
+      </div>
+    </main>
+  );
+}
+
 export function StartStore() {
   const { user, ready } = useShop(),
     searchParams = useSearchParams(),
-    pendingStore = searchParams.get("pending"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [address, setAddress] = useState(""),
     [location, setLocation] = useState<DeliveryLocation | null>(null);
+  if (searchParams.get("pending")) return <PendingStore />;
   return (
     <main className="page narrow">
       <span className="eyebrow">YOUR NEXT CHAPTER</span>
@@ -378,12 +395,6 @@ export function StartStore() {
         Bắt đầu với thông tin cơ bản. Hoàn tất địa chỉ, giao diện và sản phẩm để
         đưa cửa hàng vào hoạt động.
       </p>
-      {pendingStore && (
-        <p className="notice" role="status">
-          Cửa hàng đang chờ admin platform duyệt. Bạn sẽ vào được workspace sau
-          khi cửa hàng được chấp thuận.
-        </p>
-      )}
       {!ready ? (
         <p>Đang tải…</p>
       ) : !user ? (
@@ -407,7 +418,10 @@ export function StartStore() {
                   lng: location?.lng ?? null,
                 },
               );
-              window.location.href = "/workspace/" + d.id + "/settings";
+              window.location.href =
+                d.status === "pending"
+                  ? "/start/pending?store=" + d.id
+                  : "/workspace/" + d.id + "/settings";
             } catch (e) {
               setError((e as Error).message);
             } finally {
