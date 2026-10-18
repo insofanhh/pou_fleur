@@ -387,6 +387,8 @@ export function StartStore() {
     [address, setAddress] = useState(""),
     [location, setLocation] = useState<DeliveryLocation | null>(null);
   if (searchParams.get("pending")) return <PendingStore />;
+  if (ready && user?.memberships?.some((membership) => membership.status === "pending"))
+    return <PendingStore />;
   return (
     <main className="page narrow">
       <span className="eyebrow">YOUR NEXT CHAPTER</span>

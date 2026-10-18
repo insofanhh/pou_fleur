@@ -58,6 +58,7 @@ export type User = {
     role: string;
     slug: string;
     name: string;
+    status?: string;
   }[];
   platformRole?: string | null;
   id: number;

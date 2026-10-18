@@ -82,7 +82,7 @@ export async function currentUser() {
     if (!u) return null;
   }
   const memberships = await query<any[]>(
-    "SELECT m.store_id,m.role,s.slug,s.name FROM store_memberships m JOIN stores s ON s.id=m.store_id WHERE m.user_id=? AND m.status='active'",
+    "SELECT m.store_id,m.role,s.slug,s.name,s.status FROM store_memberships m JOIN stores s ON s.id=m.store_id WHERE m.user_id=? AND m.status='active'",
     [u.id],
   );
   const platform = await query<any[]>(
