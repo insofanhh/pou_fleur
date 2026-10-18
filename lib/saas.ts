@@ -1,6 +1,7 @@
 import { manualOrdersAPI } from "./manual-orders";
 import { displayLabel } from "./display-labels";
-import { recordOrderPayment } from "./order-payments";
+import { recordOrderPayment, changePaymentMethod } from "./order-payments";
+import { orderStates } from "./order-workflow";
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
 import { broadcast } from "./broadcasts";
@@ -594,23 +595,38 @@ export async function saasAPI(
   if (path[0] === "workspace" && path[1] === "orders" && path[2]) {
     const actor = await requirePermission("orders"),
       orderId = id.parse(path[2]);
-    if (path[3] === "status" && method === "PATCH")
-      return changeOrder(
-        orderId,
-        z
-          .enum([
-            "confirmed",
-            "preparing",
-            "ready",
-            "shipping",
-            "delivered",
-            "cancelled",
-          ])
-          .parse(b.status),
-        actor.id,
-        false,
-        id.parse(b.version),
-      );
+    if (path[3] === "status" && method === "PATCH") {
+      const v = z
+        .object({
+          status: z.enum(orderStates),
+          version: id,
+          reason: z.string().trim().max(500).optional(),
+          date: day.optional(),
+          slot: z.string().trim().min(1).max(30).optional(),
+        })
+        .parse(b);
+      return changeOrder(orderId, v.status, actor.id, false, v.version, v);
+    }
+    if (path[3] === "payment-method" && method === "PATCH") {
+      const member = await membership();
+      if (!["owner", "admin", "manager"].includes(member.role))
+        throw new HttpError(
+          403,
+          "Bạn không có quyền đổi phương thức thanh toán.",
+        );
+      const c = await pool.getConnection();
+      try {
+        await c.beginTransaction();
+        await changePaymentMethod(c, orderId, actor.id, b);
+        await c.commit();
+        return resultOK;
+      } catch (e) {
+        await c.rollback();
+        throw e;
+      } finally {
+        c.release();
+      }
+    }
     if (path[3] === "reschedule" && method === "PATCH")
       return reschedule(orderId, actor.id, b);
     if (path[3] === "timeline" && method === "GET")

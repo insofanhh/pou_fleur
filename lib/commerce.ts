@@ -1,4 +1,5 @@
 import { tenantId } from "./tenant";
+import { needsTransitionReason, orderStates } from "./order-workflow";
 import { orderLabels } from "./display-labels";
 import { validateFulfillment } from "./fulfillment";
 import { assertStoreOpen } from "./stores";
@@ -309,10 +310,15 @@ export async function changeOrder(
   actor: number,
   owner = false,
   version?: number,
+  options: { reason?: string; date?: string; slot?: string } = {},
 ) {
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
+    // Use the same lock order as checkout/rescheduling to serialize capacity checks.
+    await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
+      tenantId(),
+    ]);
     const [rows] = await c.execute(
       "SELECT * FROM orders WHERE id=? FOR UPDATE",
       [id],
@@ -333,20 +339,68 @@ export async function changeOrder(
         403,
         "Không thể huỷ đơn này. Vui lòng liên hệ Fleurious.",
       );
-    const next: Record<string, string[]> = {
-      pending: ["confirmed", "cancelled"],
-      confirmed: ["preparing", "cancelled"],
-      preparing: ["ready"],
-      ready: ["shipping"],
-      shipping: ["delivered"],
-      delivered: [],
-      cancelled: [],
-    };
-    if (!next[o.status]?.includes(status))
+    if (
+      !orderStates.includes(status as any) ||
+      (owner && !["pending", "confirmed"].includes(o.status))
+    )
       throw new HttpError(
         400,
         "Trạng thái đơn hàng không thể chuyển theo cách này.",
       );
+    if (status === o.status) return await c.commit().then(() => ({ ok: true }));
+    const reason = options.reason?.trim() || "";
+    if (!owner && needsTransitionReason(o.status, status) && reason.length < 5)
+      throw new HttpError(400, "Vui lòng nhập lý do ít nhất 5 ký tự.");
+    let deliveryDate = o.delivery_date,
+      deliverySlot = o.delivery_slot;
+    if (o.status === "cancelled") {
+      const store = await assertStoreOpen(c);
+      deliveryDate = options.date || o.delivery_date;
+      deliverySlot = options.slot || o.delivery_slot;
+      await validateFulfillment(
+        c,
+        store,
+        {
+          deliveryDate,
+          deliverySlot,
+          ...(o.delivery_lat != null && o.delivery_lng != null
+            ? {
+                deliveryLat: Number(o.delivery_lat),
+                deliveryLng: Number(o.delivery_lng),
+              }
+            : {}),
+        },
+        id,
+      );
+      const [items]: any = await c.execute(
+        "SELECT product_id,SUM(quantity) quantity FROM order_items WHERE order_id=? AND line_type='catalog' GROUP BY product_id ORDER BY product_id",
+        [id],
+      );
+      for (const i of items) {
+        if (!i.product_id)
+          throw new HttpError(409, "Sản phẩm đã bị xóa. Hãy tạo đơn mới.");
+        const [r]: any = await c.execute(
+          "UPDATE products SET stock=stock-? WHERE id=? AND stock>=? AND active=1",
+          [i.quantity, i.product_id, i.quantity],
+        );
+        if (!r.affectedRows)
+          throw new HttpError(
+            409,
+            "Không đủ tồn kho hoặc sản phẩm đã ngừng bán để khôi phục đơn.",
+          );
+      }
+      if (o.promotion_id) {
+        const [r]: any = await c.execute(
+          "UPDATE promotions SET used=used+1 WHERE id=? AND used<usage_limit",
+          [o.promotion_id],
+        );
+        if (!r.affectedRows)
+          throw new HttpError(
+            409,
+            "Chương trình giảm giá đã hết lượt. Hãy tạo đơn mới.",
+          );
+      }
+    }
     if (status === "cancelled") {
       const [items] = await c.execute(
         "SELECT product_id,quantity FROM order_items WHERE order_id=? AND product_id IS NOT NULL AND line_type='catalog' ORDER BY product_id",
@@ -364,16 +418,21 @@ export async function changeOrder(
         );
     }
     await c.execute(
-      "UPDATE orders SET status=?,version=version+1,completed_at=IF(?='delivered',NOW(),completed_at),confirmed_at=IF(?='confirmed',NOW(),confirmed_at),shipped_at=IF(?='shipping',NOW(),shipped_at) WHERE id=?",
-      [status, status, status, status, id],
+      "UPDATE orders SET status=?,version=version+1,delivery_date=?,delivery_slot=?,completed_at=IF(?='delivered',COALESCE(completed_at,NOW()),NULL),confirmed_at=IF(? IN ('confirmed','preparing','ready','shipping','delivered'),COALESCE(confirmed_at,NOW()),NULL),shipped_at=IF(? IN ('shipping','delivered'),COALESCE(shipped_at,NOW()),NULL) WHERE id=?",
+      [status, deliveryDate, deliverySlot, status, status, status, id],
     );
     await c.execute(
       "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
       [actor, status, "orders", String(id)],
     );
     await c.execute(
-      "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
-      [id, actor, status],
+      "INSERT INTO order_status_events(order_id,actor_id,status,detail) VALUES(?,?,?,?)",
+      [
+        id,
+        actor,
+        status,
+        `${orderLabels[o.status]} → ${orderLabels[status]}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · Lịch giao: ${deliveryDate} ${deliverySlot}` : ""}`,
+      ],
     );
     await emit(c, "order:" + id + ":" + (o.version + 1), {
       userId: o.user_id,

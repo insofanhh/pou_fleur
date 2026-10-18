@@ -8,6 +8,7 @@ export const orderLabels: Record<string, string> = {
   delivered: "Đã giao",
   cancelled: "Đã hủy",
   rescheduled: "Đã đổi lịch giao",
+  payment_method_changed: "Đã đổi phương thức thanh toán",
   unpaid: "Chưa thanh toán",
   partially_paid: "Thu một phần",
   partially_refunded: "Hoàn một phần",

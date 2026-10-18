@@ -7,6 +7,9 @@ import Link from "./routing";
 import { displayLabel } from "@/lib/display-labels";
 import ManualOrderEditor from "./manual-order-editor";
 import DeliveryAddress from "./delivery-address";
+import { useOrderTransition } from "./order-transition";
+import { paymentMethods } from "@/lib/order-workflow";
+import { orderCapabilities } from "@/lib/order-capabilities";
 const statuses = [
   "pending",
   "confirmed",
@@ -16,13 +19,6 @@ const statuses = [
   "delivered",
   "cancelled",
 ];
-const nextState: Record<string, string> = {
-  pending: "confirmed",
-  confirmed: "preparing",
-  preparing: "ready",
-  ready: "shipping",
-  shipping: "delivered",
-};
 export const workspaceAreas = [
   "new-order",
   "board",
@@ -139,8 +135,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     [payment, setPayment] = useState(""),
     [source, setSource] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
-    [pages, setPages] = useState<Record<string, number>>({}),
-    [busy, setBusy] = useState(false);
+    [pages, setPages] = useState<Record<string, number>>({});
   useEffect(() => {
     const timer = setTimeout(() => {
       setQueryText(search);
@@ -202,24 +197,9 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
       </button>
     </div>
   );
-  async function move(o: any, status: string) {
-    if (status === o.status) return;
-    setBusy(true);
-    try {
-      await api("workspace/orders/" + o.id + "/status", "PATCH", {
-        status,
-        version: o.version,
-      });
-      setSelected(null);
-      await refresh();
-      toast("Đã cập nhật đơn hàng.");
-    } catch (e) {
-      toast((e as Error).message);
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { move, busy, confirmation } = useOrderTransition(refresh, () =>
+    setSelected(null),
+  );
   return (
     <div data-no-fade-in>
       <div className="board-toolbar">
@@ -298,7 +278,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
       <p className="small">
         {table
           ? "Mở mã đơn để xem chi tiết và cập nhật."
-          : "Kéo thẻ sang bước kế tiếp hoặc mở đơn để cập nhật. Trên điện thoại, dùng nút chuyển trạng thái trong đơn."}{" "}
+          : "Kéo thẻ sang trạng thái cần chuyển, bao gồm hủy và khôi phục đơn. Trên điện thoại, mở chi tiết để chọn trạng thái."}{" "}
         Tự làm mới mỗi 30 giây khi cửa sổ đang mở.
       </p>
       {error && data && (
@@ -399,6 +379,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
           refresh={refresh}
         />
       )}
+      {confirmation}
     </div>
   );
 }
@@ -421,7 +402,9 @@ function OrderPanel({
     refresh: reloadAssignment,
   } = useLoad("workspace/orders/" + o.id + "/assignment");
   const [paymentError, setPaymentError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [targetStatus, setTargetStatus] = useState(o.status);
+  const canAdjustPayment = orderCapabilities(user?.role || "").adjust;
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current!;
@@ -474,84 +457,281 @@ function OrderPanel({
         </button>
       </header>
       <div className="modal-body order-panel-body">
-        <Status value={o.status} />
-        {o.creation_source === "manual" && (
-          <p className="small">
-            Thủ công ·{" "}
-            {(
-              {
-                phone: "Điện thoại",
-                zalo: "Zalo",
-                social: "Mạng xã hội",
-                in_person: "Tại cửa hàng",
-                other: "Khác",
-              } as Record<string, string>
-            )[o.sales_channel] || o.sales_channel}{" "}
-            · Người tạo: {o.creator_name || "#" + o.created_by}
-          </p>
-        )}
-        <p>
-          {o.customer_name} · {o.phone}
-        </p>
-        <p>
-          Người nhận: {o.recipient_name} · {o.recipient_phone}
-          <br />
-          {o.address}
-        </p>
-        <p>
-          {o.delivery_date} · {o.delivery_slot}
-        </p>
-        <blockquote>{o.message || "Không có lời nhắn"}</blockquote>
-        {o.notes && <p>Ghi chú giao hàng: {o.notes}</p>}
-        {items?.map((i: any, n: number) => {
-          let detail: any = {};
-          try {
-            detail =
-              typeof i.description === "string"
-                ? JSON.parse(i.description)
-                : i.description || {};
-          } catch {
-            detail = { text: i.description };
-          }
-          return (
-            <div className="panel" key={n}>
-              <p>
-                {i.name} ·{" "}
-                {i.line_type === "custom" ? "Thiết kế riêng" : i.size} ×{" "}
-                {i.quantity} · {money(i.price)}
+        <div className="order-overview">
+          <div>
+            <span className="order-caption">Tiến trình đơn</span>
+            <Status value={o.status} />
+          </div>
+          <div>
+            <span className="order-caption">Thanh toán</span>
+            <Status value={o.payment_status} />
+          </div>
+          <div>
+            <span className="order-caption">Tổng đơn hàng</span>
+            <strong className="order-total">{money(o.total)}</strong>
+          </div>
+        </div>
+        <form
+          className="order-status-control"
+          onSubmit={(e) => {
+            e.preventDefault();
+            move(o, targetStatus);
+          }}
+        >
+          <label className="field">
+            Chuyển trạng thái đơn
+            <select
+              value={targetStatus}
+              onChange={(e) => setTargetStatus(e.target.value)}
+              aria-label="Trạng thái mới"
+            >
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {statusNames[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="button"
+            disabled={busy || targetStatus === o.status}
+          >
+            Cập nhật trạng thái
+          </button>
+        </form>
+        <div className="order-detail-grid">
+          <section className="order-section">
+            <h3>Giao hoa</h3>
+            <p className="order-delivery-time">
+              <strong>
+                {String(o.delivery_date).split("-").reverse().join("/")}
+              </strong>
+              <span>{o.delivery_slot}</span>
+            </p>
+            <dl className="order-facts">
+              <div>
+                <dt>Người nhận</dt>
+                <dd>{o.recipient_name || o.customer_name}</dd>
+              </div>
+              <div>
+                <dt>Điện thoại</dt>
+                <dd>{o.recipient_phone || o.phone}</dd>
+              </div>
+              <div>
+                <dt>Địa chỉ</dt>
+                <dd>{o.address}</dd>
+              </div>
+            </dl>
+            {o.notes && (
+              <p className="order-note">
+                <strong>Ghi chú giao hàng</strong>
+                <br />
+                {o.notes}
               </p>
-              {i.line_type === "custom" && i.image && (
-                <img
-                  className="manual-reference"
-                  src={i.image}
-                  alt="Ảnh tham khảo thiết kế"
-                />
+            )}
+          </section>
+          <section className="order-section">
+            <h3>Khách đặt hoa</h3>
+            <dl className="order-facts">
+              <div>
+                <dt>Họ tên</dt>
+                <dd>{o.customer_name}</dd>
+              </div>
+              <div>
+                <dt>Điện thoại</dt>
+                <dd>{o.phone}</dd>
+              </div>
+              <div>
+                <dt>Email</dt>
+                <dd>{o.email || "Chưa cung cấp"}</dd>
+              </div>
+              <div>
+                <dt>Nguồn đơn</dt>
+                <dd>
+                  {o.creation_source === "manual"
+                    ? (
+                        {
+                          phone: "Điện thoại",
+                          zalo: "Zalo",
+                          social: "Mạng xã hội",
+                          in_person: "Tại cửa hàng",
+                          other: "Khác",
+                        } as Record<string, string>
+                      )[o.sales_channel] || "Thủ công"
+                    : "Website"}
+                </dd>
+              </div>
+              {o.creation_source === "manual" && (
+                <div>
+                  <dt>Người tạo</dt>
+                  <dd>{o.creator_name || "#" + o.created_by}</dd>
+                </div>
               )}
-              {detail.text && <p>Yêu cầu thiết kế: {detail.text}</p>}
-              {detail.priceReason && (
-                <p className="small">
-                  Lý do điều chỉnh giá: {detail.priceReason}
-                </p>
-              )}
-            </div>
-          );
-        })}
-        <h3>{money(o.total)}</h3>
-        <Status value={o.payment_status} />
-        <p>
-          Đã thu: {money(Number(o.collected || 0))} · Còn phải thu:{" "}
-          {money(Math.max(0, o.total - Number(o.collected || 0)))}
-        </p>
+            </dl>
+            {!o.email && (
+              <p className="small">
+                Không gửi email: khách chưa cung cấp email.
+              </p>
+            )}
+          </section>
+          <section className="order-section order-products">
+            <h3>
+              Sản phẩm{" "}
+              <span className="muted">
+                (
+                {items?.reduce(
+                  (sum: number, i: any) => sum + Number(i.quantity),
+                  0,
+                ) || 0}
+                )
+              </span>
+            </h3>
+            {items?.map((i: any, n: number) => {
+              let detail: any = {};
+              try {
+                detail =
+                  typeof i.description === "string"
+                    ? JSON.parse(i.description)
+                    : i.description || {};
+              } catch {
+                detail = { text: i.description };
+              }
+              return (
+                <div className="order-product" key={n}>
+                  {i.image && (
+                    <img
+                      src={i.image}
+                      alt={
+                        i.line_type === "custom"
+                          ? "Ảnh tham khảo thiết kế"
+                          : i.name
+                      }
+                    />
+                  )}
+                  <div className="order-product-content">
+                    <strong>{i.name || i.product_name}</strong>
+                    <p className="small">
+                      {i.line_type === "custom"
+                        ? "Thiết kế riêng"
+                        : "Cỡ " + i.size}{" "}
+                      · SL: {i.quantity} × {money(i.price)}
+                    </p>
+                    {detail.text && <p>Yêu cầu thiết kế: {detail.text}</p>}
+                    {detail.priceReason && (
+                      <p className="small">
+                        Lý do điều chỉnh giá: {detail.priceReason}
+                      </p>
+                    )}
+                  </div>
+                  <strong className="order-line-total">
+                    {money(Number(i.price) * Number(i.quantity))}
+                  </strong>
+                </div>
+              );
+            })}
+          </section>
+          <section className="order-section order-finance">
+            <h3>Giá & thanh toán</h3>
+            <dl className="order-price-list">
+              <div>
+                <dt>Tiền sản phẩm</dt>
+                <dd>{money(Number(o.subtotal || 0))}</dd>
+              </div>
+              <div>
+                <dt>Giảm giá</dt>
+                <dd>−{money(Number(o.discount || 0))}</dd>
+              </div>
+              <div>
+                <dt>Phí giao hoa</dt>
+                <dd>{money(Number(o.shipping || 0))}</dd>
+              </div>
+              <div className="order-price-total">
+                <dt>Tổng thanh toán</dt>
+                <dd>{money(o.total)}</dd>
+              </div>
+              <div>
+                <dt>Đã thu (sau hoàn)</dt>
+                <dd>{money(Number(o.collected || 0))}</dd>
+              </div>
+              <div>
+                <dt>
+                  {o.status === "cancelled" ? "Còn cần hoàn" : "Còn phải thu"}
+                </dt>
+                <dd>
+                  {money(
+                    o.status === "cancelled"
+                      ? Number(o.collected || 0)
+                      : Math.max(0, o.total - Number(o.collected || 0)),
+                  )}
+                </dd>
+              </div>
+            </dl>
+            {canAdjustPayment ? (
+              <form
+                className="order-method-form"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (busy) return;
+                  setBusy(true);
+                  setPaymentError("");
+                  try {
+                    const f = new FormData(e.currentTarget);
+                    await api(
+                      `workspace/orders/${o.id}/payment-method`,
+                      "PATCH",
+                      { method: f.get("method"), version: o.version },
+                    );
+                    await refresh();
+                    close();
+                    toast("Đã đổi phương thức thanh toán.");
+                  } catch (e) {
+                    setPaymentError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                <label className="field">
+                  Phương thức thanh toán
+                  <select
+                    name="method"
+                      aria-label="Phương thức thanh toán"
+                    defaultValue={o.payment_method}
+                    disabled={busy}
+                  >
+                    {Object.entries(paymentMethods).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="button secondary" disabled={busy}>
+                  Lưu phương thức
+                </button>
+              </form>
+            ) : (
+              <p className="small">
+                Phương thức:{" "}
+                {paymentMethods[o.payment_method] || o.payment_method}
+              </p>
+            )}
+            <p className="small">
+              Đổi phương thức không thay đổi các giao dịch đã ghi nhận.
+            </p>
+          </section>
+          <section className="order-section order-message">
+            <h3>Lời nhắn trên thiệp</h3>
+            <blockquote>{o.message || "Không có lời nhắn"}</blockquote>
+          </section>
+        </div>
         {o.status === "cancelled" && Number(o.collected) > 0 && (
-          <p className="error">
+          <p className="order-alert">
             Đơn đã hủy còn {money(Number(o.collected))} cần xử lý hoàn tiền.
           </p>
         )}
-        {!o.email && (
-          <p className="small">Không gửi email: khách chưa cung cấp email.</p>
-        )}
         {o.internal_notes && (
-          <div className="panel">
+          <div className="order-section">
             <strong>Ghi chú nội bộ</strong>
             <p>{o.internal_notes}</p>
           </div>
@@ -559,129 +739,36 @@ function OrderPanel({
         <p className="small">
           Trạng thái giao và thu tiền được cập nhật riêng.
         </p>
-        <div className="button-row">
-          {nextState[o.status] && (
-            <button
-              className="button"
-              onClick={() => move(o, nextState[o.status])}
-            >
-              {statusNames[nextState[o.status]]}
-            </button>
-          )}
-          {["pending", "confirmed"].includes(o.status) && (
-            <button
-              className="button secondary"
-              onClick={() => move(o, "cancelled")}
-            >
-              Huỷ đơn
-            </button>
-          )}
-        </div>
-        <form
-          className="panel"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!assignment || busy) return;
-            setBusy(true);
-            setPaymentError("");
-            try {
-              const f = Object.fromEntries(new FormData(e.currentTarget));
-              await api("workspace/orders/" + o.id + "/assignment", "PATCH", {
-                assigned_to: f.assigned_to ? Number(f.assigned_to) : null,
-                tags: String(f.tags)
-                  .split(",")
-                  .map((x) => x.trim())
-                  .filter(Boolean),
-                version: assignment.version,
-              });
-              await refresh();
-              close();
-              toast("Đã lưu người phụ trách và nhãn.");
-            } catch (e) {
-              setPaymentError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <h3>Phân công & nhãn</h3>
-          {!assignment && !assignmentError && (
-            <p className="small" role="status">
-              Đang tải phân công…
-            </p>
-          )}
-          {assignmentError && (
-            <p className="error" role="alert">
-              {assignmentError}{" "}
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => void reloadAssignment()}
-              >
-                Thử lại
-              </button>
-            </p>
-          )}
-          <fieldset
-            className="manual-fieldset"
-            disabled={!assignment || busy}
-            key={assignment?.version ?? "loading"}
-          >
-            <label className="field">
-              Người phụ trách
-              <select
-                name="assigned_to"
-                aria-label="Người phụ trách"
-                defaultValue={assignment?.assigned_to || ""}
-              >
-                <option value="">Chưa phân công</option>
-                {assignment?.assigned_to &&
-                  !assignment.staff.some(
-                    (s: any) => s.id === assignment.assigned_to,
-                  ) && (
-                    <option value={assignment.assigned_to}>
-                      {assignment.assigned_name || "Nhân sự đã ngừng hoạt động"}{" "}
-                      (không còn hoạt động)
-                    </option>
-                  )}
-                {assignment?.staff.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              Nhãn (phân cách bằng dấu phẩy, tối đa 6)
-              <input
-                name="tags"
-                defaultValue={(typeof assignment?.tags === "string"
-                  ? JSON.parse(assignment.tags)
-                  : assignment?.tags || []
-                ).join(", ")}
-              />
-            </label>
-            <p className="small">Mỗi nhãn tối đa 30 ký tự.</p>
-            <button className="button secondary">
-              {busy ? "Đang lưu…" : "Lưu phân công"}
-            </button>
-          </fieldset>
-        </form>
-        {user?.role === "owner" && (
+        {paymentError && (
+          <p className="error" role="alert">
+            {paymentError}
+          </p>
+        )}
+        <details className="order-secondary" open>
+          <summary>
+            Phân công & nhãn{" "}
+            <span>{assignment?.assigned_name || "Chưa phân công"}</span>
+          </summary>
           <form
             className="panel"
             onSubmit={async (e) => {
               e.preventDefault();
+              if (!assignment || busy) return;
               setBusy(true);
+              setPaymentError("");
               try {
                 const f = Object.fromEntries(new FormData(e.currentTarget));
-                await api("workspace/orders/" + o.id + "/payment", "POST", {
-                  ...f,
-                  amount: Number(f.amount),
+                await api("workspace/orders/" + o.id + "/assignment", "PATCH", {
+                  assigned_to: f.assigned_to ? Number(f.assigned_to) : null,
+                  tags: String(f.tags)
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean),
+                  version: assignment.version,
                 });
                 await refresh();
                 close();
-                toast("Đã ghi nhận thanh toán.");
+                toast("Đã lưu người phụ trách và nhãn.");
               } catch (e) {
                 setPaymentError((e as Error).message);
               } finally {
@@ -689,88 +776,189 @@ function OrderPanel({
               }
             }}
           >
-            <h3>Ghi nhận thu / hoàn tiền</h3>
-            <label className="field">
-              Phương thức
-              <select name="method">
-                <option value="cash">Tiền mặt</option>
-                <option value="bank">Chuyển khoản</option>
-              </select>
-            </label>
-            <label className="field">
-              Loại
-              <select name="kind">
-                <option value="collect">Thu tiền</option>
-                <option value="refund">Hoàn tiền</option>
-              </select>
-            </label>
-            <label className="field">
-              Số tiền
-              <input
-                name="amount"
-                type="number"
-                min="1"
-                max={o.total}
-                required
-              />
-            </label>
-            <label className="field">
-              Mã giao dịch duy nhất
-              <input name="reference" minLength={5} required />
-            </label>
-            <button className="button secondary" disabled={busy}>
-              Ghi nhận
-            </button>
+            {!assignment && !assignmentError && (
+              <p className="small" role="status">
+                Đang tải phân công…
+              </p>
+            )}
+            {assignmentError && (
+              <p className="error" role="alert">
+                {assignmentError}{" "}
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => void reloadAssignment()}
+                >
+                  Thử lại
+                </button>
+              </p>
+            )}
+            <fieldset
+              className="manual-fieldset"
+              disabled={!assignment || busy}
+              key={assignment?.version ?? "loading"}
+            >
+              <label className="field">
+                Người phụ trách
+                <select
+                  name="assigned_to"
+                  aria-label="Người phụ trách"
+                  defaultValue={assignment?.assigned_to || ""}
+                >
+                  <option value="">Chưa phân công</option>
+                  {assignment?.assigned_to &&
+                    !assignment.staff.some(
+                      (s: any) => s.id === assignment.assigned_to,
+                    ) && (
+                      <option value={assignment.assigned_to}>
+                        {assignment.assigned_name ||
+                          "Nhân sự đã ngừng hoạt động"}{" "}
+                        (không còn hoạt động)
+                      </option>
+                    )}
+                  {assignment?.staff.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Nhãn (phân cách bằng dấu phẩy, tối đa 6)
+                <input
+                  name="tags"
+                  defaultValue={(typeof assignment?.tags === "string"
+                    ? JSON.parse(assignment.tags)
+                    : assignment?.tags || []
+                  ).join(", ")}
+                />
+              </label>
+              <p className="small">Mỗi nhãn tối đa 30 ký tự.</p>
+              <button className="button secondary">
+                {busy ? "Đang lưu…" : "Lưu phân công"}
+              </button>
+            </fieldset>
           </form>
+        </details>
+        {user?.role === "owner" && (
+          <details className="order-secondary">
+            <summary>Ghi nhận thu / hoàn tiền</summary>
+            <form
+              className="panel"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                try {
+                  const f = Object.fromEntries(new FormData(e.currentTarget));
+                  await api("workspace/orders/" + o.id + "/payment", "POST", {
+                    ...f,
+                    amount: Number(f.amount),
+                  });
+                  await refresh();
+                  close();
+                  toast("Đã ghi nhận thanh toán.");
+                } catch (e) {
+                  setPaymentError((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <label className="field">
+                Phương thức
+                <select name="method">
+                  <option value="cash">Tiền mặt</option>
+                  <option value="bank">Chuyển khoản</option>
+                </select>
+              </label>
+              <label className="field">
+                Loại
+                <select name="kind">
+                  <option value="collect">Thu tiền</option>
+                  <option value="refund">Hoàn tiền</option>
+                </select>
+              </label>
+              <label className="field">
+                Số tiền
+                <input
+                  name="amount"
+                  type="number"
+                  min="1"
+                  max={o.total}
+                  required
+                />
+              </label>
+              <label className="field">
+                Mã giao dịch duy nhất
+                <input name="reference" minLength={5} required />
+              </label>
+              <button className="button secondary" disabled={busy}>
+                Ghi nhận
+              </button>
+            </form>
+          </details>
         )}
-        {paymentError && <p className="error">{paymentError}</p>}
         {["pending", "confirmed", "preparing", "ready"].includes(o.status) && (
-          <form
-            className="panel"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                await api("workspace/orders/" + o.id + "/reschedule", "PATCH", {
-                  ...Object.fromEntries(new FormData(e.currentTarget)),
-                  version: o.version,
-                });
-                await refresh();
-                close();
-                toast("Đã đổi lịch và tạo thông báo.");
-              } catch (e) {
-                setPaymentError((e as Error).message);
-              }
-            }}
-          >
-            <h3>Đổi lịch giao</h3>
-            <label className="field">
-              Ngày mới
-              <input type="date" name="date" required />
-            </label>
-            <label className="field">
-              Khung giờ
-              <input name="slot" defaultValue={o.delivery_slot} required />
-            </label>
-            <label className="field">
-              Lý do
-              <input name="reason" minLength={5} required />
-            </label>
-            <button className="button secondary">Xác nhận đổi lịch</button>
-          </form>
+          <details className="order-secondary">
+            <summary>Đổi lịch giao</summary>
+            <form
+              className="panel"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await api(
+                    "workspace/orders/" + o.id + "/reschedule",
+                    "PATCH",
+                    {
+                      ...Object.fromEntries(new FormData(e.currentTarget)),
+                      version: o.version,
+                    },
+                  );
+                  await refresh();
+                  close();
+                  toast("Đã đổi lịch và tạo thông báo.");
+                } catch (e) {
+                  setPaymentError((e as Error).message);
+                }
+              }}
+            >
+              <label className="field">
+                Ngày mới
+                <input type="date" name="date" required />
+              </label>
+              <label className="field">
+                Khung giờ
+                <input name="slot" defaultValue={o.delivery_slot} required />
+              </label>
+              <label className="field">
+                Lý do
+                <input name="reason" minLength={5} required />
+              </label>
+              <button className="button secondary">Xác nhận đổi lịch</button>
+            </form>
+          </details>
         )}
-        <h3>Lịch sử đơn</h3>
-        {data?.events?.map((e: any) => (
-          <p key={e.id} className="timeline-entry">
-            {e.created_at} · {statusNames[e.status]}
-          </p>
-        ))}
-        {data?.payments?.map((e: any) => (
-          <p key={e.id}>
-            {e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
-            {e.method === "bank" ? "Chuyển khoản" : "Tiền mặt"} · {e.reference}{" "}
-            · {e.received_at || e.created_at}
-          </p>
-        ))}
+        <details className="order-secondary">
+          <summary>Lịch sử đơn & giao dịch</summary>
+          <div className="order-history">
+            {data?.events?.map((e: any) => (
+              <p key={e.id} className="timeline-entry">
+                <strong>{statusNames[e.status] || e.status}</strong> ·{" "}
+                {e.created_at}
+                {e.detail && (
+                  <span className="order-event-detail">{e.detail}</span>
+                )}
+              </p>
+            ))}
+            {data?.payments?.map((e: any) => (
+              <p key={e.id}>
+                {e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
+                {e.method === "bank" ? "Chuyển khoản" : "Tiền mặt"} ·{" "}
+                {e.reference} · {e.received_at || e.created_at}
+              </p>
+            ))}
+          </div>
+        </details>
       </div>
     </dialog>
   );
@@ -808,18 +996,9 @@ function Calendar() {
     "workspace/calendar?from=" + from + "&to=" + to,
     true,
   );
-  async function move(o: any, status: string) {
-    try {
-      await api("workspace/orders/" + o.id + "/status", "PATCH", {
-        status,
-        version: o.version,
-      });
-      setOrder(null);
-      await refresh();
-    } catch (e) {
-      toast((e as Error).message);
-    }
-  }
+  const { move, confirmation } = useOrderTransition(refresh, () =>
+    setOrder(null),
+  );
   return (
     <div data-no-fade-in>
       <div className="board-toolbar">
@@ -1077,6 +1256,7 @@ function Calendar() {
           refresh={refresh}
         />
       )}
+      {confirmation}
     </div>
   );
 }

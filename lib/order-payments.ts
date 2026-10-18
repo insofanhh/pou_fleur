@@ -1,6 +1,46 @@
 import { z } from "zod";
 import type { PoolConnection } from "mysql2/promise";
 import { HttpError } from "./auth";
+import { paymentMethods } from "./order-workflow";
+export async function changePaymentMethod(
+  c: PoolConnection,
+  orderId: number,
+  actor: number,
+  input: unknown,
+) {
+  const b = z
+    .object({
+      method: z.enum(["cod", "bank"]),
+      version: z.number().int().positive(),
+    })
+    .parse(input);
+  const [rows]: any = await c.execute(
+    "SELECT payment_method,version FROM orders WHERE id=? FOR UPDATE",
+    [orderId],
+  );
+  const o = rows[0];
+  if (!o) throw new HttpError(404, "Không tìm thấy đơn hàng.");
+  if (o.version !== b.version)
+    throw new HttpError(409, "Đơn vừa thay đổi. Hãy tải lại trước khi lưu.");
+  if (o.payment_method === b.method) return;
+  await c.execute(
+    "UPDATE orders SET payment_method=?,version=version+1 WHERE id=?",
+    [b.method, orderId],
+  );
+  await c.execute(
+    "INSERT INTO order_status_events(order_id,actor_id,status,detail) VALUES(?,?,?,?)",
+    [
+      orderId,
+      actor,
+      "payment_method_changed",
+      `${paymentMethods[o.payment_method] || o.payment_method} → ${paymentMethods[b.method]}`,
+    ],
+  );
+  await c.execute(
+    "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
+    [actor, "payment_method_changed", "orders", String(orderId)],
+  );
+}
 export const paymentSchema = z.object({
   kind: z.enum(["collect", "refund"]),
   amount: z.number().int().positive().max(2000000000),

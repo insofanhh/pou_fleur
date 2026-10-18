@@ -17,6 +17,17 @@ Trong chi tiết đơn, **Phân công & nhãn** dùng cùng người phụ trác
 
 Form không lưu thông tin khách vào localStorage. Mất mạng giữ nguyên nội dung; retry cùng yêu cầu trả lại cùng đơn. Nếu báo thay đổi giá, cần rà soát lại trước khi chốt.
 
+## Chi tiết, thanh toán và chuyển trạng thái
+
+Chi tiết dùng chung ở Kanban, danh sách và lịch: đầu trang tóm tắt trạng thái/tổng tiền; các nhóm giao hoa, khách đặt, sản phẩm và giá/thanh toán hiển thị riêng. Dòng sản phẩm ghi số lượng, đơn giá và thành tiền. Phân công, thu/hoàn, đổi lịch và lịch sử nằm trong các mục mở rộng.
+
+- Owner, admin và manager có thể đổi phương thức dự kiến giữa COD và chuyển khoản trong **Giá & thanh toán**. Thay đổi có kiểm tra version, lưu lịch sử; không sửa phương thức trên các biên nhận cũ, số tiền đã nhận hay trạng thái thanh toán. Thu/hoàn vẫn chỉ dành cho owner.
+- Người có quyền quản lý đơn có thể kéo thẻ hoặc chọn bất kỳ trạng thái nào trong chi tiết, kể cả chuyển vượt cấp và quay lại. Chuyển lùi, hủy hoặc khôi phục yêu cầu lý do ít nhất 5 ký tự và xác nhận. Một lần chuyển chỉ ghi nhận/gửi thông báo trạng thái đích, không tạo các bước trung gian giả.
+- Hủy từ bất kỳ bước nào trả tồn sản phẩm catalog và lượt ưu đãi đúng một lần. Tiền đã nhận được giữ trong sổ thu; đơn hủy hiển thị số còn cần hoàn và không cho thu thêm. Hoàn tiền được ghi nhận riêng, không tự chuyển tiền từ hệ thống.
+- Khôi phục đơn hủy phải chọn lịch giao còn hợp lệ, store đang nhận đơn, đủ tồn sản phẩm đang bán và còn lượt ưu đãi của đơn cũ. Hệ thống giữ lại tồn/lượt ưu đãi cùng giao dịch với trạng thái; thiếu điều kiện thì giữ nguyên đơn hủy. Đơn có sản phẩm catalog đã xóa cần tạo lại. Lịch sử và khoản hoàn trước đó được giữ nguyên.
+- Hoàn tất giao không tự đánh dấu đã thanh toán. Khi chuyển khỏi Đã giao, mốc hoàn tất được xóa để không tiếp tục tính đơn là đã giao; lịch sử thao tác vẫn còn. Chuyển vượt cấp cập nhật các mốc xác nhận/giao đi tương ứng.
+- Khách tự hủy vẫn chỉ được hủy đơn Chờ xác nhận/Đã xác nhận chưa thu tiền; khách không được tự khôi phục. Version ngăn hai người ghi đè hoặc cộng/trừ tồn hai lần.
+
 ## Quyền mặc định
 
 | Thao tác | Owner | Admin / Manager | Support |
@@ -26,6 +37,7 @@ Form không lưu thông tin khách vào localStorage. Mất mạng giữ nguyên
 | Ghi đè giá catalog, giảm thủ công, phí giao riêng | Có | Có | Không |
 | Thiết kế riêng giá 0, có lý do | Có | Có | Không |
 | Thu và hoàn tiền | Có | Không | Không |
+| Đổi phương thức thanh toán dự kiến | Có | Có | Không |
 
 Editor và người mua không được tạo đơn. Ghost dùng quyền của user store; đơn lưu created_by là user được hỗ trợ và adjustment.ghost ghi actor thật, target và hash phiên. Kiểm tra phiên/membership được thực hiện lại khi chốt, không chỉ khi mở form.
 
@@ -75,6 +87,7 @@ $env:MYSQL_PORT='3310'
 $env:TEST_ORIGIN='http://127.0.0.1:3005'
 # App tại TEST_ORIGIN phải chạy với cùng DB test và EMAIL_ENABLED=false.
 npm run test:manual-orders
+npm run test:order-workflow
 ```
 
 API kiểm tra nháp/version, custom/catalog, giá/slot, tồn và sức chứa đồng thời, retry, tiền cọc/hoàn/rollback, consent, liên kết CRM, nguồn báo cáo, tenant và Ghost. UI kiểm tra tạo → lưu nháp → mở lại → rà soát → chốt → chi tiết, các quyền support và bố cục 360/390px. Ảnh QA nằm ở `.local/manual-ui`.

@@ -318,7 +318,7 @@ try {
   await owner(
     "workspace/orders/" + o.id + "/status",
     "PATCH",
-    { status: "preparing", version: o.version },
+    { status: "invalid", version: o.version },
     sid,
     400,
   );

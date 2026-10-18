@@ -276,7 +276,11 @@ try {
   await owner(
     "workspace/orders/" + order.id + "/status",
     "PATCH",
-    { status: "cancelled", version: details.version },
+    {
+      status: "cancelled",
+      version: details.version,
+      reason: "Khách yêu cầu hủy đơn",
+    },
     sid,
   );
   const [[stock2]] = await db.query("SELECT stock FROM products WHERE id=?", [

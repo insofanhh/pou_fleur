@@ -358,6 +358,7 @@ async function handle(
           z.coerce.number().int().positive().parse(path[2]),
           z
             .enum([
+              "pending",
               "confirmed",
               "preparing",
               "ready",
@@ -369,6 +370,7 @@ async function handle(
           user.id,
           false,
           z.number().int().positive().parse(body.version),
+          { reason: z.string().trim().max(500).optional().parse(body.reason) },
         );
       } else if (area === "crm") {
         const user = await requirePermission("crm");
