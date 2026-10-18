@@ -18,6 +18,10 @@ import {
 } from "./auth";
 import { tenantId, withStore, withSystem } from "./tenant";
 import {
+  setStoreApprovalRequired,
+  storeApprovalRequired,
+} from "./platform-settings";
+import {
   storeBy,
   publicStore,
   platformActor,
@@ -166,6 +170,7 @@ export async function saasAPI(
   if (key === "stores" && method === "POST") {
     const u = await signedIn();
     await throttle("create-store:" + u.id, 5);
+    const approvalRequired = await storeApprovalRequired();
     const v = z
       .object({
         name: text,
@@ -185,11 +190,12 @@ export async function saasAPI(
     try {
       await c.beginTransaction();
       const [r]: any = await c.execute(
-        "INSERT INTO stores(slug,name,owner_id,address,lat,lng,phone,settings,theme) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO stores(slug,name,owner_id,status,address,lat,lng,phone,settings,theme) VALUES(?,?,?,?,?,?,?,?,?,?)",
         [
           v.slug,
           v.name,
           u.id,
+          approvalRequired ? "pending" : "approved",
           v.address,
           v.lat ?? null,
           v.lng ?? null,
@@ -929,6 +935,11 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       await mutate("UPDATE platform_integrations SET enabled=0 WHERE provider='sepay'");
       return resultOK;
     }
+    if (key === "config" && method === "PATCH") {
+      const required = z.boolean().parse(b.storeApprovalRequired);
+      await setStoreApprovalRequired(required, actor.id);
+      return { ok: true, storeApprovalRequired: required };
+    }
     if (key === "overview" && method === "GET")
       return {
         stats: (
@@ -1242,6 +1253,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
         google: !!process.env.GOOGLE_CLIENT_ID,
         goong: !!process.env.GOONG_API_KEY,
         push: !!process.env.VAPID_PRIVATE_KEY,
+        storeApprovalRequired: await storeApprovalRequired(),
       };
     throw new HttpError(404, "Không tìm thấy chức năng nền tảng.");
   });

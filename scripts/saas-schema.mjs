@@ -160,6 +160,7 @@ export async function migrateSaaS(c) {
     `CREATE TABLE IF NOT EXISTS payment_intents(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,order_id INT NULL,invoice_id INT NULL,kind VARCHAR(20) NOT NULL,reference_code VARCHAR(80) NOT NULL,amount INT NOT NULL,paid_amount INT NOT NULL DEFAULT 0,status VARCHAR(20) NOT NULL DEFAULT 'pending',expires_at DATETIME NOT NULL,paid_at DATETIME NULL,qr_payload TEXT NOT NULL,provider_reference VARCHAR(120) NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY intent_code(reference_code),INDEX intent_order(store_id,order_id,status),INDEX intent_invoice(store_id,invoice_id,status))`,
     `CREATE TABLE IF NOT EXISTS sepay_webhook_events(id BIGINT AUTO_INCREMENT PRIMARY KEY,provider_event_id VARCHAR(120) NOT NULL,payload_hash CHAR(64) NOT NULL,processed BOOLEAN NOT NULL DEFAULT 0,error_message VARCHAR(500) NULL,received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,processed_at DATETIME NULL,UNIQUE KEY sepay_event(provider_event_id),UNIQUE KEY sepay_hash(payload_hash))`,
     `CREATE TABLE IF NOT EXISTS platform_integrations(id INT AUTO_INCREMENT PRIMARY KEY,provider VARCHAR(40) NOT NULL,webhook_secret VARCHAR(255) NOT NULL,api_key VARCHAR(255) NOT NULL,enabled BOOLEAN NOT NULL DEFAULT 1,created_by INT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY provider_name(provider))`,
+    `CREATE TABLE IF NOT EXISTS platform_settings(setting_key VARCHAR(80) PRIMARY KEY,setting_value VARCHAR(255) NOT NULL,updated_by INT NULL,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS plan_versions(id BIGINT AUTO_INCREMENT PRIMARY KEY,plan_id INT NOT NULL,name VARCHAR(80) NOT NULL,monthly_price INT NOT NULL,limits JSON NOT NULL,trial_days INT NOT NULL DEFAULT 14,effective_at DATETIME NOT NULL,actor_id INT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX plan_history(plan_id,effective_at))`,
     `CREATE TABLE IF NOT EXISTS trial_claims(store_id INT PRIMARY KEY,trial_days INT NOT NULL DEFAULT 14,started_at DATETIME NOT NULL,ends_at DATETIME NOT NULL,claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS crm_automations(id INT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,name VARCHAR(160) NOT NULL,trigger_name VARCHAR(30) NOT NULL,template_id INT NOT NULL,delay_days INT NOT NULL DEFAULT 2,message TEXT NOT NULL,active BOOLEAN NOT NULL DEFAULT 0,INDEX rules(store_id,active))`,
@@ -182,6 +183,9 @@ export async function migrateSaaS(c) {
     `CREATE TABLE IF NOT EXISTS analytics_events(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NULL,event_key CHAR(36) UNIQUE NOT NULL,name VARCHAR(50) NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX metrics(store_id,name,created_at))`,
   ])
     await c.query(sql);
+  await c.query(
+    "INSERT IGNORE INTO platform_settings(setting_key,setting_value) VALUES('store_approval_required','0')",
+  );
   for (const [table, column, type] of [
     ["plans", "trial_days", "INT NOT NULL DEFAULT 14"],
     ["subscriptions", "trial_started_at", "DATETIME NULL"],

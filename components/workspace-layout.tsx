@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import Admin from "./admin";
 import { catalogForRoute } from "@/lib/catalog";
 import { storeBy, publicStore } from "@/lib/stores";
 import { withStore } from "@/lib/tenant";
+import { currentUser, ghostContext } from "@/lib/auth";
+import { storeApprovalRequired } from "@/lib/platform-settings";
 
 const workspaceStore = cache(async (ref: string) => {
   const store = await storeBy(ref).catch(() => null);
@@ -29,6 +31,14 @@ export default async function WorkspaceLayout({
   children: ReactNode;
 }) {
   const store = await workspaceStore(storeRef);
+  if (store.status !== "approved" && (await storeApprovalRequired())) {
+    if (!(await ghostContext())) {
+      const user = await currentUser();
+      if (!user)
+        redirect("/login?next=" + encodeURIComponent("/workspace/" + store.id));
+      redirect("/start?pending=" + store.id);
+    }
+  }
   const data = await withStore(store.id, () => catalogForRoute("admin"));
   return (
     <>

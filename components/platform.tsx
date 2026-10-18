@@ -44,8 +44,14 @@ export default function Platform({
     [detail, setDetail] = useState<any>(null),
     [mobile, setMobile] = useState(false),
     [sepay, setSepay] = useState<any>(null),
-    [sepayBusy, setSepayBusy] = useState(false);
+    [sepayBusy, setSepayBusy] = useState(false),
+    [approvalBusy, setApprovalBusy] = useState(false),
+    [approvalRequired, setApprovalRequired] = useState(false);
   const data = loaded?.area === area ? loaded.data : null;
+  useEffect(() => {
+    if (area === "config" && data?.storeApprovalRequired !== undefined)
+      setApprovalRequired(!!data.storeApprovalRequired);
+  }, [area, data?.storeApprovalRequired]);
   const dataCache = useRef<Record<string, any>>({});
   const requestId = useRef(0);
   const activeArea = useRef(area);
@@ -258,6 +264,42 @@ export default function Platform({
             <PlatformPlans plans={data} toast={toast} refresh={refresh} />
           ) : area === "config" ? (
             <>
+              <div className="panel">
+                <h3>Duyệt mở store</h3>
+                <p className="small">
+                  Khi bật, store mới sẽ ở trạng thái chờ duyệt và chủ store chỉ
+                  vào workspace sau khi admin platform chấp thuận.
+                </p>
+                <label className="platform-user-check">
+                  <input
+                    type="checkbox"
+                    checked={approvalRequired}
+                    disabled={approvalBusy}
+                    onChange={async (event) => {
+                      const required = event.currentTarget.checked;
+                      setApprovalRequired(required);
+                      setApprovalBusy(true);
+                      try {
+                        await api("platform/config", "PATCH", {
+                          storeApprovalRequired: required,
+                        });
+                        toast(
+                          required
+                            ? "Đã bật duyệt mở store."
+                            : "Đã tắt duyệt mở store.",
+                        );
+                        await refresh();
+                      } catch (e) {
+                        setApprovalRequired(!required);
+                        toast((e as Error).message);
+                      } finally {
+                        setApprovalBusy(false);
+                      }
+                    }}
+                  />
+                  Yêu cầu admin platform duyệt store mới
+                </label>
+              </div>
               <div className="dashboard-grid">
                 {["google", "goong", "push", "smtp"].map((k) => (
                   <div className="panel" key={k}>

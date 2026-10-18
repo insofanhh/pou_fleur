@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   MapPin,
@@ -363,6 +364,8 @@ export function StoreMap({
 }
 export function StartStore() {
   const { user, ready } = useShop(),
+    searchParams = useSearchParams(),
+    pendingStore = searchParams.get("pending"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [address, setAddress] = useState(""),
@@ -372,9 +375,15 @@ export function StartStore() {
       <span className="eyebrow">YOUR NEXT CHAPTER</span>
       <h1>Mở tiệm hoa của bạn.</h1>
       <p>
-        Bắt đầu với bản nháp. Hoàn tất địa chỉ, giao diện và sản phẩm trước khi
-        gửi duyệt.
+        Bắt đầu với thông tin cơ bản. Hoàn tất địa chỉ, giao diện và sản phẩm để
+        đưa cửa hàng vào hoạt động.
       </p>
+      {pendingStore && (
+        <p className="notice" role="status">
+          Cửa hàng đang chờ admin platform duyệt. Bạn sẽ vào được workspace sau
+          khi cửa hàng được chấp thuận.
+        </p>
+      )}
       {!ready ? (
         <p>Đang tải…</p>
       ) : !user ? (
