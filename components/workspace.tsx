@@ -102,10 +102,12 @@ function OrderCard({
       }
     >
       <span className="eyebrow">{order.reference}</span>
-      {order.creation_source === "manual" && (
-        <span className="tag">Thủ công</span>
-      )}
-      <strong>{order.customer_name}</strong>
+      <div className="kanban-card-heading">
+        <strong>{order.customer_name}</strong>
+        {order.creation_source === "manual" && (
+          <span className="tag">Thủ công</span>
+        )}
+      </div>
       <p>
         {order.delivery_date} · {order.delivery_slot}
       </p>
