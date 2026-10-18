@@ -1236,8 +1236,7 @@ function StoreAddressFields({ store }: { store: any }) {
     <>
       <DeliveryAddress
         label="Địa chỉ"
-        className=""
-        selectionHint="Đã chọn vị trí cửa hàng và cập nhật tọa độ."
+        selectionHint="Đã chọn vị trí cửa hàng."
         enabled={!!store.features?.goong}
         value={address}
         onChange={setAddress}
@@ -1251,30 +1250,8 @@ function StoreAddressFields({ store }: { store: any }) {
           setLng(point ? String(point.lng) : "");
         }}
       />
-      <label className="field">
-        Vĩ độ
-        <input
-          name="lat"
-          type="number"
-          step="any"
-          min={-90}
-          max={90}
-          value={lat}
-          onChange={(e) => setLat(e.target.value)}
-        />
-      </label>
-      <label className="field">
-        Kinh độ
-        <input
-          name="lng"
-          type="number"
-          step="any"
-          min={-180}
-          max={180}
-          value={lng}
-          onChange={(e) => setLng(e.target.value)}
-        />
-      </label>
+      <input name="lat" type="hidden" value={lat} />
+      <input name="lng" type="hidden" value={lng} />
     </>
   );
 }
