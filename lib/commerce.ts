@@ -331,7 +331,7 @@ export async function changeOrder(
     )
       throw new HttpError(
         403,
-        "Không thể huỷ đơn này. Vui lòng liên hệ Fleur.",
+        "Không thể huỷ đơn này. Vui lòng liên hệ Fleurious.",
       );
     const next: Record<string, string[]> = {
       pending: ["confirmed", "cancelled"],

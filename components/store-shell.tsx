@@ -93,7 +93,7 @@ export default function StoreShell({ children }: { children: ReactNode }) {
       )}
       <header className="header">
         <Link className="logo" href="/" onClick={navigate}>
-          {store?.name || "fleur"}
+          {store?.name || "fleurious"}
           <span>®</span>
         </Link>
         <nav
@@ -150,7 +150,7 @@ export default function StoreShell({ children }: { children: ReactNode }) {
       {marketplace ? (
         <footer className="market-footer">
           <Link className="logo" href="/">
-            fleur<span>®</span>
+            fleurious<span>®</span>
           </Link>
           <p>Kết nối những tiệm hoa và những điều đẹp đẽ.</p>
           <div>
@@ -159,10 +159,10 @@ export default function StoreShell({ children }: { children: ReactNode }) {
             <Link href="/privacy">Quyền riêng tư</Link>
             <Link href="/inbox">Thông báo</Link>
           </div>
-          <small>© {new Date().getFullYear()} Fleur</small>
+          <small>© {new Date().getFullYear()} Fleurious</small>
         </footer>
       ) : (
-        <Footer name={store?.name || "Fleur"} />
+        <Footer name={store?.name || "Fleurious"} />
       )}
     </div>
   );

@@ -159,7 +159,7 @@ export default function EmailWorkspace({
       {tab === "templates" && (
         <div className="email-columns">
           <section className="email-panel">
-            <h2>Thư từ Fleur</h2>
+            <h2>Thư từ Fleurious</h2>
             <p>Mẫu trắng đen, nội dung cá nhân hóa theo từng khách.</p>
             {canEdit && (
               <button
@@ -168,7 +168,7 @@ export default function EmailWorkspace({
                   setSelected({
                     name: "Mẫu CRM mới",
                     subject: "Chào {{customer_name}}",
-                    body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleur",
+                    body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleurious",
                     active: 1,
                     kind: "marketing",
                   })

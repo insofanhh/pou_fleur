@@ -1,4 +1,4 @@
-# Fleur — Nền tảng SaaS cho cửa hàng hoa
+# Fleurious — Nền tảng SaaS cho cửa hàng hoa
 
 Next.js App Router, React, TypeScript và MySQL/TiDB. Một marketplace, nhiều storefront độc lập, dashboard từng store và console nền tảng.
 

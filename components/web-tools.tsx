@@ -18,7 +18,7 @@ export function WebTools() {
     };
     register({
       name: "find_flowers",
-      title: "Tìm hoa tại Fleur",
+      title: "Tìm hoa tại Fleurious",
       description:
         "Tìm thiết kế hoa theo tên, loại hoa và mức giá. Không thay đổi giỏ hàng.",
       inputSchema: {

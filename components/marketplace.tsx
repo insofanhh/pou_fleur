@@ -78,7 +78,7 @@ export default function Marketplace() {
   return (
     <main className="marketplace">
       <section className="market-hero">
-        <span className="eyebrow">FLEUR · LOCAL FLORAL STUDIOS</span>
+        <span className="eyebrow">FLEURIOUS · LOCAL FLORAL STUDIOS</span>
         <h1>
           Một tiệm hoa gần bạn.
           <br />
@@ -251,7 +251,7 @@ export default function Marketplace() {
       </section>
       <section className="merchant-banner">
         <div>
-          <span className="eyebrow">GROW WITH FLEUR</span>
+          <span className="eyebrow">GROW WITH FLEURIOUS</span>
           <h2>Mỗi tiệm hoa, một câu chuyện.</h2>
           <p>Mang cửa hàng của bạn đến gần những người yêu hoa hơn.</p>
         </div>

@@ -24,7 +24,7 @@ export async function requestPasswordReset(email: string) {
       "INSERT INTO identity_mail(recipient,subject,body) VALUES(?,?,?)",
       [
         email,
-        "Đặt lại mật khẩu tài khoản Fleur",
+        "Đặt lại mật khẩu tài khoản Fleurious",
         "Bạn đã yêu cầu đặt lại mật khẩu. Liên kết có hiệu lực 30 phút:\n\n" +
           href +
           "\n\nNếu bạn không yêu cầu, hãy bỏ qua email này.",

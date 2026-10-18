@@ -93,7 +93,7 @@ export function Auth({
         </p>
       </div>
       <div className="auth-panel">
-        <span className="eyebrow">WELCOME TO FLEUR</span>
+        <span className="eyebrow">WELCOME TO FLEURIOUS</span>
         <h1>
           {forgot
             ? "Tìm lại tài khoản."
@@ -172,7 +172,7 @@ export function Auth({
               <>
                 <label className="check-field">
                   <input type="checkbox" name="consent" />
-                  Nhận gợi ý và ưu đãi từ Fleur.
+                  Nhận gợi ý và ưu đãi từ Fleurious.
                 </label>
                 <label className="check-field">
                   <input type="checkbox" required />
@@ -202,7 +202,7 @@ export function Auth({
           </form>
         )}
         <div className="auth-bottom">
-          {register ? "Đã là một phần của Fleur?" : "Chưa có tài khoản?"}{" "}
+          {register ? "Đã là một phần của Fleurious?" : "Chưa có tài khoản?"}{" "}
           <Link href={register ? "/login" : "/register"}>
             {register ? "Đăng nhập" : "Đăng ký ngay"}
           </Link>
@@ -270,7 +270,7 @@ export function Account() {
     <main className="page">
       <Breadcrumb title="Tài khoản" />
       <div className="page-heading">
-        <span className="eyebrow">YOUR FLEUR SPACE</span>
+        <span className="eyebrow">YOUR FLEURIOUS SPACE</span>
         <h1>Chào {user.name.split(" ").at(-1)}.</h1>
         <p>Một góc nhỏ cho những điều bạn yêu.</p>
       </div>
@@ -312,7 +312,7 @@ export function Account() {
           {user.role !== "customer" && (
             <Link href="/admin">
               <ShieldCheck size={18} />
-              Fleur Workspace
+              Fleurious Workspace
             </Link>
           )}
           <button
@@ -525,7 +525,7 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
       <Breadcrumb title={post?.title || "Chuyện về hoa"} />
       {post ? (
         <article className="article">
-          <span className="eyebrow">THE FLEUR JOURNAL</span>
+          <span className="eyebrow">THE FLEURIOUS JOURNAL</span>
           <h1>{post.title}</h1>
           <p className="lead">{post.excerpt}</p>
           <FlowerImage
@@ -549,7 +549,7 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
       ) : (
         <>
           <div className="page-heading">
-            <span className="eyebrow">THE FLEUR JOURNAL</span>
+            <span className="eyebrow">THE FLEURIOUS JOURNAL</span>
             <h1>Chậm một chút. Yêu nhiều hơn.</h1>
             <p>Chuyện về hoa, về những người thương, và những điều nhỏ bé.</p>
           </div>
@@ -618,7 +618,7 @@ export function Contact() {
       <Breadcrumb title="Liên hệ" />
       <div className="page-heading">
         <span className="eyebrow">WE ARE HERE FOR YOU</span>
-        <h1>Kể Fleur nghe.</h1>
+        <h1>Kể Fleurious nghe.</h1>
         <p>Một bó hoa riêng, một sự kiện, hay một điều bạn cần hỗ trợ.</p>
       </div>
       <div className="contact-layout">
@@ -626,7 +626,7 @@ export function Contact() {
           <h2>Mọi lời nhắn đều được nâng niu.</h2>
           <p>
             Gửi yêu cầu tư vấn, chăm sóc hoa, hoặc hỗ trợ đơn hàng. Đội ngũ
-            Fleur sẽ tiếp nhận thông tin trong khu vực quản trị.
+            Fleurious sẽ tiếp nhận thông tin trong khu vực quản trị.
           </p>
           <div className="contact-feature">
             <MapPin />
@@ -643,7 +643,7 @@ export function Contact() {
         {sent ? (
           <div className="notice">
             <Check />
-            Fleur đã nhận lời nhắn của bạn. Yêu cầu đã được lưu để cửa hàng hỗ
+            Fleurious đã nhận lời nhắn của bạn. Yêu cầu đã được lưu để cửa hàng hỗ
             trợ.
           </div>
         ) : (
@@ -665,7 +665,7 @@ export function Contact() {
             <Field label="Tên của bạn" name="name" required minLength={2} />
             <Field label="Email" name="email" type="email" required />
             <label className="field">
-              Fleur có thể giúp gì cho bạn?
+              Fleurious có thể giúp gì cho bạn?
               <textarea
                 name="message"
                 required
@@ -862,10 +862,10 @@ const content: Record<
   { label: string; title: string; intro: string; sections: [string, string][] }
 > = {
   about: {
-    label: "THE FLEUR PHILOSOPHY",
+    label: "THE FLEURIOUS PHILOSOPHY",
     title: "Một chút hoa. Thật nhiều cảm xúc.",
     intro:
-      "Fleur bắt đầu từ một điều giản dị: hoa có thể khiến một ngày bình thường trở nên đáng nhớ.",
+      "Fleurious bắt đầu từ một điều giản dị: hoa có thể khiến một ngày bình thường trở nên đáng nhớ.",
     sections: [
       [
         "Đẹp từ những điều vừa đủ",
@@ -884,7 +884,7 @@ const content: Record<
   policies: {
     label: "ORDER WITH CONFIDENCE",
     title: "Giao hoa bằng sự tận tâm.",
-    intro: "Những thông tin bạn cần trước khi đặt hoa tại Fleur.",
+    intro: "Những thông tin bạn cần trước khi đặt hoa tại Fleurious.",
     sections: [
       [
         "Phạm vi & phí giao hàng",
@@ -908,7 +908,7 @@ const content: Record<
     label: "YOUR TRUST MATTERS",
     title: "Thông tin của bạn được trân trọng.",
     intro:
-      "Fleur sử dụng dữ liệu để thực hiện đơn hàng và chăm sóc khách hàng.",
+      "Fleurious sử dụng dữ liệu để thực hiện đơn hàng và chăm sóc khách hàng.",
     sections: [
       [
         "Thông tin được lưu",
@@ -930,7 +930,7 @@ const content: Record<
   },
   faq: {
     label: "A FEW LITTLE ANSWERS",
-    title: "Bạn hỏi, Fleur trả lời.",
+    title: "Bạn hỏi, Fleurious trả lời.",
     intro: "Một vài điều nhỏ trước khi bạn chọn hoa.",
     sections: [
       [
@@ -950,7 +950,7 @@ const content: Record<
         "Nhập mã ở giỏ hàng. Hệ thống kiểm tra thời hạn, số lượt dùng và giá trị đơn tối thiểu. Mỗi đơn áp dụng một mã.",
       ],
       [
-        "Fleur nhận hoa sự kiện hay hoa đặt riêng không?",
+        "Fleurious nhận hoa sự kiện hay hoa đặt riêng không?",
         "Có thể gửi yêu cầu qua trang liên hệ, kèm thời gian, số lượng và phong cách mong muốn để được tư vấn.",
       ],
     ],
@@ -972,7 +972,7 @@ export function Content({ page }: { page: string }) {
       <Breadcrumb
         title={
           page === "about"
-            ? "Về Fleur"
+            ? "Về Fleurious"
             : page === "faq"
               ? "Câu hỏi thường gặp"
               : page === "privacy"
@@ -999,7 +999,7 @@ export function Content({ page }: { page: string }) {
         ),
       )}
       <Link href="/contact" className="text-link">
-        Liên hệ với Fleur <ArrowUpRight size={16} />
+        Liên hệ với Fleurious <ArrowUpRight size={16} />
       </Link>
     </main>
   );

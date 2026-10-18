@@ -150,7 +150,7 @@ export function Inbox() {
         throw Error("Thông báo đẩy chưa được cấu hình.");
       if (!("PushManager" in window))
         throw Error(
-          "Trình duyệt chưa hỗ trợ. Trên iPhone, hãy thêm Fleur vào màn hình chính.",
+          "Trình duyệt chưa hỗ trợ. Trên iPhone, hãy thêm Fleurious vào màn hình chính.",
         );
       const permission = await Notification.requestPermission();
       if (permission !== "granted") throw Error("Bạn chưa cho phép thông báo.");

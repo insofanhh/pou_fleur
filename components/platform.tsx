@@ -108,7 +108,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     <div className="admin-shell platform-shell">
       <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <Link className="logo" href="/">
-          fleur<span>®</span>
+          fleurious<span>®</span>
         </Link>
         <div className="workspace-label">PLATFORM CONSOLE</div>
         <nav>
@@ -142,7 +142,7 @@ export default function Platform({ area = "overview" }: { area?: string }) {
           >
             <Menu />
           </button>
-          <strong>Fleur Platform</strong>
+          <strong>Fleurious Platform</strong>
           <Link href="/">
             Xem marketplace <ArrowUpRight size={17} />
           </Link>

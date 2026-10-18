@@ -243,17 +243,17 @@ export default function Admin({ data }: { data: Catalog }) {
     } else if (user && allowed.includes(area)) void refresh();
   }, [area, user]);
   if (!ready)
-    return <div className="admin-loading">Đang mở Fleur Workspace...</div>;
+    return <div className="admin-loading">Đang mở Fleurious Workspace...</div>;
   if (!user || user.role === "customer")
     return (
       <div className="admin-gate">
         <Link className="logo" href="/">
-          fleur<span>®</span>
+          fleurious<span>®</span>
         </Link>
         <ShieldCheck size={48} />
-        <h1>Fleur Workspace.</h1>
+        <h1>Fleurious Workspace.</h1>
         <p>
-          Khu vực dành cho đội ngũ Fleur.
+          Khu vực dành cho đội ngũ Fleurious.
           <br />
           Vui lòng đăng nhập tài khoản được cấp quyền.
         </p>
@@ -311,22 +311,11 @@ export default function Admin({ data }: { data: Catalog }) {
     <div className="admin-shell">
       <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <Link href="/admin" className="logo">
-          fleur<span>®</span>
+          fleurious<span>®</span>
         </Link>
-        <div className="workspace-label">{data.store?.name || "WORKSPACE"}</div>
-        <select
-          aria-label="Chuyển cửa hàng"
-          value={data.store?.id || 1}
-          onChange={(e) => {
-            window.location.href = "/workspace/" + e.target.value;
-          }}
-        >
-          {user.memberships?.map((m) => (
-            <option value={m.store_id} key={m.store_id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        <div className="workspace-label store-workspace-label">
+          {data.store?.name ? `${data.store.name}'s workspace` : "Workspace"}
+        </div>
         <nav>
           {nav
             .filter((n) => allowed.includes(n[0]))
@@ -399,7 +388,7 @@ export default function Admin({ data }: { data: Catalog }) {
         <main className="admin-content">
           <div className="admin-heading">
             <div>
-              <div className="eyebrow">FLEUR FLORAL STUDIO</div>
+              <div className="eyebrow">FLEURIOUS FLORAL STUDIO</div>
               <h1>
                 {area === "overview"
                   ? "Mỗi ngày, một điều tốt đẹp."
@@ -929,7 +918,7 @@ export default function Admin({ data }: { data: Catalog }) {
           )}
         </main>
         <div className="admin-footer">
-          Fleur Workspace <span>Chăm chút từng chi tiết, mỗi ngày.</span>
+          Fleurious Workspace <span>Chăm chút từng chi tiết, mỗi ngày.</span>
         </div>
       </div>
     </div>
@@ -1462,7 +1451,7 @@ function CRM({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "fleur-khach-hang.csv";
+    a.download = "fleurious-khach-hang.csv";
     a.click();
     URL.revokeObjectURL(url);
   }

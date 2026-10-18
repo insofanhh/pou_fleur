@@ -53,7 +53,7 @@ export default function Home({ data }: { data: Catalog }) {
             Được trao bằng tim.
           </span>
           <span className="vertical-caption">
-            FLEUR FLORAL STUDIO — EST. 2026
+            FLEURIOUS FLORAL STUDIO — EST. 2026
           </span>
         </div>
       </section>
@@ -78,7 +78,7 @@ export default function Home({ data }: { data: Catalog }) {
       <section className="section">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">THE FLEUR EDIT</span>
+            <span className="eyebrow">THE FLEURIOUS EDIT</span>
             <h2>Những bó hoa được yêu.</h2>
           </div>
           <Link href="/shop" className="text-link">
@@ -146,15 +146,15 @@ export function ProductCard({ p }: { p: Product }) {
     </article>
   );
 }
-export function Footer({ name = "Fleur" }: { name?: string }) {
+export function Footer({ name = "Fleurious" }: { name?: string }) {
   return (
     <footer>
       <div className="footer-main">
         <div>
           <Link className="logo" href="/">
-            {name === "Fleur" ? (
+            {name === "Fleurious" ? (
               <>
-                fleur<span>®</span>
+                fleurious<span>®</span>
               </>
             ) : (
               name

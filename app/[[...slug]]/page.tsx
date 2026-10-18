@@ -56,15 +56,15 @@ export async function generateMetadata({
   params: Promise<{ slug?: string[] }>;
 }): Promise<Metadata> {
   const { slug = [] } = await params;
-  if (!slug.length) return { title: "Fleur — Những tiệm hoa gần bạn" };
+  if (!slug.length) return { title: "Fleurious — Những tiệm hoa gần bạn" };
   if (["platform", "start", "inbox", "join"].includes(slug[0]))
-    return { title: "Fleur · " + slug[0] };
+    return { title: "Fleurious · " + slug[0] };
   const { store, parts } = await route(slug);
   return withStore(store.id, async () => {
     const data = await catalogForRoute(parts[0] || "", parts[1] || "");
     const p = data.products.find((p) => p.slug === parts[1]);
     return {
-      title: (p?.name || store.name) + " · Fleur",
+      title: (p?.name || store.name) + " · Fleurious",
       description: p?.description || store.description,
     };
   });

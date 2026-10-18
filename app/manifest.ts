@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Fleur — Những tiệm hoa của bạn",
-    short_name: "Fleur",
+    name: "Fleurious — Những tiệm hoa của bạn",
+    short_name: "Fleurious",
     description: "Khám phá tiệm hoa gần bạn, đặt hoa và theo dõi giao hàng.",
     start_url: "/",
     scope: "/",

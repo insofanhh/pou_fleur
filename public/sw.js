@@ -1,4 +1,4 @@
-const CACHE = "fleur-shell-v1";
+const CACHE = "fleur-shell-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.add("/offline.html")),
@@ -31,7 +31,7 @@ self.addEventListener("push", (event) => {
   try {
     const p = event.data.json();
     event.waitUntil(
-      self.registration.showNotification(p.title || "Fleur", {
+      self.registration.showNotification(p.title || "Fleurious", {
         body: p.body || "",
         icon: "/icons/icon-192.png",
         data: { url: p.url || "/inbox" },

@@ -675,14 +675,10 @@
   border-radius: 8px;
   padding: 8px;
 }
-.admin-sidebar > select {
-  width: 100%;
-  background: #f3f3f3;
-  border: 0;
-  padding: 12px;
-  margin: 12px 0 20px;
-  border-radius: 8px;
-  font: inherit;
+.store-workspace-label {
+  letter-spacing: 0.2px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .merchant-detail {
   width: 760px;

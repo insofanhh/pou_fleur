@@ -161,7 +161,7 @@ export async function sendSMTP(
   try {
     const result = await transport.sendMail({
       from: {
-        name: process.env.SMTP_FROM_NAME || "Fleur",
+        name: process.env.SMTP_FROM_NAME || "Fleurious",
         address: process.env.SMTP_FROM_EMAIL!,
       },
       to: { address: mail.recipient, name: "" },

@@ -1414,7 +1414,7 @@ function ThemeEditor() {
             onClick={() => setDraft({ ...draft, template: id })}
           >
             <div className="template-mini">
-              <span>fleur®</span>
+              <span>fleurious®</span>
               <i />
               <b>
                 A little flower.

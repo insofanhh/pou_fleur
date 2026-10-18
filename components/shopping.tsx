@@ -200,7 +200,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
     return (
       <Empty
         title="Bó hoa chưa được tìm thấy."
-        description="Khám phá những thiết kế khác đang có tại Fleur."
+        description="Khám phá những thiết kế khác đang có tại Fleurious."
       />
     );
   const price = Math.round(p.price * ({ S: 1, M: 1.3, L: 1.6 }[size] || 1));
@@ -216,7 +216,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
       <div className="detail-layout">
         <ProductGallery key={p.id} product={p} />
         <div className="detail-info">
-          <span className="eyebrow">{p.category} / FLEUR SIGNATURE</span>
+          <span className="eyebrow">{p.category} / FLEURIOUS SIGNATURE</span>
           <h1>{p.name}</h1>
           <p className="detail-flowers">{p.flowers}</p>
           <div className="detail-price">
@@ -313,7 +313,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
             <p>
               Giao hàng trong khu vực TP. Hà Nội, phí 35.000 ₫; miễn phí từ
               1.000.000 ₫. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
-              hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleur hỗ trợ.
+              hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleurious hỗ trợ.
             </p>
           </details>
         </div>
@@ -670,7 +670,7 @@ export function Checkout({ data }: { data: Catalog }) {
           <span className="eyebrow">THANK YOU, WITH LOVE</span>
           <h1>Lời thương đã được gửi.</h1>
           <p>
-            Fleur đã nhận đơn <strong>{success.reference}</strong>.<br />
+            Fleurious đã nhận đơn <strong>{success.reference}</strong>.<br />
             Đơn đang chờ cửa hàng xác nhận và sẽ được chuẩn bị theo lịch bạn
             chọn.
           </p>
@@ -868,11 +868,11 @@ export function Checkout({ data }: { data: Catalog }) {
                 name="message"
                 maxLength={500}
                 rows={3}
-                placeholder="Viết điều bạn muốn gửi gắm. Fleur sẽ viết tay giúp bạn."
+                placeholder="Viết điều bạn muốn gửi gắm. Fleurious sẽ viết tay giúp bạn."
               />
             </label>
             <label className="field">
-              Ghi chú cho Fleur
+              Ghi chú cho Fleurious
               <textarea
                 name="notes"
                 maxLength={1000}

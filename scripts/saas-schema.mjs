@@ -217,7 +217,7 @@ export async function migrateSaaS(c) {
   );
   await migrateManualOrders(c);
 }
-export async function seedStoreTemplates(c, storeId, storeName = "Fleur") {
+export async function seedStoreTemplates(c, storeId, storeName = "Fleurious") {
   for (const t of defaults)
     await c.execute(
       "INSERT IGNORE INTO email_templates(store_id,template_key,name,kind,subject,body) VALUES(?,?,?,?,?,?)",
@@ -226,8 +226,8 @@ export async function seedStoreTemplates(c, storeId, storeName = "Fleur") {
         t.key,
         t.name,
         t.kind,
-        t.subject.replaceAll("Fleur", storeName),
-        t.body.replaceAll("Fleur", storeName),
+        t.subject.replaceAll("Fleurious", storeName),
+        t.body.replaceAll("Fleurious", storeName),
       ],
     );
 }

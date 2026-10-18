@@ -3,7 +3,7 @@ export default function NotFound() {
   return (
     <main className="admin-gate">
       <Link className="logo" href="/">
-        fleur<span>®</span>
+        fleurious<span>®</span>
       </Link>
       <span className="eyebrow">404 — A LITTLE DETOUR</span>
       <h1>Hoa ở một lối khác.</h1>

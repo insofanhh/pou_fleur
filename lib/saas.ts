@@ -208,8 +208,8 @@ export async function saasAPI(
               t.key,
               t.name,
               t.kind,
-              t.subject.replaceAll("Fleur", v.name),
-              t.body.replaceAll("Fleur", v.name),
+              t.subject.replaceAll("Fleurious", v.name),
+              t.body.replaceAll("Fleurious", v.name),
             ],
           );
       });
