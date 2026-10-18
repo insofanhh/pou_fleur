@@ -51,12 +51,9 @@ try {
   const paymentStatus = page.getByLabel("Trạng thái thanh toán", {
     exact: true,
   });
-  await expect(paymentStatus).toHaveValue("Chưa thanh toán");
-  await expect(paymentStatus).toHaveJSProperty("readOnly", true);
-  check(
-    true,
-    "New order starts unpaid with status derived from received money",
-  );
+  await expect(paymentStatus).toHaveValue("unpaid");
+  await expect(paymentStatus).toBeEnabled();
+  check(true, "New order starts unpaid and owner can choose payment status");
   await page
     .getByLabel("Tên người đặt", { exact: true })
     .fill("Khách UI " + Date.now());
@@ -155,45 +152,84 @@ try {
     ).startsWith("Khách UI"),
     "Draft reload preserves customer and form",
   );
-  await page
-    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
-    .fill("100000");
-  await expect(paymentStatus).toHaveValue("Chờ tính giá");
-  const quoteResponse = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/workspace/manual-orders/quote") &&
-      response.request().method() === "POST",
-  );
+  const received = page.getByLabel("Số tiền thực tế đã nhận (đ)", {
+    exact: true,
+  });
+  await paymentStatus.selectOption("partially_paid");
+  await expect(received).toHaveValue("");
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
-  const quoted = await (await quoteResponse).json();
+  check(
+    (await received.evaluate((el) => el.validity.valueMissing)) &&
+      (await page
+        .getByRole("heading", { name: "Rà soát đơn hàng", exact: true })
+        .count()) === 0,
+    "Choosing partial payment requires entering a positive amount before review",
+  );
+  await paymentStatus.selectOption("paid");
+  await expect(received).not.toHaveValue("0");
+  const originalTotal = Number(await received.inputValue());
+  check(
+    originalTotal > 250000,
+    "Choosing paid automatically fills the server total before review",
+  );
+  await page
+    .getByLabel("Giảm giá thủ công", { exact: true })
+    .selectOption("amount");
+  await page.getByLabel("Giá trị giảm", { exact: true }).fill("50000");
+  await page
+    .getByLabel("Phí giao riêng (đ, bỏ trống để tự tính)", { exact: true })
+    .fill("27000");
+  await page
+    .getByLabel("Lý do giảm giá / sửa phí giao", { exact: true })
+    .fill("Ưu đãi khách thân thiết");
+  await page
+    .getByRole("button", { name: "Tính giá & rà soát", exact: true })
+    .click();
   await page
     .getByRole("heading", { name: "Rà soát đơn hàng", exact: true })
     .waitFor();
-  await expect(paymentStatus).toHaveValue("Thu một phần");
-  check(true, "Partial receipt is classified against server-calculated total");
-  await page
-    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
-    .fill(String(quoted.total));
-  await expect(paymentStatus).toHaveValue("Chờ tính giá");
+  const summary = page.locator(".manual-summary");
+  const totals = await summary.locator(".manual-total strong").innerText();
+  const fullTotal = Number(totals.replace(/\D/g, ""));
+  await expect(received).toHaveValue(String(fullTotal));
+  await expect(paymentStatus).toHaveValue("paid");
+  check(
+    fullTotal > 0 &&
+      (await summary
+        .innerText()
+        .then((s) => s.includes("50.000") && s.includes("27.000"))),
+    "Paid review uses the discounted total including custom shipping",
+  );
+  await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("260000");
+  await expect(received).toHaveValue(String(fullTotal + 10000));
+  await expect(paymentStatus).toHaveValue("paid");
+  check(
+    true,
+    "Selected paid amount follows subsequent price changes automatically",
+  );
+  await received.fill("100000");
+  await expect(paymentStatus).toHaveValue("partially_paid");
+  await received.fill(String(fullTotal + 10000));
+  await expect(paymentStatus).toHaveValue("paid");
+  await received.fill("0");
+  await expect(paymentStatus).toHaveValue("unpaid");
+  check(
+    true,
+    "Direct amount entry automatically resolves partial, paid, and unpaid",
+  );
+  await paymentStatus.selectOption("paid");
+  await expect(received).toHaveValue(String(fullTotal + 10000));
+  await paymentStatus.selectOption("unpaid");
+  await expect(received).toHaveValue("0");
+  check(true, "Choosing unpaid clears a previously populated payment amount");
+  await paymentStatus.selectOption("partially_paid");
+  await received.fill("100000");
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
     .click();
-  await expect(paymentStatus).toHaveValue("Đã thanh toán");
-  check(true, "Receiving the full quoted total displays paid");
-  await page
-    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
-    .fill("0");
-  await expect(paymentStatus).toHaveValue("Chưa thanh toán");
-  check(true, "Clearing received money resets status to unpaid");
-  await page
-    .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
-    .fill("100000");
-  await page
-    .getByRole("button", { name: "Tính giá & rà soát", exact: true })
-    .click();
-  await expect(paymentStatus).toHaveValue("Thu một phần");
+  await expect(paymentStatus).toHaveValue("partially_paid");
   check(
     (await page
       .getByRole("button", { name: "Tạo đơn hàng", exact: true })
@@ -209,6 +245,16 @@ try {
   await page.getByRole("dialog").waitFor();
   await expect(page.getByRole("dialog")).toContainText("Chuẩn bị giấy trắng");
   await expect(page.getByRole("dialog")).toContainText("100.000");
+  const createdId = Number(new URL(page.url()).searchParams.get("order"));
+  const [[created]] = await db.execute(
+    "SELECT payment_status,(SELECT SUM(amount) FROM order_payments WHERE order_id=o.id AND kind='collect') collected FROM orders o WHERE id=?",
+    [createdId],
+  );
+  check(
+    created.payment_status === "partially_paid" &&
+      Number(created.collected) === 100000,
+    "Created order payment status agrees with its actual collection ledger",
+  );
   check(
     true,
     "Finalized draft opens order panel with deposit and internal note",
@@ -222,6 +268,116 @@ try {
     path: ".local/manual-ui/desktop-board.png",
     fullPage: true,
   });
+  for (const status of ["paid", "unpaid"]) {
+    await page.goto(base + "/workspace/" + fixture.sid + "/orders/new");
+    await paymentStatus.waitFor();
+    await paymentStatus.selectOption(status);
+    await expect(received).toHaveValue("0");
+    await page
+      .getByLabel("Tên người đặt", { exact: true })
+      .fill("Khách " + status);
+    await page
+      .getByLabel("Số điện thoại người đặt", { exact: true })
+      .fill("09" + String(Date.now()).slice(-8));
+    await page
+      .getByRole("button", { name: "Thêm thiết kế riêng", exact: false })
+      .click();
+    await page
+      .getByLabel("Tên thiết kế riêng", { exact: true })
+      .fill("Hoa " + status);
+    await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("300000");
+    await page.getByLabel("Giao cho khách", { exact: true }).check();
+    await page
+      .getByLabel("Ngày giao hoa", { exact: true })
+      .fill(fixture.tomorrow);
+    await page
+      .getByLabel("Địa chỉ giao hoa", { exact: true })
+      .fill("123 Đường Hoa, Thành phố Hồ Chí Minh");
+    if (status === "paid") {
+      await expect(received).not.toHaveValue("0");
+      const shipping = Number(await received.inputValue()) - 300000;
+      let releaseOld, oldStarted;
+      const held = new Promise((resolve) => {
+        releaseOld = resolve;
+      });
+      const started = new Promise((resolve) => {
+        oldStarted = resolve;
+      });
+      const quoteURL = "**/api/workspace/manual-orders/quote";
+      await page.route(quoteURL, async (route) => {
+        if (route.request().postDataJSON().items[0]?.price === 320000) {
+          const response = await route.fetch();
+          oldStarted();
+          await held;
+          await route.fulfill({ response });
+        } else await route.continue();
+      });
+      await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("320000");
+      await started;
+      await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("330000");
+      await expect(received).toHaveValue(String(330000 + shipping));
+      const oldResponse = page.waitForResponse(
+        (r) =>
+          r.url().endsWith("/manual-orders/quote") &&
+          r.request().postDataJSON().items[0]?.price === 320000,
+      );
+      releaseOld();
+      await (await oldResponse).finished();
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      await expect(received).toHaveValue(String(330000 + shipping));
+      await page.unroute(quoteURL);
+      check(
+        true,
+        "Late pricing responses cannot overwrite the latest full-payment amount",
+      );
+      await page
+        .getByLabel("Mã khuyến mãi", { exact: true })
+        .fill("NONEXISTENT-PAYMENT-QA");
+      await expect(page.getByText(/Chưa tính được tổng đơn:/)).toBeVisible();
+      await expect(received).toHaveValue("0");
+      await expect(paymentStatus).toHaveValue("paid");
+      await page
+        .getByRole("button", { name: "Tính giá & rà soát", exact: true })
+        .click();
+      await expect(page.locator(".manual-error")).toBeVisible();
+      check(
+        (await page
+          .getByRole("button", { name: "Tạo đơn hàng", exact: true })
+          .count()) === 0,
+        "Invalid pricing clears stale paid amount and blocks creation",
+      );
+      await page.getByLabel("Mã khuyến mãi", { exact: true }).fill("");
+      await expect(received).toHaveValue(String(330000 + shipping));
+    }
+    await page
+      .getByRole("button", { name: "Tính giá & rà soát", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Rà soát đơn hàng", exact: true })
+      .waitFor();
+    await page
+      .getByRole("button", { name: "Tạo đơn hàng", exact: true })
+      .click();
+    await expect(page).toHaveURL(/board\?order=\d+/);
+    const orderId = Number(new URL(page.url()).searchParams.get("order"));
+    const [[order]] = await db.execute(
+      "SELECT total,payment_status,COALESCE((SELECT SUM(amount) FROM order_payments WHERE order_id=o.id AND kind='collect'),0) collected FROM orders o WHERE id=?",
+      [orderId],
+    );
+    check(
+      order.payment_status === status &&
+        Number(order.collected) ===
+          (status === "paid" ? Number(order.total) : 0),
+      "Selecting " +
+        status +
+        " creates the matching order status and payment ledger",
+    );
+  }
   await page.goto(base + "/workspace/" + fixture.sid + "/orders/new?drafts=1");
   await page.getByRole("heading", { name: "Đơn nháp", exact: true }).waitFor();
   check(
@@ -304,7 +460,10 @@ try {
   );
   await expect(
     sp.getByLabel("Trạng thái thanh toán", { exact: true }),
-  ).toHaveValue("Chưa thanh toán");
+  ).toHaveValue("unpaid");
+  await expect(
+    sp.getByLabel("Trạng thái thanh toán", { exact: true }),
+  ).toBeDisabled();
   await sp.screenshot({
     path: ".local/manual-ui/mobile-support.png",
     fullPage: true,

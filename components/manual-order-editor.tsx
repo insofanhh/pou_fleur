@@ -79,6 +79,9 @@ export default function ManualOrderEditor() {
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false),
     [quote, setQuote] = useState<any>(null),
+    [paymentMode, setPaymentMode] = useState("auto"),
+    [priceEstimate, setPriceEstimate] = useState<any>(null),
+    [priceError, setPriceError] = useState(""),
     [draft, setDraft] = useState<any>(null),
     [drafts, setDrafts] = useState<any>(null),
     [page, setPage] = useState(1),
@@ -88,26 +91,60 @@ export default function ManualOrderEditor() {
     [products, setProducts] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
   const key = useRef(""),
-    leaving = useRef(false);
+    leaving = useRef(false),
+    priceRequest = useRef(0);
   const showDrafts = params.get("drafts") === "1",
     draftId = params.get("draft"),
     date = params.get("date"),
     customer = params.get("customer");
   const cap = options?.capabilities || {};
-  const paymentStatus = !Number(form.collectAmount)
-    ? orderLabels.unpaid
-    : !quote
-      ? "Chờ tính giá"
-      : Number(form.collectAmount) === Number(quote.total)
-        ? orderLabels.paid
-        : orderLabels.partially_paid;
+  // Quote only pricing inputs so editing contact/payment fields neither refetches
+  // prices nor makes an otherwise current total unavailable.
+  const pricingKey = JSON.stringify({
+    items: form.items,
+    code: form.code,
+    discountType: form.discountType,
+    discountValue: form.discountValue,
+    adjustmentReason: form.adjustmentReason,
+    shipping: form.shipping,
+  });
+  const currentTotal =
+    priceEstimate?.key === pricingKey ? Number(priceEstimate.total) : undefined;
+  const paymentStatus =
+    paymentMode !== "auto"
+      ? paymentMode
+      : !Number(form.collectAmount)
+        ? "unpaid"
+        : currentTotal !== undefined &&
+            Number(form.collectAmount) === currentTotal
+          ? "paid"
+          : "partially_paid";
   function change(patch: any) {
     leaving.current = false;
     setForm((f: any) => ({ ...f, ...patch }));
+    if (Object.hasOwn(patch, "collectAmount")) {
+      // Keep the explicit partial choice while its required input is empty.
+      if (patch.collectAmount !== undefined || paymentMode !== "partially_paid")
+        setPaymentMode("auto");
+    }
     setDirty(true);
     setQuote(null);
     key.current = "";
     setError("");
+  }
+  function selectPayment(status: string) {
+    const amount = Number(form.collectAmount);
+    change({
+      collectAmount:
+        status === "paid"
+          ? (currentTotal ?? 0)
+          : status === "unpaid"
+            ? 0
+            : amount > 0 && currentTotal !== undefined && amount < currentTotal
+              ? amount
+              : undefined,
+    });
+    setPaymentMode(status);
   }
   function itemChange(index: number, patch: any) {
     change({
@@ -122,6 +159,9 @@ export default function ManualOrderEditor() {
     setError("");
     setDraft(null);
     setQuote(null);
+    setPaymentMode("auto");
+    setPriceEstimate(null);
+    setPriceError("");
     setDirty(false);
     leaving.current = false;
     async function load() {
@@ -167,6 +207,42 @@ export default function ManualOrderEditor() {
       active = false;
     };
   }, [draftId, date, customer, showDrafts]);
+  useEffect(() => {
+    const request = ++priceRequest.current;
+    let active = true;
+    setPriceError("");
+    if (
+      loading ||
+      showDrafts ||
+      !cap.collect ||
+      !JSON.parse(pricingKey).items.length
+    )
+      return;
+    const timer = setTimeout(async () => {
+      try {
+        const priced = await api("workspace/manual-orders/quote", "POST", {
+          ...JSON.parse(pricingKey),
+          collectAmount: 0,
+        });
+        if (active && request === priceRequest.current)
+          setPriceEstimate({ key: pricingKey, total: priced.total });
+      } catch (e) {
+        if (active && request === priceRequest.current) {
+          setPriceEstimate(null);
+          setPriceError((e as Error).message);
+        }
+      }
+    }, 300);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [pricingKey, loading, showDrafts, cap.collect, draftId, date, customer]);
+  useEffect(() => {
+    if (paymentMode !== "paid") return;
+    // Never retain a stale full-payment amount while a new total is pending.
+    setForm((f: any) => ({ ...f, collectAmount: currentTotal ?? 0 }));
+  }, [paymentMode, currentTotal]);
   useEffect(() => {
     if (!error) return;
     const alert = document.querySelector<HTMLElement>(".manual-error");
@@ -262,7 +338,34 @@ export default function ManualOrderEditor() {
     setBusy(true);
     setError("");
     try {
-      setQuote(await api("workspace/manual-orders/quote", "POST", form));
+      // Always reprice at review; a background estimate is not authorization
+      // to record money, and prices may have changed since it was fetched.
+      const priced = await api("workspace/manual-orders/quote", "POST", {
+        ...form,
+        collectAmount: 0,
+      });
+      priceRequest.current++;
+      setPriceEstimate({ key: pricingKey, total: priced.total });
+      setPriceError("");
+      const amount =
+        paymentMode === "paid" ? priced.total : Number(form.collectAmount || 0);
+      if (paymentMode === "paid" && priced.total === 0)
+        throw Error(
+          "Tổng đơn là 0 đ, không có khoản tiền cần thu. Chọn Chưa thanh toán.",
+        );
+      if (
+        paymentMode === "partially_paid" &&
+        !(amount > 0 && amount < priced.total)
+      )
+        throw Error(
+          "Thanh toán một phần cần số tiền lớn hơn 0 và nhỏ hơn tổng đơn.",
+        );
+      if (amount > priced.total)
+        throw Error("Tiền thu không được vượt tổng đơn.");
+      if (amount > 100000000)
+        throw Error("Số tiền thu mỗi lần không được vượt 100.000.000 đ.");
+      setForm((f: any) => ({ ...f, collectAmount: amount }));
+      setQuote(priced);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -944,23 +1047,52 @@ export default function ManualOrderEditor() {
                         { required: true, minLength: 5, maxLength: 500 },
                       )}
                     <Field label="Trạng thái thanh toán">
-                      <input
-                        readOnly
+                      <select
+                        disabled={!cap.collect}
                         value={paymentStatus}
+                        onChange={(e) => selectPayment(e.target.value)}
                         aria-describedby="manual-payment-status-help"
-                      />
+                      >
+                        <option value="unpaid">{orderLabels.unpaid}</option>
+                        <option value="partially_paid">
+                          Thanh toán một phần
+                        </option>
+                        <option value="paid">{orderLabels.paid}</option>
+                      </select>
                     </Field>
                     <p id="manual-payment-status-help" className="small">
-                      Tự động xác định theo số tiền đã nhận và tổng đơn sau khi
-                      tính giá. Trạng thái được lưu khi tạo đơn thành công.
+                      Chọn trạng thái để điền số tiền, hoặc nhập số tiền đã nhận
+                      để tự cập nhật trạng thái. Đã thanh toán dùng tổng đơn sau
+                      giảm giá và phí giao.
                     </p>
+                    {cap.collect && (
+                      <p className="small" role="status" aria-live="polite">
+                        {priceError
+                          ? "Chưa tính được tổng đơn: " + priceError
+                          : currentTotal !== undefined
+                            ? "Tổng khách cần thanh toán: " +
+                              money(currentTotal)
+                            : form.items.length
+                              ? "Đang tính tổng đơn…"
+                              : "Thêm sản phẩm để tính tổng đơn."}
+                      </p>
+                    )}
                     {cap.collect ? (
                       <>
                         <div className="form-grid">
                           {textField(
                             "collectAmount",
                             "Số tiền thực tế đã nhận (đ)",
-                            { type: "number", min: 0, max: 100000000 },
+                            {
+                              type: "number",
+                              required: paymentMode === "partially_paid",
+                              min: paymentMode === "partially_paid" ? 1 : 0,
+                              max: Math.min(
+                                currentTotal ?? 100000000,
+                                100000000,
+                              ),
+                              step: 1,
+                            },
                           )}
                           <Field label="Phương thức đã nhận">
                             <select
