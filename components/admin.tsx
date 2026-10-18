@@ -199,7 +199,10 @@ const fields: Record<string, FieldDef[]> = {
 };
 export default function Admin({ data }: { data: Catalog }) {
   const path = useLocalPath();
-  const requested = path.split("/")[2] || "overview";
+  const requested =
+    path === "/admin/orders/new"
+      ? "new-order"
+      : path.split("/")[2] || "overview";
   const { user, setUser, ready, toast } = useShop();
   const area = requested;
   const [payload, setPayload] = useState<any>(null),
@@ -211,7 +214,10 @@ export default function Admin({ data }: { data: Catalog }) {
     [mobile, setMobile] = useState(false),
     [statusFilter, setStatusFilter] = useState("");
   const router = useRouter();
-  const allowed = user ? rights[user.role] || [] : [];
+  const baseAllowed = user ? rights[user.role] || [] : [];
+  const allowed = baseAllowed.includes("orders")
+    ? [...baseAllowed, "new-order"]
+    : baseAllowed;
   async function refresh() {
     setError("");
     if (!payload) setLoading(true);
@@ -258,7 +264,10 @@ export default function Admin({ data }: { data: Catalog }) {
         </Link>
       </div>
     );
-  const currentNav = nav.find((n) => n[0] === area);
+  const currentNav =
+    area === "new-order"
+      ? (["new-order", "Tạo đơn hàng", ClipboardList] as const)
+      : nav.find((n) => n[0] === area);
   const list = Array.isArray(payload) ? payload : [];
   const filtered = list.filter(
     (r) =>
@@ -393,7 +402,9 @@ export default function Admin({ data }: { data: Catalog }) {
               <h1>
                 {area === "overview"
                   ? "Mỗi ngày, một điều tốt đẹp."
-                  : currentNav?.[1]}
+                  : area === "new-order"
+                    ? "Tạo đơn hàng"
+                    : currentNav?.[1]}
               </h1>
               <p>
                 {area === "overview"
@@ -404,7 +415,12 @@ export default function Admin({ data }: { data: Catalog }) {
               </p>
             </div>
             <div>
-              {area === "overview" ? (
+              {["board", "orders", "calendar"].includes(area) &&
+              allowed.includes("new-order") ? (
+                <Link className="button" href="/admin/orders/new">
+                  <Plus size={17} /> Tạo đơn hàng
+                </Link>
+              ) : area === "overview" ? (
                 <span className="date-pill">
                   <CalendarDays size={16} />
                   {new Date().toLocaleDateString("vi-VN")}
@@ -1576,7 +1592,13 @@ function CRM({
           <div className="customer-contact">
             <span className="avatar large">{customer.name.charAt(0)}</span>
             <div>
-              <strong>{customer.email}</strong>
+              <strong>{customer.email || "Chưa có email"}</strong>
+              <Link
+                className="text-link"
+                href={"/admin/orders/new?customer=" + customer.id}
+              >
+                Tạo đơn cho khách
+              </Link>
               <p>
                 {customer.phone || "Chưa có số điện thoại"} ·{" "}
                 {customer.order_count} đơn · {money(customer.total_spent)}
@@ -1615,10 +1637,10 @@ function CRM({
           </form>
           <div className="crm-section">
             <h3>Lịch sử mua hàng</h3>
-            {payload.orders?.filter((o: any) => o.email === customer.email)
+            {payload.orders?.filter((o: any) => o.customer_id === customer.id)
               .length ? (
               payload.orders
-                .filter((o: any) => o.email === customer.email)
+                .filter((o: any) => o.customer_id === customer.id)
                 .map((o: any) => (
                   <div className="crm-note" key={o.id}>
                     <div className="flex-between">

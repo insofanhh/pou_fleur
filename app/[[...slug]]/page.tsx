@@ -88,7 +88,12 @@ export default async function Page({
   )
     return <Platform area={slug[1] || "overview"} />;
   const { store, parts } = await route(slug);
+  // The manual-order editor is a nested workspace route; other routes keep their limits.
+  const manualEditor =
+    ["workspace", "admin"].includes(slug[0]) &&
+    parts.join("/") === "admin/orders/new";
   if (
+    !manualEditor &&
     parts.length &&
     (!valid.includes(parts[0]) ||
       parts.length > 2 ||

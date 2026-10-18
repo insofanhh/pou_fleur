@@ -1,3 +1,5 @@
+import { validateFulfillment } from "./fulfillment";
+import { storeBy } from "./stores";
 import { z } from "zod";
 import { pool } from "./db";
 import { tenantId } from "./tenant";
@@ -22,6 +24,7 @@ export async function reschedule(id: number, actor: number, body: any) {
       reason: z.string().trim().min(5).max(500),
     })
     .parse(body);
+  const store = await storeBy(tenantId());
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
@@ -40,22 +43,12 @@ export async function reschedule(id: number, actor: number, body: any) {
       throw new HttpError(409, "Đơn vừa thay đổi. Tải lại trước khi đổi lịch.");
     if (!["pending", "confirmed", "preparing", "ready"].includes(o.status))
       throw new HttpError(409, "Chỉ đổi lịch đơn chưa giao đi.");
-    const start = new Date(
-      b.date + "T" + b.slot.slice(0, 5) + ":00+07:00",
-    ).getTime();
-    if (
-      !settings.slots.includes(b.slot) ||
-      settings.closed_dates.includes(b.date) ||
-      start < Date.now() + settings.lead_minutes * 60000 ||
-      start > Date.now() + settings.advance_days * 86400000
-    )
-      throw new HttpError(409, "Lịch mới không khả dụng.");
-    const [count]: any = await c.execute(
-      "SELECT COUNT(*) n FROM orders WHERE id<>? AND delivery_date=? AND delivery_slot=? AND status<>'cancelled' FOR UPDATE",
-      [id, b.date, b.slot],
+    await validateFulfillment(
+      c,
+      { ...store, settings },
+      { deliveryDate: b.date, deliverySlot: b.slot },
+      id,
     );
-    if (count[0].n >= settings.capacity)
-      throw new HttpError(409, "Lịch mới đã đủ đơn.");
     await c.execute(
       "UPDATE orders SET delivery_date=?,delivery_slot=?,version=version+1 WHERE id=?",
       [b.date, b.slot, id],

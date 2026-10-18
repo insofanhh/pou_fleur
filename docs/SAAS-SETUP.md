@@ -149,3 +149,7 @@ npm run test:integration
 ```
 
 Credentials fixture chỉ dành cho database test cô lập; không tạo tài khoản này ở production. Bộ test từ chối database/port không đúng. Ảnh kiểm tra nằm ở `.local/screenshots`.
+
+## Bổ sung đơn thủ công
+
+Xem [MANUAL-ORDERS.md](MANUAL-ORDERS.md) để migrate database hiện có, cấu hình cờ bật/tắt và chạy test. Local đã có backup/restore drill trước migration; TiDB phải làm backup/restore riêng rồi mới chạy `npm run db:manual-orders:tidb -- --production-backup-verified`. Không coi backup local là bản backup TiDB.

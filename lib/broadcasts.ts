@@ -41,7 +41,7 @@ export async function broadcast(input: unknown) {
       return { queued: p.queued };
     }
     const [audience]: any = await c.execute(
-      "SELECT DISTINCT o.user_id FROM orders o JOIN customers c ON c.email=o.email JOIN notification_preferences p ON p.user_id=o.user_id AND p.store_id=? WHERE o.status='delivered' AND c.marketing_consent=1 AND p.marketing=1 AND o.user_id IS NOT NULL LIMIT 1001",
+      "SELECT DISTINCT o.user_id FROM orders o JOIN customers c ON c.id=o.customer_id JOIN notification_preferences p ON p.user_id=o.user_id AND p.store_id=? WHERE o.status='delivered' AND c.marketing_consent=1 AND p.marketing=1 AND o.user_id IS NOT NULL LIMIT 1001",
       [sid],
     );
     if (audience.length > 1000)

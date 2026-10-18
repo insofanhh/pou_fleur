@@ -41,6 +41,7 @@ const tables = new Set([
   "calendar_notes",
   "order_status_events",
   "order_payments",
+  "order_drafts",
   "assets",
 ]);
 const parser = new sqlParser.Parser();

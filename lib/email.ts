@@ -77,6 +77,18 @@ export async function enqueueOrderEmail(
   if (!t) return;
   const [orders] = await c.execute("SELECT * FROM orders WHERE id=?", [id]);
   const o = (orders as any[])[0];
+  if (!o?.email) {
+    if (o)
+      await c.execute("UPDATE orders SET email_skip_reason=? WHERE id=?", [
+        "Khách chưa cung cấp email",
+        id,
+      ]);
+    return;
+  }
+  const [storeRows]: any = await c.execute(
+    "SELECT slug FROM stores WHERE id=?",
+    [tenantId()],
+  );
   const [items] = await c.execute(
     "SELECT product_name,size,quantity,price FROM order_items WHERE order_id=? ORDER BY id",
     [id],
@@ -112,9 +124,7 @@ export async function enqueueOrderEmail(
     tracking_url:
       (process.env.APP_ORIGIN || "").replace(/\/$/, "") +
       "/s/" +
-      (
-        await query<any[]>("SELECT slug FROM stores WHERE id=?", [tenantId()])
-      )[0].slug +
+      storeRows[0].slug +
       "/track-order",
   };
   await c.execute(

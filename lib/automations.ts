@@ -29,10 +29,10 @@ export async function processAutomations() {
         if (!template) continue;
         let audience: any[] = [];
         const eligible =
-          "c.marketing_consent=1 AND NOT EXISTS(SELECT 1 FROM email_suppressions es WHERE es.email=c.email)";
+          "c.email IS NOT NULL AND c.email<>'' AND c.marketing_consent=1 AND NOT EXISTS(SELECT 1 FROM email_suppressions es WHERE es.email=c.email)";
         if (r.trigger_name === "aftercare")
           audience = await query<any[]>(
-            "SELECT c.*,o.id order_id FROM customers c JOIN orders o ON o.email=c.email WHERE " +
+            "SELECT c.*,o.id order_id FROM customers c JOIN orders o ON o.customer_id=c.id WHERE " +
               eligible +
               " AND o.status='delivered' AND o.completed_at<=DATE_SUB(NOW(),INTERVAL ? DAY) AND o.completed_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) LIMIT 100",
             [r.delay_days],
@@ -48,7 +48,7 @@ export async function processAutomations() {
           audience = await query<any[]>(
             "SELECT c.*,0 order_id FROM customers c WHERE " +
               eligible +
-              " AND EXISTS(SELECT 1 FROM orders o WHERE o.email=c.email AND o.status='delivered') AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.email=c.email AND o.status='delivered' AND o.completed_at>DATE_SUB(NOW(),INTERVAL ? DAY)) LIMIT 100",
+              " AND EXISTS(SELECT 1 FROM orders o WHERE o.customer_id=c.id AND o.status='delivered') AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.customer_id=c.id AND o.status='delivered' AND o.completed_at>DATE_SUB(NOW(),INTERVAL ? DAY)) LIMIT 100",
             [r.delay_days],
           );
         const c = await pool.getConnection();

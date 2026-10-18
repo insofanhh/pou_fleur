@@ -1,4 +1,5 @@
 import defaults from "../lib/email-defaults.json" with { type: "json" };
+import { migrateManualOrders } from "./manual-orders-schema.mjs";
 
 export const tenantTables = [
   "categories",
@@ -214,6 +215,7 @@ export async function migrateSaaS(c) {
   await c.query(
     "INSERT IGNORE INTO schema_migrations(version) VALUES('saas-v1')",
   );
+  await migrateManualOrders(c);
 }
 export async function seedStoreTemplates(c, storeId, storeName = "Fleur") {
   for (const t of defaults)

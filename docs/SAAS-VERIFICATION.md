@@ -6,6 +6,8 @@ Ngày: 18/10/2026. Branch triển khai: `codex/saas-platform`.
 
 ## Chức năng đã triển khai
 
+Bổ sung đơn thủ công: đã có [hướng dẫn và phạm vi](MANUAL-ORDERS.md). Kiểm thử trên production build local với database `fleur_saas_test` port 3310: **34 kiểm tra API và 14 kiểm tra UI** đạt, gồm tồn/slot đồng thời, pool DB, tiền cọc/hoàn/rollback, tenant, Ghost và mobile 360/390px. `npm test` và build production đạt. Bộ hồi quy SaaS **55**, kiểm tra SQL tenant thật, **5** luồng CRM/queue/billing, platform users/Ghost **31**, UI chung **57** và các workflow CRUD/Ghost desktop/mobile đạt. Email test chỉ kiểm tra outbox với `EMAIL_ENABLED=false`, không gửi SMTP/push thật. Local đã backup, restore, chạy migration lại hai lần trên bản khôi phục và đối chiếu fingerprint nghiệp vụ trước/sau; TiDB/Vercel production chưa thay đổi.
+
 | Nhóm | Hành vi hiện có |
 | --- | --- |
 | Identity và quyền | Tài khoản chung, membership/role riêng mỗi store, quyền platform riêng, lời mời, redirect theo role/ngữ cảnh, khôi phục mật khẩu một lần và vô hiệu hóa session cũ |

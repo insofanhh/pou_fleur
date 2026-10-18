@@ -79,6 +79,7 @@ async function audience(
   c: { execute: Function },
 ) {
   const where = [
+    "c.email IS NOT NULL AND c.email<>''",
     "c.marketing_consent=1",
     "NOT EXISTS(SELECT 1 FROM email_suppressions s WHERE s.email=c.email)",
   ];

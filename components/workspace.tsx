@@ -3,7 +3,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { api, useShop } from "./context";
 import { Status, statusNames } from "./pages";
 import { money } from "./home";
-import Link from "next/link";
+import Link from "./routing";
+import ManualOrderEditor from "./manual-order-editor";
 const statuses = [
   "pending",
   "confirmed",
@@ -21,6 +22,7 @@ const nextState: Record<string, string> = {
   shipping: "delivered",
 };
 export const workspaceAreas = [
+  "new-order",
   "board",
   "orders",
   "calendar",
@@ -33,6 +35,7 @@ export const workspaceAreas = [
   "users",
 ];
 export default function WorkspaceView({ area }: { area: string }) {
+  if (area === "new-order") return <ManualOrderEditor />;
   if (area === "board") return <OrderBoard />;
   if (area === "orders") return <OrderBoard table />;
   if (area === "calendar") return <Calendar />;
@@ -98,6 +101,9 @@ function OrderCard({
       }
     >
       <span className="eyebrow">{order.reference}</span>
+      {order.creation_source === "manual" && (
+        <span className="tag">Thủ công</span>
+      )}
       <strong>{order.customer_name}</strong>
       <p>
         {order.delivery_date} · {order.delivery_slot}
@@ -127,6 +133,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     [selected, setSelected] = useState<any>(null),
     [date, setDate] = useState(""),
     [payment, setPayment] = useState(""),
+    [source, setSource] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
     [pages, setPages] = useState<Record<string, number>>({}),
     [busy, setBusy] = useState(false);
@@ -143,6 +150,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     payment,
     mode: table ? "table" : "board",
     status: statusFilter,
+    source,
   });
   Object.entries(pages).forEach(([s, p]) =>
     params.set(s === "all" ? "page" : "page_" + s, String(p)),
@@ -154,6 +162,19 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
   const allOrders = table
     ? data?.items || []
     : data?.columns?.flatMap((c: any) => c.items) || [];
+  useEffect(() => {
+    const orderId = new URLSearchParams(location.search).get("order");
+    if (!orderId || !/^\d+$/.test(orderId)) return;
+    let active = true;
+    api("workspace/manual-orders/" + orderId)
+      .then((o) => {
+        if (active) setSelected(o);
+      })
+      .catch((e) => toast(e.message));
+    return () => {
+      active = false;
+    };
+  }, [toast]);
   const pagination = (c: any, key: string) => (
     <div className="order-pagination">
       <button
@@ -198,6 +219,9 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
   return (
     <div data-no-fade-in>
       <div className="board-toolbar">
+        <Link href="/admin/orders/new?drafts=1" className="text-link">
+          Đơn nháp
+        </Link>
         <input
           aria-label="Tìm đơn hàng"
           placeholder="Mã đơn, tên khách, số điện thoại…"
@@ -233,6 +257,18 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
               {statusNames[s] || s}
             </option>
           ))}
+        </select>
+        <select
+          aria-label="Nguồn tạo đơn"
+          value={source}
+          onChange={(e) => {
+            setSource(e.target.value);
+            setPages({});
+          }}
+        >
+          <option value="">Tất cả nguồn</option>
+          <option value="web">Website</option>
+          <option value="manual">Thủ công</option>
         </select>
         {table && (
           <select
@@ -394,6 +430,21 @@ function OrderPanel({
           </button>
         </div>
         <Status value={o.status} />
+        {o.creation_source === "manual" && (
+          <p className="small">
+            Thủ công ·{" "}
+            {(
+              {
+                phone: "Điện thoại",
+                zalo: "Zalo",
+                social: "Mạng xã hội",
+                in_person: "Tại cửa hàng",
+                other: "Khác",
+              } as Record<string, string>
+            )[o.sales_channel] || o.sales_channel}{" "}
+            · Người tạo: {o.creator_name || "#" + o.created_by}
+          </p>
+        )}
         <p>
           {o.customer_name} · {o.phone}
         </p>
@@ -406,13 +457,60 @@ function OrderPanel({
           {o.delivery_date} · {o.delivery_slot}
         </p>
         <blockquote>{o.message || "Không có lời nhắn"}</blockquote>
-        {items?.map((i: any, n: number) => (
-          <p key={n}>
-            {i.name} · {i.size} × {i.quantity} · {money(i.price)}
-          </p>
-        ))}
+        {o.notes && <p>Ghi chú giao hàng: {o.notes}</p>}
+        {items?.map((i: any, n: number) => {
+          let detail: any = {};
+          try {
+            detail =
+              typeof i.description === "string"
+                ? JSON.parse(i.description)
+                : i.description || {};
+          } catch {
+            detail = { text: i.description };
+          }
+          return (
+            <div className="panel" key={n}>
+              <p>
+                {i.name} ·{" "}
+                {i.line_type === "custom" ? "Thiết kế riêng" : i.size} ×{" "}
+                {i.quantity} · {money(i.price)}
+              </p>
+              {i.line_type === "custom" && i.image && (
+                <img
+                  className="manual-reference"
+                  src={i.image}
+                  alt="Ảnh tham khảo thiết kế"
+                />
+              )}
+              {detail.text && <p>Yêu cầu thiết kế: {detail.text}</p>}
+              {detail.priceReason && (
+                <p className="small">
+                  Lý do điều chỉnh giá: {detail.priceReason}
+                </p>
+              )}
+            </div>
+          );
+        })}
         <h3>{money(o.total)}</h3>
         <Status value={o.payment_status} />
+        <p>
+          Đã thu: {money(Number(o.collected || 0))} · Còn phải thu:{" "}
+          {money(Math.max(0, o.total - Number(o.collected || 0)))}
+        </p>
+        {o.status === "cancelled" && Number(o.collected) > 0 && (
+          <p className="error">
+            Đơn đã hủy còn {money(Number(o.collected))} cần xử lý hoàn tiền.
+          </p>
+        )}
+        {!o.email && (
+          <p className="small">Không gửi email: khách chưa cung cấp email.</p>
+        )}
+        {o.internal_notes && (
+          <div className="panel">
+            <strong>Ghi chú nội bộ</strong>
+            <p>{o.internal_notes}</p>
+          </div>
+        )}
         <p className="small">
           Trạng thái giao và thu tiền được cập nhật riêng.
         </p>
@@ -502,6 +600,13 @@ function OrderPanel({
           >
             <h3>Ghi nhận thu / hoàn tiền</h3>
             <label className="field">
+              Phương thức
+              <select name="method">
+                <option value="cash">Tiền mặt</option>
+                <option value="bank">Chuyển khoản</option>
+              </select>
+            </label>
+            <label className="field">
               Loại
               <select name="kind">
                 <option value="collect">Thu tiền</option>
@@ -571,7 +676,8 @@ function OrderPanel({
         {data?.payments?.map((e: any) => (
           <p key={e.id}>
             {e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
-            {e.reference}
+            {e.method === "bank" ? "Chuyển khoản" : "Tiền mặt"} · {e.reference}{" "}
+            · {e.received_at || e.created_at}
           </p>
         ))}
       </div>
@@ -641,6 +747,12 @@ function Calendar() {
             </button>
           ))}
         </div>
+        <Link
+          className="button secondary"
+          href={"/admin/orders/new?date=" + selected}
+        >
+          Tạo đơn ngày này
+        </Link>
         {view === "week" ? (
           <input
             type="date"
@@ -948,6 +1060,25 @@ function Analytics() {
                 <small>{k}</small>
                 <h2>{v}</h2>
               </div>
+            ))}
+          </div>
+          <div className="panel">
+            <h3>Nguồn đơn hàng</h3>
+            {data.sources?.map((s: any) => (
+              <p key={s.creation_source + ":" + s.sales_channel}>
+                {s.creation_source === "manual" ? "Thủ công" : "Website"} ·{" "}
+                {(
+                  {
+                    phone: "Điện thoại",
+                    zalo: "Zalo",
+                    social: "Mạng xã hội",
+                    in_person: "Tại cửa hàng",
+                    other: "Khác",
+                    website: "Website",
+                  } as Record<string, string>
+                )[s.sales_channel] || s.sales_channel}
+                : {s.orders_count} đơn · {money(Number(s.revenue))}
+              </p>
             ))}
           </div>
           <div className="panel">

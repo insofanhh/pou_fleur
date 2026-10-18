@@ -112,14 +112,14 @@ export async function adminRead(area: string) {
   if (area === "crm") {
     const [customers, notes, tasks, orders] = await Promise.all([
       query(
-        "SELECT c.*,(SELECT COUNT(*) FROM orders o WHERE o.email=c.email AND o.status<>'cancelled') order_count,(SELECT COALESCE(SUM(total),0) FROM orders o WHERE o.email=c.email AND o.status='delivered') total_spent,(SELECT MAX(created_at) FROM orders o WHERE o.email=c.email) last_order FROM customers c ORDER BY c.id DESC",
+        "SELECT c.*,(SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id AND o.status<>'cancelled') order_count,(SELECT COALESCE(SUM(total),0) FROM orders o WHERE o.customer_id=c.id AND o.status='delivered') total_spent,(SELECT MAX(created_at) FROM orders o WHERE o.customer_id=c.id) last_order FROM customers c ORDER BY c.id DESC",
       ),
       query(
         "SELECT n.*,u.name author FROM crm_notes n JOIN users u ON u.id=n.author_id ORDER BY n.id DESC",
       ),
       query("SELECT * FROM crm_tasks ORDER BY due_date"),
       query(
-        "SELECT id,reference,email,total,status,payment_status,delivery_date,created_at FROM orders ORDER BY id DESC LIMIT 500",
+        "SELECT id,reference,customer_id,email,total,status,payment_status,delivery_date,created_at FROM orders ORDER BY id DESC LIMIT 500",
       ),
     ]);
     return { customers, notes, tasks, orders };

@@ -13,3 +13,4 @@ playwright-report/
 test-results/
 
 .next-saas-test/
+.next-manual-qa/

@@ -19,7 +19,11 @@ async function upload(req: NextRequest) {
       (process.env.APP_ORIGIN || req.nextUrl.origin)
     )
       throw new HttpError(403, "Nguồn yêu cầu không hợp lệ.");
-    await requirePermission("products");
+    await requirePermission(
+      req.nextUrl.searchParams.get("purpose") === "order-reference"
+        ? "orders"
+        : "products",
+    );
     await guardGhostAction("upload", "POST");
     if (
       Number(req.headers.get("content-length") || 0) >

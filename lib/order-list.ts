@@ -43,6 +43,14 @@ export async function orderList(url: URL) {
     .parse(url.searchParams.get("limit") || 20);
   const filters = ["1=1"],
     values: any[] = [];
+  const source = z
+    .enum(["web", "manual"])
+    .optional()
+    .parse(url.searchParams.get("source") || undefined);
+  if (source) {
+    filters.push("o.creation_source=?");
+    values.push(source);
+  }
   if (q) {
     filters.push(
       "(o.reference LIKE ? OR o.customer_name LIKE ? OR o.phone LIKE ?)",
@@ -71,7 +79,7 @@ export async function orderList(url: URL) {
         params,
       ),
       query<any[]>(
-        "SELECT o.*,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE " +
+        "SELECT o.*,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE " +
           where +
           " ORDER BY o.delivery_date,o.delivery_slot,o.id LIMIT ? OFFSET ?",
         [...params, limit, (page - 1) * limit],

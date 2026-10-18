@@ -1,3 +1,5 @@
+import { manualOrdersAPI } from "./manual-orders";
+import { recordOrderPayment } from "./order-payments";
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
 import { broadcast } from "./broadcasts";
@@ -99,6 +101,10 @@ export async function saasAPI(
   fingerprint = "local",
 ): Promise<any | undefined> {
   const key = path.join("/");
+  if (path[0] === "workspace") {
+    const manual = await manualOrdersAPI(path.slice(1), method, b, url);
+    if (manual !== undefined) return manual;
+  }
   if (key === "auth/ghost/stop" && method === "POST")
     return withSystem(stopGhost);
   if (key === "workspace/broadcasts" && method === "POST") return broadcast(b);
@@ -513,6 +519,10 @@ export async function saasAPI(
         url.searchParams.get("to") || new Date().toISOString().slice(0, 10),
       );
     return {
+      sources: await query(
+        "SELECT creation_source,sales_channel,COUNT(*) orders_count,SUM(CASE WHEN status='delivered' THEN total ELSE 0 END) revenue FROM orders WHERE created_at>=? AND created_at<DATE_ADD(?,INTERVAL 1 DAY) GROUP BY creation_source,sales_channel",
+        [from, to],
+      ),
       daily: await query(
         "SELECT DATE(created_at) day,COUNT(*) orders_count,SUM(CASE WHEN status='delivered' THEN total ELSE 0 END) revenue,SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) cancellations,SUM((SELECT COALESCE(SUM(IF(op.kind='collect',op.amount,-op.amount)),0) FROM order_payments op WHERE op.order_id=orders.id)) collected FROM orders WHERE created_at>=? AND created_at<DATE_ADD(?,INTERVAL 1 DAY) GROUP BY DATE(created_at)",
         [from, to],
@@ -537,7 +547,7 @@ export async function saasAPI(
       throw new HttpError(400, "Chọn tối đa 62 ngày.");
     return {
       orders: await query(
-        "SELECT o.*,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE o.delivery_date BETWEEN ? AND ? ORDER BY o.delivery_date,o.delivery_slot,o.id",
+        "SELECT o.*,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE o.delivery_date BETWEEN ? AND ? ORDER BY o.delivery_date,o.delivery_slot,o.id",
         [from, to],
       ),
       notes: await query(
@@ -632,74 +642,10 @@ export async function saasAPI(
     }
     if (path[3] === "payment" && method === "POST") {
       await storeOwner();
-      const v = z
-        .object({
-          kind: z.enum(["collect", "refund"]),
-          amount: z.number().int().positive(),
-          reference: z.string().min(5).max(100),
-        })
-        .parse(b);
       const c = await pool.getConnection();
       try {
         await c.beginTransaction();
-        const [rs]: any = await c.execute(
-          "SELECT * FROM orders WHERE id=? FOR UPDATE",
-          [orderId],
-        );
-        const o = rs[0];
-        if (!o) throw new HttpError(404, "Không có đơn hàng.");
-        const [pr]: any = await c.execute(
-          "SELECT id FROM order_payments WHERE reference=?",
-          [v.reference],
-        );
-        if (pr.length) {
-          const [same]: any = await c.execute(
-            "SELECT order_id,amount,kind FROM order_payments WHERE reference=?",
-            [v.reference],
-          );
-          if (
-            same[0].order_id !== orderId ||
-            same[0].amount !== v.amount ||
-            same[0].kind !== v.kind
-          )
-            throw new HttpError(
-              409,
-              "Mã giao dịch đã được dùng cho nội dung khác.",
-            );
-          await c.commit();
-          return resultOK;
-        }
-        const [ps]: any = await c.execute(
-          "SELECT COALESCE(SUM(IF(kind='collect',amount,-amount)),0) paid FROM order_payments WHERE order_id=?",
-          [orderId],
-        );
-        const paid =
-          Number(ps[0].paid) + (v.kind === "collect" ? v.amount : -v.amount);
-        if (
-          paid < 0 ||
-          paid > o.total ||
-          (v.kind === "collect" && o.status === "cancelled")
-        )
-          throw new HttpError(409, "Số tiền không hợp lệ cho đơn hàng.");
-        await c.execute(
-          "INSERT INTO order_payments(order_id,amount,kind,reference,actor_id) VALUES(?,?,?,?,?)",
-          [orderId, v.amount, v.kind, v.reference, actor.id],
-        );
-        await c.execute(
-          "UPDATE orders SET payment_status=?,version=version+1 WHERE id=?",
-          [
-            paid === o.total
-              ? "paid"
-              : paid === 0 && v.kind === "refund"
-                ? "refunded"
-                : v.kind === "refund"
-                  ? "partially_refunded"
-                  : paid > 0
-                    ? "partially_paid"
-                    : "unpaid",
-            orderId,
-          ],
-        );
+        await recordOrderPayment(c, orderId, actor.id, b);
         await c.commit();
         return resultOK;
       } catch (e) {
@@ -722,6 +668,15 @@ export async function saasAPI(
       throw new HttpError(409, "Chỉ có thể đặt lại đơn đã giao.");
     return withStore(o.store_id, async () => {
       const s = await storeBy(o.store_id);
+      const custom = await query<any[]>(
+        "SELECT id FROM order_items WHERE order_id=? AND line_type='custom'",
+        [o.id],
+      );
+      if (custom.length)
+        throw new HttpError(
+          409,
+          "Đơn có thiết kế riêng. Vui lòng liên hệ cửa hàng để được báo giá lại.",
+        );
       const items = await query<any[]>(
         "SELECT product_id productId,quantity,size FROM order_items WHERE order_id=?",
         [o.id],

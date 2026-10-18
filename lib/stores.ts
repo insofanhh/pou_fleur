@@ -1,6 +1,7 @@
 import { query, mutate } from "./db";
 import { currentUser, HttpError, permissions } from "./auth";
 import { tenantId, withStore } from "./tenant";
+import type { PoolConnection } from "mysql2/promise";
 export type StoreRecord = {
   id: number;
   slug: string;
@@ -120,14 +121,29 @@ export function distanceKm(a: number, b: number, c: number, d: number) {
     )
   );
 }
-export async function assertStoreOpen() {
-  const s = await storeBy(tenantId());
+export async function assertStoreOpen(c?: PoolConnection) {
+  const s: StoreRecord = c
+    ? await (async () => {
+        const [rows]: any = await c.execute("SELECT * FROM stores WHERE id=?", [
+          tenantId(),
+        ]);
+        if (!rows.length) throw new HttpError(404, "Không tìm thấy cửa hàng.");
+        return { ...rows[0], settings: jsonValue(rows[0].settings) };
+      })()
+    : await storeBy(tenantId());
   if (s.status !== "approved" || !s.settings.open)
     throw new HttpError(409, "Cửa hàng hiện chưa nhận đơn mới.");
-  const [sub] = await query<any[]>(
-    "SELECT status FROM subscriptions WHERE store_id=?",
-    [s.id],
-  );
+  const [subscriptions]: any = c
+    ? await c.execute("SELECT status FROM subscriptions WHERE store_id=?", [
+        s.id,
+      ])
+    : [
+        await query<any[]>(
+          "SELECT status FROM subscriptions WHERE store_id=?",
+          [s.id],
+        ),
+      ];
+  const sub = subscriptions[0];
   if (!sub || !["free", "active", "past_due"].includes(sub.status))
     throw new HttpError(409, "Cửa hàng đang tạm ngưng nhận đơn.");
   return s;

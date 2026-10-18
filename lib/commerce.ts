@@ -1,5 +1,6 @@
 import { tenantId } from "./tenant";
-import { assertStoreOpen, storeBy, distanceKm } from "./stores";
+import { validateFulfillment } from "./fulfillment";
+import { assertStoreOpen } from "./stores";
 import { emit } from "./domain-events";
 import type { PoolConnection } from "mysql2/promise";
 import { pool } from "./db";
@@ -81,14 +82,19 @@ export async function calculate(
       price: Math.round(p.price * { S: 1, M: 1.3, L: 1.6 }[i.size]),
     };
   });
+  return calculateTotals(c, items, body.code, lock);
+}
+export async function calculateTotals<
+  T extends { price: number; quantity: number },
+>(c: PoolConnection, items: T[], code: string, lock = false) {
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
   let discount = 0,
     promotionId: null | number = null;
-  if (body.code) {
+  if (code) {
     const [rs] = await c.execute(
       "SELECT * FROM promotions WHERE code=? AND active=1 AND starts_at<=NOW() AND ends_at>=NOW()" +
         (lock ? " FOR UPDATE" : ""),
-      [body.code.trim().toUpperCase()],
+      [code.trim().toUpperCase()],
     );
     const p = (rs as Promotion[])[0];
     if (!p || p.used >= p.usage_limit)
@@ -107,7 +113,7 @@ export async function calculate(
     );
     promotionId = p.id;
   }
-  const store = await assertStoreOpen();
+  const store = await assertStoreOpen(c);
   const shipping =
     subtotal >= store.settings.free_shipping ? 0 : store.settings.shipping;
   return {
@@ -176,42 +182,7 @@ export async function createOrder(
       await c.commit();
       return { reference: previous.reference };
     }
-    // Store row serializes slot reservations across simultaneous checkouts.
-    await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
-      tenantId(),
-    ]);
-    const start = body.deliverySlot.slice(0, 5);
-    if (
-      !store.settings.slots.includes(body.deliverySlot) ||
-      store.settings.closed_dates.includes(body.deliveryDate) ||
-      new Date(body.deliveryDate + "T" + start + ":00+07:00").getTime() <
-        Date.now() + store.settings.lead_minutes * 60000
-    )
-      throw new HttpError(
-        409,
-        "Khung giờ không khả dụng hoặc chưa đủ thời gian chuẩn bị.",
-      );
-    const [capacity]: any = await c.execute(
-      "SELECT COUNT(*) n FROM orders WHERE delivery_date=? AND delivery_slot=? AND status<>'cancelled' FOR UPDATE",
-      [body.deliveryDate, body.deliverySlot],
-    );
-    if (capacity[0].n >= store.settings.capacity)
-      throw new HttpError(
-        409,
-        "Khung giờ đã đủ đơn. Vui lòng chọn khung khác.",
-      );
-    if (
-      body.deliveryLat !== undefined &&
-      body.deliveryLng !== undefined &&
-      store.lat !== null &&
-      store.lng !== null &&
-      distanceKm(store.lat, store.lng, body.deliveryLat, body.deliveryLng) >
-        store.radius_km
-    )
-      throw new HttpError(
-        409,
-        "Địa chỉ nhận ngoài bán kính giao của cửa hàng.",
-      );
+    await validateFulfillment(c, store, body);
     const quote = await calculate(c, body, true);
     if (body.expectedTotal !== undefined && body.expectedTotal !== quote.total)
       throw new HttpError(
@@ -278,13 +249,14 @@ export async function createOrder(
     );
 
     await c.execute(
-      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=? WHERE id=?",
+      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=?,customer_id=(SELECT id FROM customers WHERE email=?) WHERE id=?",
       [
         store.name,
         body.deliveryMode,
         checkoutOwner || null,
         body.deliveryLat ?? null,
         body.deliveryLng ?? null,
+        body.email,
         id,
       ],
     );
@@ -376,7 +348,7 @@ export async function changeOrder(
       );
     if (status === "cancelled") {
       const [items] = await c.execute(
-        "SELECT product_id,quantity FROM order_items WHERE order_id=? ORDER BY product_id",
+        "SELECT product_id,quantity FROM order_items WHERE order_id=? AND product_id IS NOT NULL AND line_type='catalog' ORDER BY product_id",
         [id],
       );
       for (const i of items as any[])

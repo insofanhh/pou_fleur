@@ -201,7 +201,7 @@ async function handle(
       if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
       result = await withSystem(() =>
         query(
-          "SELECT o.*,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
+          "SELECT o.id,o.reference,o.user_id,o.customer_name,o.email,o.phone,o.address,o.recipient_name,o.recipient_phone,o.delivery_date,o.delivery_slot,o.message,o.notes,o.payment_method,o.payment_status,o.status,o.subtotal,o.discount,o.shipping,o.total,o.created_at,o.store_id,o.store_name,o.delivery_mode,o.version,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
           [user.id],
         ),
       );

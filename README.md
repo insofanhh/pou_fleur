@@ -220,6 +220,10 @@ Tham khảo: [Nodemailer SMTP](https://nodemailer.com/smtp), [Vercel Cron](https
 - TEST_EMAIL_CAMPAIGNS=1 bật thêm kiểm tra gửi chương trình/hủy đăng ký. Chỉ chạy với server QA đã cấu hình SMTP_HOST=fleur-mail-test.invalid, SMTP_FROM_EMAIL=qa-sender@example.test và tài khoản thử; không dùng SMTP thật. Đã chạy đủ 100 kiểm tra tích hợp trên MySQL local và TiDB bằng SMTP giả lập.
 - Đã kiểm tra màn hình mẫu, bản xem trước và form chương trình trong trình duyệt desktop. Chưa xác minh giao diện email bên trong Gmail/Outlook hoặc gửi Gmail thật do chưa có mật khẩu ứng dụng.
 
+### Tạo đơn hàng thủ công
+
+Workspace đã có đơn nháp và tạo đơn từ điện thoại/Zalo/mạng xã hội/tại cửa hàng, sản phẩm catalog và thiết kế riêng, khách chỉ có điện thoại, ghi nhận cọc/thu tiền theo quyền. Đơn chốt dùng chung Kanban, lịch, CRM, email và báo cáo; nháp không giữ tồn hoặc nhận tiền. Xem [hướng dẫn, migration và kiểm thử](docs/MANUAL-ORDERS.md) và [plan](docs/MANUAL-ORDERS-PLAN.md). Chạy migration trước khi triển khai lên database hiện có; TiDB/Vercel production chưa được cập nhật trong lần thay đổi này.
+
 ### Album ảnh sản phẩm
 
 - Admin hỗ trợ 1 ảnh đại diện và tối đa 11 ảnh album, tải nhiều file cùng lúc, đổi thứ tự, chọn ảnh làm đại diện và xóa khỏi album. File JPG/PNG/WebP tối đa 4 MB; mỗi file được gửi riêng để nằm dưới giới hạn request của Vercel Functions. [Tài liệu upload Vercel Blob](https://vercel.com/docs/vercel-blob/server-upload).
