@@ -405,11 +405,25 @@
   margin: 4px 4px 0 0;
 }
 .order-panel {
-  max-height: 90dvh;
+  margin: auto;
+  max-height: min(90dvh, calc(100dvh - 32px));
   overflow: auto;
+  overscroll-behavior: contain;
   width: min(640px, 95vw);
+  background: #fff;
+  padding: 0;
+  overflow-wrap: anywhere;
 }
-.order-panel > p {
+.order-panel .modal-heading h2 {
+  min-width: 0;
+}
+.order-panel .modal-heading button {
+  flex: 0 0 auto;
+}
+.order-panel-body {
+  min-width: 0;
+}
+.order-panel-body > p {
   line-height: 1.7;
   margin: 16px 0;
 }
@@ -418,8 +432,9 @@
   background: #f6f6f4;
   border-radius: 10px;
   margin: 20px 0;
+  white-space: pre-wrap;
 }
-.order-panel > .panel {
+.order-panel-body > .panel {
   margin: 22px 0;
   padding: 18px;
 }
@@ -1118,11 +1133,8 @@
   .storefront.theme-modern .hero-photo {
     margin: 0 20px 20px;
   }
-  .order-panel {
-    padding: 22px;
-  }
-  .modal-backdrop {
-    z-index: 120;
+  .order-panel .modal-body {
+    padding: 20px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

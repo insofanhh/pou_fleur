@@ -414,22 +414,58 @@ function OrderPanel({
     { user, toast } = useShop();
   const [paymentError, setPaymentError] = useState(""),
     [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current!;
+    const focused = document.activeElement;
+    const { overflow, paddingRight } = document.body.style;
+    const scrollbar = innerWidth - document.documentElement.clientWidth;
+    if (scrollbar > 0)
+      document.body.style.paddingRight =
+        parseFloat(getComputedStyle(document.body).paddingRight) +
+        scrollbar +
+        "px";
+    document.body.style.overflow = "hidden";
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      document.body.style.overflow = overflow;
+      document.body.style.paddingRight = paddingRight;
+      if (focused instanceof HTMLElement && focused.isConnected)
+        focused.focus({ preventScroll: true });
+    };
+  }, []);
   const items = typeof o.items === "string" ? JSON.parse(o.items) : o.items;
   return (
-    <div className="modal-backdrop" onClick={close}>
-      <div
-        className="modal order-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={"Đơn " + o.reference}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex-between">
-          <h2>{o.reference}</h2>
-          <button aria-label="Đóng" onClick={close}>
-            ✕
-          </button>
-        </div>
+    <dialog
+      ref={dialogRef}
+      className="modal order-panel"
+      aria-modal="true"
+      aria-label={"Đơn " + o.reference}
+      data-no-fade-in
+      onCancel={(e) => {
+        e.preventDefault();
+        close();
+      }}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (
+          e.clientX < rect.left ||
+          e.clientX > rect.right ||
+          e.clientY < rect.top ||
+          e.clientY > rect.bottom
+        )
+          close();
+      }}
+    >
+      <header className="modal-heading">
+        <h2>Đơn {o.reference}</h2>
+        <button className="icon-button" aria-label="Đóng" onClick={close}>
+          ✕
+        </button>
+      </header>
+      <div className="modal-body order-panel-body">
         <Status value={o.status} />
         {o.creation_source === "manual" && (
           <p className="small">
@@ -682,7 +718,7 @@ function OrderPanel({
           </p>
         ))}
       </div>
-    </div>
+    </dialog>
   );
 }
 function Calendar() {
