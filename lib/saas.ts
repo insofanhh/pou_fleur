@@ -235,7 +235,8 @@ export async function saasAPI(
   if (key === "workspace/settings") {
     await storeOwner();
     const s = await storeBy(tenantId());
-    if (method === "GET") return s;
+    if (method === "GET")
+      return { ...s, features: { goong: !!process.env.GOONG_API_KEY } };
     if (method === "PATCH") {
       const v = z
         .object({
@@ -803,12 +804,14 @@ export async function saasAPI(
     return resultOK;
   }
   if (path[0] === "goong" && method === "GET") {
+    if (path.length !== 2 || !["search", "detail"].includes(path[1]))
+      throw new HttpError(404, "Không tìm thấy dịch vụ địa chỉ.");
     await throttle("maps:" + fingerprint, 200);
     const apiKey = process.env.GOONG_API_KEY;
     if (!apiKey)
       throw new HttpError(
         503,
-        "Bản đồ chưa được cấu hình. Bạn vẫn có thể chọn cửa hàng từ danh sách.",
+        "Gợi ý địa chỉ chưa được cấu hình. Bạn vẫn có thể nhập địa chỉ thủ công.",
       );
     const target = path[1] === "detail" ? "Place/Detail" : "Place/AutoComplete";
     const upstream = new URL("https://rsapi.goong.io/" + target);
@@ -827,7 +830,13 @@ export async function saasAPI(
       signal: AbortSignal.timeout(6000),
     });
     if (!response.ok) throw new HttpError(502, "Chưa thể tìm địa chỉ.");
-    return response.json();
+    const payload = await response.json();
+    if (payload.status !== "OK" && payload.status !== "ZERO_RESULTS")
+      throw new HttpError(
+        502,
+        "Dịch vụ địa chỉ chưa khả dụng. Vui lòng thử lại sau.",
+      );
+    return payload;
   }
   if (path[0] === "platform") return platformAPI(path.slice(1), method, b, url);
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api } from "./context";
 
 export type DeliveryLocation = { lat: number; lng: number };
@@ -9,19 +9,27 @@ export default function DeliveryAddress({
   location,
   onLocation,
   enabled,
+  label = "Địa chỉ nhận hoa",
+  className = "span-2",
+  selectionHint = "Đã chọn vị trí giao hoa. Kiểm tra số nhà và bổ sung hướng dẫn giao trong phần ghi chú.",
 }: {
   value: string;
   onChange: (value: string) => void;
   location: DeliveryLocation | null;
   onLocation: (point: DeliveryLocation | null) => void;
   enabled: boolean;
+  label?: string;
+  className?: string;
+  selectionHint?: string;
 }) {
+  const inputId = useId();
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [focused, setFocused] = useState(false);
   useEffect(() => {
     setSuggestions([]);
-    if (!enabled || location || value.trim().length < 3) return;
+    if (!focused || !enabled || location || value.trim().length < 3) return;
     let active = true;
     const timer = setTimeout(() => {
       api(
@@ -44,30 +52,43 @@ export default function DeliveryAddress({
       active = false;
       clearTimeout(timer);
     };
-  }, [value, location, enabled]);
+  }, [value, location, enabled, focused]);
   return (
-    <div className="field span-2 delivery-address">
-      <label htmlFor="delivery-address-input">Địa chỉ nhận hoa</label>
+    <div
+      className={`field delivery-address ${className}`}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      }}
+      onFocus={() => setFocused(true)}
+    >
+      <label htmlFor={inputId}>{label}</label>
       <input
-        id="delivery-address-input"
+        id={inputId}
         name="address"
         required
         minLength={10}
         maxLength={500}
-        autoComplete="street-address"
+        autoComplete={enabled ? "off" : "street-address"}
         placeholder="Số nhà, đường, phường, tỉnh/thành phố"
         value={value}
-        aria-expanded={suggestions.length > 0}
-        aria-controls="delivery-address-suggestions"
+        readOnly={busy}
+        aria-expanded={focused && suggestions.length > 0}
+        aria-controls={`${inputId}-suggestions`}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setFocused(false);
+            setSuggestions([]);
+          }
+        }}
         onChange={(e) => {
           onChange(e.target.value);
           onLocation(null);
           setError("");
         }}
       />
-      {!!suggestions.length && (
+      {focused && !!suggestions.length && (
         <div
-          id="delivery-address-suggestions"
+          id={`${inputId}-suggestions`}
           className="delivery-address-options"
           aria-label="Gợi ý địa chỉ"
         >
@@ -108,12 +129,7 @@ export default function DeliveryAddress({
           ))}
         </div>
       )}
-      {location && (
-        <small>
-          Đã chọn vị trí giao hoa. Kiểm tra số nhà và bổ sung hướng dẫn giao
-          trong phần ghi chú.
-        </small>
-      )}
+      {location && <small>{selectionHint}</small>}
       {error && <small role="status">{error}</small>}
     </div>
   );

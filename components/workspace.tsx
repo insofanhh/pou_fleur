@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { Fragment, useEffect, useState, useRef, useCallback } from "react";
 import { api, useShop } from "./context";
 import { Status, statusNames } from "./pages";
 import { money } from "./home";
 import Link from "./routing";
 import { displayLabel } from "@/lib/display-labels";
 import ManualOrderEditor from "./manual-order-editor";
+import DeliveryAddress from "./delivery-address";
 const statuses = [
   "pending",
   "confirmed",
@@ -1223,6 +1224,60 @@ function Analytics() {
     </div>
   );
 }
+function StoreAddressFields({ store }: { store: any }) {
+  const [address, setAddress] = useState<string>(store.address || "");
+  const [lat, setLat] = useState<string>(
+    store.lat == null ? "" : String(store.lat),
+  );
+  const [lng, setLng] = useState<string>(
+    store.lng == null ? "" : String(store.lng),
+  );
+  return (
+    <>
+      <DeliveryAddress
+        label="Địa chỉ"
+        className=""
+        selectionHint="Đã chọn vị trí cửa hàng và cập nhật tọa độ."
+        enabled={!!store.features?.goong}
+        value={address}
+        onChange={setAddress}
+        location={
+          lat !== "" && lng !== ""
+            ? { lat: Number(lat), lng: Number(lng) }
+            : null
+        }
+        onLocation={(point) => {
+          setLat(point ? String(point.lat) : "");
+          setLng(point ? String(point.lng) : "");
+        }}
+      />
+      <label className="field">
+        Vĩ độ
+        <input
+          name="lat"
+          type="number"
+          step="any"
+          min={-90}
+          max={90}
+          value={lat}
+          onChange={(e) => setLat(e.target.value)}
+        />
+      </label>
+      <label className="field">
+        Kinh độ
+        <input
+          name="lng"
+          type="number"
+          step="any"
+          min={-180}
+          max={180}
+          value={lng}
+          onChange={(e) => setLng(e.target.value)}
+        />
+      </label>
+    </>
+  );
+}
 function StoreSettings() {
   const { data, error, refresh } = useLoad("workspace/settings"),
     { toast } = useShop();
@@ -1281,9 +1336,6 @@ function StoreSettings() {
           {[
             ["name", "Tên cửa hàng", data.name, "text"],
             ["phone", "Điện thoại", data.phone, "text"],
-            ["address", "Địa chỉ", data.address, "text"],
-            ["lat", "Vĩ độ", data.lat, "number"],
-            ["lng", "Kinh độ", data.lng, "number"],
             ["radius_km", "Bán kính giao (km)", data.radius_km, "number"],
             ["shipping", "Phí giao (₫)", data.settings.shipping, "number"],
             [
@@ -1310,16 +1362,21 @@ function StoreSettings() {
               data.settings.capacity,
               "number",
             ],
-          ].map(([name, label, value, type]) => (
-            <label className="field" key={String(name)}>
-              {label}
-              <input
-                name={String(name)}
-                type={String(type)}
-                step={["lat", "lng"].includes(String(name)) ? "any" : undefined}
-                defaultValue={value ?? ""}
-              />
-            </label>
+          ].map(([name, label, value, type], index) => (
+            <Fragment key={String(name)}>
+              <label className="field">
+                {label}
+                <input
+                  name={String(name)}
+                  type={String(type)}
+                  step={
+                    ["lat", "lng"].includes(String(name)) ? "any" : undefined
+                  }
+                  defaultValue={value ?? ""}
+                />
+              </label>
+              {index === 1 && <StoreAddressFields store={data} />}
+            </Fragment>
           ))}
         </div>
         <label className="field">
