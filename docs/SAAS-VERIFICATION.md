@@ -73,6 +73,12 @@ Database cũ `fleur_store` trên cổng 3306 đã được backup, restore vào 
 
 Tài khoản platform local là `adminfleur@platform.com`. Mật khẩu ngẫu nhiên lưu tại `.local/platform-admin-credentials.txt`, không in log/chat và không commit. Chưa tạo tài khoản đó trên TiDB production.
 
+## Hồi quy điều hướng quản trị
+
+`/workspace/{id}`, `/admin` và `/platform` dùng layout giữ nguyên khung quản trị giữa các mục. Sidebar giữ vị trí cuộn; menu không tự cuộn trang lên đầu. Chỉ phần nội dung tải dữ liệu theo mục. Phản hồi cũ bị bỏ qua khi đổi mục nhanh.
+
+Chạy `npm run test:navigation:ui` với `MYSQL_DATABASE=fleur_saas_test`, `MYSQL_PORT=3310`, `TEST_ORIGIN=http://127.0.0.1:3005` sau khi khởi tạo bộ dữ liệu SaaS QA. Bộ kiểm tra gồm giữ DOM/sidebar và vị trí cuộn, Back/Forward, API chậm, URL trực tiếp/reload, drawer và điều hướng mobile, route tạo đơn và route không hợp lệ. Bộ này cũng nằm trong `test:integration`.
+
 ## Cần cấu hình và xác minh trước khi mở production
 
 1. Staging riêng với TiDB/Blob, backup/restore drill, migration và đối chiếu dữ liệu; xác minh các route cũ, tài khoản cũ, upload và checkout bằng dữ liệu staging.

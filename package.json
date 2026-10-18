@@ -27,8 +27,9 @@
     "test:platform-users": "node scripts/test-platform-users.mjs",
     "test:platform-users:ui": "node scripts/test-platform-users-ui.mjs",
     "test:platform-store-ghost": "node scripts/test-platform-store-ghost.mjs",
-    "test:integration": "node scripts/test-saas.mjs && tsx scripts/test-tenant-db.ts && tsx scripts/test-saas-events.ts && node scripts/test-platform-users.mjs && node scripts/test-saas-ui.mjs && node scripts/test-platform-users-ui.mjs && node scripts/test-manual-orders.mjs && node scripts/test-manual-orders-ui.mjs && node scripts/test-platform-store-ghost.mjs && node scripts/test-order-panel-ui.mjs",
+    "test:integration": "node scripts/test-saas.mjs && tsx scripts/test-tenant-db.ts && tsx scripts/test-saas-events.ts && node scripts/test-platform-users.mjs && node scripts/test-saas-ui.mjs && node scripts/test-platform-users-ui.mjs && node scripts/test-manual-orders.mjs && node scripts/test-manual-orders-ui.mjs && node scripts/test-platform-store-ghost.mjs && node scripts/test-order-panel-ui.mjs && node scripts/test-management-navigation-ui.mjs",
     "test:order-panel:ui": "node scripts/test-order-panel-ui.mjs",
+    "test:navigation:ui": "node scripts/test-management-navigation-ui.mjs",
     "test:manual-orders": "node scripts/test-manual-orders.mjs && node scripts/test-manual-orders-ui.mjs",
     "db:manual-orders": "node --env-file=.env.local scripts/migrate-local-manual-orders.mjs",
     "db:manual-orders:tidb": "node --env-file=.env.tidb.local scripts/migrate-manual-orders.mjs"

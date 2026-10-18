@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
@@ -16,14 +17,23 @@ import {
   Ghost,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
-export default function Platform({ area = "overview" }: { area?: string }) {
+export default function Platform({
+  area: initialArea = "overview",
+}: {
+  area?: string;
+}) {
+  const area = usePathname().split("/")[2] || initialArea;
   const { user, ready, toast } = useShop(),
-    [data, setData] = useState<any>(null),
+    [loaded, setLoaded] = useState<{ area: string; data: any } | null>(null),
     [error, setError] = useState(""),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState(""),
     [detail, setDetail] = useState<any>(null),
     [mobile, setMobile] = useState(false);
+  const data = loaded?.area === area ? loaded.data : null;
+  const requestId = useRef(0);
+  const activeArea = useRef(area);
+  activeArea.current = area;
   const [usersRefresh, setUsersRefresh] = useState(0);
   const [ghostStore, setGhostStore] = useState<any>(null),
     [ghostBusy, setGhostBusy] = useState(false),
@@ -53,21 +63,31 @@ export default function Platform({ area = "overview" }: { area?: string }) {
     };
   }, [detail?.store.id]);
   async function refresh() {
+    if (activeArea.current !== area) return;
+    const request = ++requestId.current;
     if (area === "users") {
       setUsersRefresh((v) => v + 1);
       return;
     }
     try {
-      setData(await api("platform/" + area));
+      const result = await api("platform/" + area);
+      if (request !== requestId.current) return;
+      setLoaded({ area, data: result });
       setError("");
     } catch (e) {
-      setError((e as Error).message);
+      if (request === requestId.current) setError((e as Error).message);
     }
   }
   useEffect(() => {
-    setData(null);
+    setLoaded(null);
+    setError("");
     setDetail(null);
+    setSearch("");
+    setFilter("");
     if (user?.platformRole === "platform_admin") void refresh();
+    return () => {
+      requestId.current++;
+    };
   }, [area, user]);
   async function loadStore(id: number) {
     try {
@@ -116,6 +136,9 @@ export default function Platform({ area = "overview" }: { area?: string }) {
             <Link
               className={area === k ? "active" : ""}
               href={"/platform/" + k}
+              scroll={false}
+              prefetch={true}
+              aria-current={area === k ? "page" : undefined}
               key={k}
               onClick={() => setMobile(false)}
             >

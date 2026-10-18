@@ -206,7 +206,9 @@ export default function Admin({ data }: { data: Catalog }) {
       : path.split("/")[2] || "overview";
   const { user, setUser, ready, toast } = useShop();
   const area = requested;
-  const [payload, setPayload] = useState<any>(null),
+  const [loaded, setLoaded] = useState<{ area: string; payload: any } | null>(
+      null,
+    ),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [search, setSearch] = useState(""),
@@ -214,21 +216,30 @@ export default function Admin({ data }: { data: Catalog }) {
     [selected, setSelected] = useState<any>(null),
     [mobile, setMobile] = useState(false),
     [statusFilter, setStatusFilter] = useState("");
+  const payload = loaded?.area === area ? loaded.payload : null;
+  const requestId = useRef(0);
+  const activeArea = useRef(area);
+  activeArea.current = area;
   const router = useRouter();
   const baseAllowed = user ? rights[user.role] || [] : [];
   const allowed = baseAllowed.includes("orders")
     ? [...baseAllowed, "new-order"]
     : baseAllowed;
   async function refresh() {
+    if (activeArea.current !== area) return;
+    const request = ++requestId.current;
     setError("");
     if (!payload) setLoading(true);
     try {
-      setPayload(await api("admin/" + area));
+      const result = await api("admin/" + area);
+      if (request === requestId.current) setLoaded({ area, payload: result });
     } catch (e) {
-      setError((e as Error).message);
-      setPayload(null);
+      if (request === requestId.current) {
+        setError((e as Error).message);
+        setLoaded({ area, payload: null });
+      }
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }
   useEffect(() => {
@@ -239,8 +250,11 @@ export default function Admin({ data }: { data: Catalog }) {
     setLoading(true);
     if (workspaceAreas.includes(area)) {
       setLoading(false);
-      setPayload(null);
+      setLoaded(null);
     } else if (user && allowed.includes(area)) void refresh();
+    return () => {
+      requestId.current++;
+    };
   }, [area, user]);
   if (!ready)
     return <div className="admin-loading">Đang mở Fleurious Workspace...</div>;
@@ -322,6 +336,9 @@ export default function Admin({ data }: { data: Catalog }) {
             .map(([key, label, Icon], i) => (
               <Link
                 href={"/admin/" + key}
+                scroll={false}
+                prefetch={true}
+                aria-current={area === key ? "page" : undefined}
                 onClick={() => setMobile(false)}
                 className={area === key ? "active" : ""}
                 key={key}
@@ -442,7 +459,7 @@ export default function Admin({ data }: { data: Catalog }) {
             </div>
           ) : workspaceAreas.includes(area) ? (
             <WorkspaceView key={area} area={area} />
-          ) : loading ? (
+          ) : loading || loaded?.area !== area ? (
             <div className="panel loading-state">
               Đang tải dữ liệu cửa hàng...
             </div>

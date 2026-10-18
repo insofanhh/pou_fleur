@@ -41,7 +41,7 @@ export default function AppNavigation() {
         {links
           .filter(([k]) => k !== "overview" || role !== "support")
           .map(([k, t]) => (
-            <Link key={k} href={"/workspace/" + sid + "/" + k}>
+            <Link key={k} href={"/workspace/" + sid + "/" + k} scroll={false}>
               {k === "calendar" ? <Bell size={20} /> : <Store size={20} />}
               <span>{t}</span>
             </Link>
@@ -66,7 +66,7 @@ export default function AppNavigation() {
           ["invoices", "Hóa đơn"],
           ["health", "Hệ thống"],
         ].map(([k, t]) => (
-          <Link key={k} href={"/platform/" + k}>
+          <Link key={k} href={"/platform/" + k} scroll={false}>
             <Store size={20} />
             <span>{t}</span>
           </Link>
