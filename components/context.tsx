@@ -9,6 +9,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { storeRef } from "./routing";
+import { isGlobalAPI } from "@/lib/global-routes";
 import type { CartItem, User } from "@/lib/types";
 import { X, Check } from "lucide-react";
 export function track(name: string) {
@@ -19,12 +20,14 @@ export function track(name: string) {
     }).catch(() => {});
 }
 export async function api(path: string, method = "GET", body?: unknown) {
+  const pathname = typeof location === "undefined" ? "" : location.pathname;
+  const needsStore = !isGlobalAPI(path.split("?", 1)[0].split("/"), method) ||
+    /^\/(s|workspace)\//.test(pathname);
   const r = await fetch("/api/" + path, {
     method,
     headers: {
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      "x-fleur-store":
-        typeof location === "undefined" ? "1" : storeRef(location.pathname),
+      ...(needsStore ? { "x-fleur-store": storeRef(pathname) } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });

@@ -2,7 +2,7 @@
 import { formatDate } from "@/lib/date-time";
 import { orderLabels, displayLabel } from "@/lib/display-labels";
 import { loginDestination } from "@/lib/login-redirect";
-import Link, { useScopedRouter } from "./routing";
+import Link, { useLocalPath, useScopedRouter } from "./routing";
 import FlowerImage from "./flower-image";
 import { TableAction } from "./table-actions";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -228,12 +228,16 @@ export function Auth({
   );
 }
 export function Account() {
+  const path = useLocalPath();
   const { user, setUser, ready, toast } = useShop();
-  const [tab, setTab] = useState("profile"),
+  const [tab, setTab] = useState(path === "/account/orders" ? "orders" : "profile"),
     [orders, setOrders] = useState<any[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const router = useScopedRouter();
+  useEffect(() => {
+    setTab(path === "/account/orders" ? "orders" : "profile");
+  }, [path]);
   useEffect(() => {
     if (user)
       api("orders")

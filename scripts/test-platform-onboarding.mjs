@@ -8,6 +8,7 @@ import mysql from "mysql2/promise";
 import { chromium, expect } from "@playwright/test";
 import { testOrderPaymentStatus } from "./test-order-payment-status.mjs";
 import { testProductTaxonomy } from "./test-product-taxonomy.mjs";
+import { testGlobalAccount } from "./test-global-account.mjs";
 
 // A disposable full-schema database; never writes fixtures into the user's DB.
 assert(
@@ -858,6 +859,7 @@ try {
     origin,
   });
   await testProductTaxonomy({ owner, first, second, db, one, check, pageFor, origin });
+  await testGlobalAccount({ db, one, check, client, pageFor, origin, owner, admin, buyer, first });
   check(errors.length === 0, "Order payment and taxonomy UI have no browser errors");
   console.log(
     `All ${checks} onboarding/CRM/email checks passed. No external email sent.`,
