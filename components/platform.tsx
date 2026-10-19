@@ -277,7 +277,7 @@ export default function Platform({
           ) : area === "plans" ? (
             <PlatformPlans plans={data} toast={toast} refresh={refresh} />
           ) : area === "config" ? (
-            <>
+            <div className="platform-config">
               <div className="panel">
                 <h3>Duyệt mở store</h3>
                 <p className="small">
@@ -323,7 +323,7 @@ export default function Platform({
                 ))}
               </div>
               <PlatformSepay sepay={sepay} setSepay={setSepay} sepayBusy={sepayBusy} setSepayBusy={setSepayBusy} toast={toast} />
-            </>
+            </div>
           ) : area === "stores" ? (
             <>
               <div className="board-toolbar">

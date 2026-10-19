@@ -960,6 +960,10 @@
 .platform-shell .admin-main {
   min-width: 0;
 }
+.platform-config {
+  display: grid;
+  gap: 32px;
+}
 .merchant-detail > .flex-between {
   gap: 16px;
   margin-bottom: 20px;
