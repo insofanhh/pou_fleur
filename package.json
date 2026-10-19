@@ -28,6 +28,7 @@
     "test:billing": "node --import tsx scripts/test-billing.ts",
     "test:trial-billing": "node --import tsx scripts/test-trial-billing.ts",
     "test:plan-changes": "node --import tsx scripts/test-plan-changes.ts",
+    "test:sepay": "node --import tsx scripts/test-sepay.ts",
     "test:timeout-migration": "node scripts/test-timeout-migration.mjs",
     "test:account-trials": "node --import tsx scripts/test-account-trials.ts",
     "db:trial-report": "node --env-file=.env.local scripts/report-trial-migration.mjs",

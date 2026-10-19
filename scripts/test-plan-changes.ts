@@ -199,6 +199,23 @@ async function main() { return withSystem(async()=>{
     const retry=await confirm(timeout,await preview(timeout,atelier));
     check(retry.invoiceId!==exp.id && (await one("SELECT status FROM invoices WHERE id=?",[exp.id])).status==='void',"A new selection after timeout issues a new request without reviving the old QR");
     await mutate("REPLACE INTO platform_integrations(provider,webhook_secret,api_key,enabled,created_by) VALUES('sepay',?,?,1,?)",[`secret-${key}`,`api-${key}`,person.insertId]);
+    const compactStore=await store(studio), compactRequest=await confirm(compactStore,await preview(compactStore,studio));
+    const compactEvent={id:`compact-${key}-paid`,gateway:'TPBank',code:null,content:compactRequest.payment.code.replaceAll('-',''),description:`BankAPINotify ${compactRequest.payment.code.replaceAll('-','')}`,transferAmount:129000,transferType:'in',accountNumber:'123456789',referenceCode:`compact-ref-${key}`,transactionDate:new Date().toISOString()};
+    async function webhook(event: any, expected: number, apiKey=`api-${key}`) {
+      const response=await fetch(origin+'/api/sepay/webhook',{method:'POST',headers:{'content-type':'application/json',authorization:`Apikey ${apiKey}`},body:JSON.stringify(event)});
+      const value=await response.json();
+      assert.equal(response.status,expected,JSON.stringify(value));
+      return value;
+    }
+    await webhook(compactEvent,401,'incorrect-qa-key');
+    await webhook({...compactEvent,id:`compact-${key}-bank`,accountNumber:'999999999'},409);
+    const unknownCode=compactRequest.payment.code.replace(/[A-F0-9]{6}$/,compactRequest.payment.code.endsWith('ABCDEF')?'123456':'ABCDEF').replaceAll('-','');
+    await webhook({...compactEvent,id:`compact-${key}-unknown`,content:unknownCode,description:unknownCode},404);
+    check((await one('SELECT paid FROM invoices WHERE id=?',[compactRequest.invoiceId])).paid===0,'Compact codes still require valid authentication, nonce and receiving bank before collecting');
+    const compactResult=await webhook(compactEvent,200);
+    check(compactResult.success===true && compactResult.code===compactRequest.payment.code && (await one('SELECT status FROM invoices WHERE id=?',[compactRequest.invoiceId])).status==='paid','TPBank compact code settles the original subscription invoice and returns SePay success acknowledgement');
+    const compactDuplicate=await webhook(compactEvent,200);
+    check(compactDuplicate.success===true && compactDuplicate.duplicate===true && (await one('SELECT COUNT(*) n FROM billing_payments WHERE invoice_id=?',[compactRequest.invoiceId])).n===1,'Replaying compact-code webhook acknowledges success without collecting twice');
     const cancelledEvent={id:`cancelled-webhook-${key}`,content:cancelReq.payment.code,transferAmount:129000,transferType:'in',accountNumber:'123456789'};
     await assert.rejects(()=>processWebhook(JSON.stringify(cancelledEvent),cancelledEvent,new Headers({'x-api-key':`api-${key}`})),/hủy/);
     check((await one("SELECT COUNT(*) n FROM billing_payments WHERE invoice_id=?",[cancelReq.invoiceId])).n===0,"Transfer to manually cancelled QR never activates service and is kept for reconciliation");
@@ -372,6 +389,7 @@ async function main() { return withSystem(async()=>{
     await mutate("DELETE FROM platform_integrations WHERE provider='sepay'");
     for(const c of savedCredentials) await mutate("INSERT INTO platform_integrations(provider,webhook_secret,api_key,enabled,created_by) VALUES('sepay',?,?,?,?)",[c.webhook_secret,c.api_key,c.enabled,c.created_by]);
     await mutate("DELETE FROM sepay_webhook_events WHERE provider_event_id IN (?,?,?,?)",[`timeout-webhook-${key}`,`renew-webhook-${key}`,`timeout-precleanup-${key}`,`cancelled-webhook-${key}`]);
+    await mutate("DELETE FROM sepay_webhook_events WHERE provider_event_id LIKE ?",[`compact-${key}-%`]);
   }
 }); }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>pool.end());
