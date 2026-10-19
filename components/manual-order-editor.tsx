@@ -1,4 +1,6 @@
 "use client";
+import { hanoiDateTimeInput, hanoiInputToISO, parseDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
 import {
   cloneElement,
   isValidElement,
@@ -13,6 +15,7 @@ import Link, { storeRef, useScopedRouter } from "./routing";
 import { api, useShop } from "./context";
 import { money } from "./home";
 import { orderLabels } from "@/lib/display-labels";
+import { manualSalesChannels as channels } from "@/lib/order-workflow";
 import {
   Plus,
   Trash2,
@@ -49,13 +52,6 @@ const empty = {
   collectAmount: 0,
   collectMethod: "cash",
   paymentReference: "",
-};
-const channels: Record<string, string> = {
-  phone: "Điện thoại",
-  zalo: "Zalo",
-  social: "Facebook / Instagram",
-  in_person: "Tại cửa hàng",
-  other: "Khác",
 };
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -370,7 +366,7 @@ export default function ManualOrderEditor() {
         paymentMode === "paid" ? priced.total : Number(form.collectAmount || 0);
       if (paymentMode === "paid" && priced.total === 0)
         throw Error(
-          "Tổng đơn là 0 đ, không có khoản tiền cần thu. Chọn Chưa thanh toán.",
+          "Tổng đơn là 0 VNĐ, không có khoản tiền cần thu. Chọn Chưa thanh toán.",
         );
       if (
         paymentMode === "partially_paid" &&
@@ -382,7 +378,7 @@ export default function ManualOrderEditor() {
       if (amount > priced.total)
         throw Error("Tiền thu không được vượt tổng đơn.");
       if (amount > 100000000)
-        throw Error("Số tiền thu mỗi lần không được vượt 100.000.000 đ.");
+        throw Error("Số tiền thu mỗi lần không được vượt 100.000.000 VNĐ.");
       setForm((f: any) => ({ ...f, collectAmount: amount }));
       setQuote(priced);
     } catch (e) {
@@ -443,7 +439,7 @@ export default function ManualOrderEditor() {
   function downloadReceipt() {
     if (!paymentModal) return;
     const esc = (s: string) => s.replace(/[&<>"']/g, (x) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[x]!));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1100" viewBox="0 0 900 1100"><rect width="100%" height="100%" fill="white"/><text x="60" y="90" font-family="Arial" font-size="34" font-weight="700">HÓA ĐƠN TẠM TÍNH</text><text x="60" y="145" font-family="Arial" font-size="24">Fleurious · ${esc(paymentModal.reference)}</text><text x="60" y="205" font-family="Arial" font-size="28" font-weight="700">Số tiền: ${new Intl.NumberFormat("vi-VN").format(paymentModal.amount)} ₫</text><text x="60" y="255" font-family="Arial" font-size="22">Nội dung chuyển khoản: ${esc(paymentModal.code)}</text><image href="${esc(paymentModal.qrUrl)}" x="250" y="320" width="400" height="400"/><text x="60" y="800" font-family="Arial" font-size="22">Vui lòng chuyển đúng số tiền và nội dung.</text><text x="60" y="850" font-family="Arial" font-size="20">Mã QR có hiệu lực trong 10 phút.</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1100" viewBox="0 0 900 1100"><rect width="100%" height="100%" fill="white"/><text x="60" y="90" font-family="Arial" font-size="34" font-weight="700">HÓA ĐƠN TẠM TÍNH</text><text x="60" y="145" font-family="Arial" font-size="24">Fleurious · ${esc(paymentModal.reference)}</text><text x="60" y="205" font-family="Arial" font-size="28" font-weight="700">Số tiền: ${money(Number(paymentModal.amount))}</text><text x="60" y="255" font-family="Arial" font-size="22">Nội dung chuyển khoản: ${esc(paymentModal.code)}</text><image href="${esc(paymentModal.qrUrl)}" x="250" y="320" width="400" height="400"/><text x="60" y="800" font-family="Arial" font-size="22">Vui lòng chuyển đúng số tiền và nội dung.</text><text x="60" y="850" font-family="Arial" font-size="20">Mã QR có hiệu lực trong 10 phút.</text></svg>`;
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); const a = document.createElement("a"); a.href = url; a.download = paymentModal.reference + "-hoa-don-qr.svg"; a.click(); URL.revokeObjectURL(url);
   }
   function closePaymentModal() {
@@ -485,7 +481,7 @@ export default function ManualOrderEditor() {
     );
   return (
     <div className="manual-orders" data-no-fade-in>
-      {paymentModal && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={closePaymentModal} aria-label="Đóng">×</button><h2>Thanh toán đơn {paymentModal.reference}</h2><p>Mã QR có hiệu lực trong 10 phút · {new Intl.NumberFormat("vi-VN").format(paymentModal.amount)} ₫</p><img src={paymentModal.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p className="small">Nội dung chuyển khoản: <strong>{paymentModal.code}</strong></p><div className="button-row"><button className="button secondary" onClick={downloadReceipt}>Tải hóa đơn + mã QR</button><button className="button" onClick={async () => { try { await api("workspace/orders/" + paymentModal.orderId + "/payment", "POST", { kind: "collect", amount: paymentModal.amount, method: "bank", reference: "MANUAL-" + paymentModal.code }); toast("Đã ghi nhận thanh toán."); setPaymentModal(null); router.replace("/admin/board?order=" + paymentModal.orderId); } catch (e) { setError((e as Error).message); } }}>Đã nhận tiền thủ công</button></div></div></div>}
+      {paymentModal && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={closePaymentModal} aria-label="Đóng">×</button><h2>Thanh toán đơn {paymentModal.reference}</h2><p>Mã QR có hiệu lực trong 10 phút · {new Intl.NumberFormat("vi-VN").format(paymentModal.amount)} VNĐ</p><img src={paymentModal.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p className="small">Nội dung chuyển khoản: <strong>{paymentModal.code}</strong></p><div className="button-row"><button className="button secondary" onClick={downloadReceipt}>Tải hóa đơn + mã QR</button><button className="button" onClick={async () => { try { await api("workspace/orders/" + paymentModal.orderId + "/payment", "POST", { kind: "collect", amount: paymentModal.amount, method: "bank", reference: "MANUAL-" + paymentModal.code }); toast("Đã ghi nhận thanh toán."); setPaymentModal(null); router.replace("/admin/board?order=" + paymentModal.orderId); } catch (e) { setError((e as Error).message); } }}>Đã nhận tiền thủ công</button></div></div></div>}
       <div className="manual-nav">
         <Link href="/admin/board" className="text-link">
           <ArrowLeft size={16} /> Đơn hàng
@@ -529,7 +525,7 @@ export default function ManualOrderEditor() {
                     </p>
                     <small>
                       Cập nhật {d.updated_at}
-                      {Date.now() - Date.parse(d.updated_at) > 7 * 86400000
+                      {Date.now() - parseDateTime(d.updated_at).getTime() > 7 * 86400000
                         ? " · Nháp quá 7 ngày, cần rà soát"
                         : ""}
                     </small>
@@ -663,7 +659,7 @@ export default function ManualOrderEditor() {
                         maxLength: 190,
                       })}
                       <Field label="Kênh tiếp nhận">
-                        <select
+                        <Select
                           value={form.salesChannel}
                           onChange={(e) =>
                             change({ salesChannel: e.target.value })
@@ -674,7 +670,7 @@ export default function ManualOrderEditor() {
                               {label}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </Field>
                     </div>
                     {!form.customerId && (
@@ -851,7 +847,7 @@ export default function ManualOrderEditor() {
                             />
                           </Field>
                           <Field label="Kích cỡ">
-                            <select
+                            <Select
                               value={i.size}
                               onChange={(e) =>
                                 itemChange(index, { size: e.target.value })
@@ -860,14 +856,14 @@ export default function ManualOrderEditor() {
                               {["S", "M", "L"].map((s) => (
                                 <option key={s}>{s}</option>
                               ))}
-                            </select>
+                            </Select>
                           </Field>
                           {(i.type === "custom" || cap.adjust) && (
                             <Field
                               label={
                                 i.type === "custom"
-                                  ? "Đơn giá (đ)"
-                                  : "Giá riêng (đ, tùy chọn)"
+                                  ? "Đơn giá (VNĐ)"
+                                  : "Giá riêng (VNĐ, tùy chọn)"
                               }
                             >
                               <input
@@ -973,7 +969,7 @@ export default function ManualOrderEditor() {
                         required: true,
                       })}
                       <Field label="Khung giờ">
-                        <select
+                        <Select
                           required
                           value={form.deliverySlot}
                           onChange={(e) =>
@@ -984,7 +980,7 @@ export default function ManualOrderEditor() {
                           {options.settings.slots.map((s: string) => (
                             <option key={s}>{s}</option>
                           ))}
-                        </select>
+                        </Select>
                       </Field>
                     </div>
                     {textField("address", "Địa chỉ giao hoa", {
@@ -1040,7 +1036,7 @@ export default function ManualOrderEditor() {
                       {cap.adjust && (
                         <>
                           <Field label="Giảm giá thủ công">
-                            <select
+                            <Select
                               value={form.discountType}
                               onChange={(e) =>
                                 change({
@@ -1050,9 +1046,9 @@ export default function ManualOrderEditor() {
                               }
                             >
                               <option value="none">Không giảm thêm</option>
-                              <option value="amount">Số tiền (đ)</option>
+                              <option value="amount">Số tiền (VNĐ)</option>
                               <option value="percent">Phần trăm (%)</option>
-                            </select>
+                            </Select>
                           </Field>
                           {form.discountType !== "none" &&
                             textField("discountValue", "Giá trị giảm", {
@@ -1063,11 +1059,11 @@ export default function ManualOrderEditor() {
                                   ? 100
                                   : 100000000,
                             })}
-                          {textField("shipping", "Phí giao riêng (đ)", {
+                          {textField("shipping", "Phí giao riêng (VNĐ)", {
                             type: "number",
                             min: 0,
                             max: 100000000,
-                            placeholder: "Để trống: 0 đ",
+                            placeholder: "Để trống: 0 VNĐ",
                           })}
                         </>
                       )}
@@ -1080,7 +1076,7 @@ export default function ManualOrderEditor() {
                         { maxLength: 500, placeholder: "Không bắt buộc" },
                       )}
                     <Field label="Trạng thái thanh toán">
-                      <select
+                      <Select
                         disabled={!cap.collect}
                         value={paymentStatus}
                         onChange={(e) => selectPayment(e.target.value)}
@@ -1091,7 +1087,7 @@ export default function ManualOrderEditor() {
                           Thanh toán một phần
                         </option>
                         <option value="paid">{orderLabels.paid}</option>
-                      </select>
+                      </Select>
                     </Field>
                     <p id="manual-payment-status-help" className="small">
                       Chọn trạng thái để điền số tiền, hoặc nhập số tiền đã nhận
@@ -1115,7 +1111,7 @@ export default function ManualOrderEditor() {
                         <div className="form-grid">
                           {textField(
                             "collectAmount",
-                            "Số tiền thực tế đã nhận (đ)",
+                            "Số tiền thực tế đã nhận (VNĐ)",
                             {
                               type: "number",
                               required: paymentMode === "partially_paid",
@@ -1128,7 +1124,7 @@ export default function ManualOrderEditor() {
                             },
                           )}
                           <Field label="Phương thức đã nhận">
-                            <select
+                            <Select
                               value={form.collectMethod}
                               onChange={(e) =>
                                 change({ collectMethod: e.target.value })
@@ -1136,7 +1132,7 @@ export default function ManualOrderEditor() {
                             >
                               <option value="cash">Tiền mặt</option>
                               <option value="bank">Chuyển khoản</option>
-                            </select>
+                            </Select>
                           </Field>
                         </div>
                         {form.collectAmount > 0 && (
@@ -1150,26 +1146,18 @@ export default function ManualOrderEditor() {
                                 placeholder: "Để trống để tự tạo khi lưu đơn",
                               },
                             )}
-                            <Field label="Thời điểm nhận tiền (bỏ trống: hiện tại)">
+                            <Field label="Thời điểm nhận tiền · Hà Nội (bỏ trống: hiện tại)">
                               <input
                                 type="datetime-local"
                                 value={
                                   form.receivedAt
-                                    ? new Date(
-                                        Date.parse(form.receivedAt) -
-                                          new Date(
-                                            form.receivedAt,
-                                          ).getTimezoneOffset() *
-                                            60000,
-                                      )
-                                        .toISOString()
-                                        .slice(0, 16)
+                                    ? hanoiDateTimeInput(form.receivedAt)
                                     : ""
                                 }
                                 onChange={(e) =>
                                   change({
                                     receivedAt: e.target.value
-                                      ? new Date(e.target.value).toISOString()
+                                      ? hanoiInputToISO(e.target.value)
                                       : undefined,
                                   })
                                 }
@@ -1197,7 +1185,7 @@ export default function ManualOrderEditor() {
                   <>
                     <div className="form-grid">
                       <Field label="Người phụ trách">
-                        <select
+                        <Select
                           value={form.assignedTo || ""}
                           onChange={(e) =>
                             change({
@@ -1213,10 +1201,10 @@ export default function ManualOrderEditor() {
                               {s.name}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </Field>
                       <Field label="Trạng thái ban đầu">
-                        <select
+                        <Select
                           value={form.initialStatus}
                           onChange={(e) =>
                             change({ initialStatus: e.target.value })
@@ -1226,7 +1214,7 @@ export default function ManualOrderEditor() {
                           {cap.confirm && (
                             <option value="confirmed">Đã xác nhận</option>
                           )}
-                        </select>
+                        </Select>
                       </Field>
                     </div>
                     <Field label="Nhãn (phân cách bằng dấu phẩy, tối đa 6)">

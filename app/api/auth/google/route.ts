@@ -1,6 +1,8 @@
+import { enqueueAccountWelcome } from "@/lib/system-email";
+import { processIdentityMail } from "@/lib/identity-mail";
 import * as oidc from "openid-client";
 import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   currentUser,
   digest,
@@ -141,6 +143,7 @@ export async function GET(req: NextRequest) {
             ],
           );
           userId = r.insertId;
+          await enqueueAccountWelcome(c,userId!);
         }
         await c.execute(
           "INSERT INTO auth_identities(user_id,provider,subject) VALUES(?,'google',?)",
@@ -156,6 +159,7 @@ export async function GET(req: NextRequest) {
       c.release();
     }
     await setSession(userId!);
+    after(async()=>{await processIdentityMail();});
     return NextResponse.redirect(
       new URL(loginDestination(await currentUser(), next), origin),
     );

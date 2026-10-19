@@ -1,4 +1,7 @@
 "use client";
+import { formatDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
+import { TableAction, TableActions } from "./table-actions";
 import { useEffect, useState, type FormEvent } from "react";
 import { Search, Plus, Ghost, Pencil, Trash2, RotateCcw } from "lucide-react";
 import { api, useShop } from "./context";
@@ -150,7 +153,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
             }}
           />
         </label>
-        <select
+        <Select
           aria-label="Trạng thái tài khoản"
           value={state}
           onChange={(e) => {
@@ -162,7 +165,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
           <option value="active">Đang hoạt động</option>
           <option value="locked">Đã khóa</option>
           <option value="deleted">Đã xóa</option>
-        </select>
+        </Select>
         <button className="button" onClick={() => void open("create")}>
           <Plus size={16} />
           Thêm tài khoản
@@ -186,7 +189,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                 <th>Quyền & cửa hàng</th>
                 <th>Trạng thái</th>
                 <th>Ngày tạo</th>
-                <th>Thao tác</th>
+                <th className="table-actions-heading" scope="col">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -222,49 +225,41 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                           : "Đã khóa"}
                     </span>
                   </td>
-                  <td>{u.created_at}</td>
+                  <td>{formatDateTime(u.created_at)}</td>
                   <td>
-                    <div className="platform-user-actions">
+                    <TableActions className="platform-user-actions">
                       {u.deleted_at ? (
-                        <button
-                          className="text-button"
+                        <TableAction icon={RotateCcw}
                           onClick={() => void open("restore", u)}
                         >
-                          <RotateCcw size={15} />
                           Khôi phục
-                        </button>
+                        </TableAction>
                       ) : (
                         <>
-                          <button
-                            className="text-button"
+                          <TableAction icon={Pencil}
                             onClick={() => void open("edit", u)}
                           >
-                            <Pencil size={15} />
                             Sửa
-                          </button>
+                          </TableAction>
                           {!!u.active &&
                             !u.platformAdmin &&
                             u.id !== actor?.id && (
-                              <button
-                                className="text-button"
+                              <TableAction icon={Ghost}
                                 onClick={() => void open("ghost", u)}
                               >
-                                <Ghost size={15} />
                                 Ghost
-                              </button>
+                              </TableAction>
                             )}
                           {u.id !== actor?.id && (
-                            <button
-                              className="text-button"
+                            <TableAction icon={Trash2}
                               onClick={() => void open("delete", u)}
                             >
-                              <Trash2 size={15} />
                               Xóa
-                            </button>
+                            </TableAction>
                           )}
                         </>
                       )}
-                    </div>
+                    </TableActions>
                   </td>
                 </tr>
               ))}
@@ -343,7 +338,7 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                     <p key={a.id}>
                       <strong>{auditAction(a.action)}</strong>
                       <br />
-                      {a.actor_name} · {a.created_at}
+                      {a.actor_name} · {formatDateTime(a.created_at)}
                     </p>
                   ))
                 ) : (

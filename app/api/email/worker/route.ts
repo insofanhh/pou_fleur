@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const deadline = Date.now() + 45000;
-    const automations = await processAutomations();
     const billing = await advanceBilling();
+    const automations = await processAutomations();
     const identity = await processIdentityMail();
     const notifications = await processDomainEvents(
       Math.min(deadline, Date.now() + 8000),

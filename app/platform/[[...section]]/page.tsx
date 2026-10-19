@@ -18,7 +18,7 @@ export default async function Page({
   if (
     section.length > 1 ||
     (section[0] &&
-      !["overview", "plans", "stores", "invoices", "users", "health", "config"].includes(
+      !["overview", "plans", "stores", "emails", "invoices", "users", "config"].includes(
         section[0],
       ))
   )

@@ -86,7 +86,7 @@ Platform admin vào `/platform`; owner/admin/manager vào workspace, editor vào
 - `GOONG_API_KEY`: REST key, chỉ có ở server.
 - `NEXT_PUBLIC_GOONG_MAPTILES_KEY`: Maptiles key, giới hạn domain của website tại nhà cung cấp.
 - Điền hai biến trên trong `.env.local` ở thư mục gốc. Không đặt REST key vào biến `NEXT_PUBLIC_*`. Khởi động lại `npm run dev` sau khi đổi key. Trên Vercel, thêm cùng hai biến vào Settings → Environment Variables cho môi trường cần dùng rồi redeploy; Maptiles key được đóng gói khi build.
-- Trong Cấu hình store, nhập ít nhất 3 ký tự vào Địa chỉ rồi chọn gợi ý để tự điền vĩ độ/kinh độ. Sửa địa chỉ sẽ xóa tọa độ cũ; có thể nhập tọa độ thủ công. Bấm Lưu cấu hình để lưu vị trí cửa hàng.
+- Trong Cấu hình cửa hàng, nhập ít nhất 3 ký tự vào Địa chỉ rồi chọn gợi ý để tự điền vĩ độ/kinh độ. Sửa địa chỉ sẽ xóa tọa độ cũ; có thể nhập tọa độ thủ công. Bấm Lưu cấu hình để lưu vị trí cửa hàng.
 - Tìm địa chỉ dùng proxy server; bản đồ tải SDK khi mở map. GPS chỉ được gọi khi người dùng bấm dùng vị trí.
 - Lưu vị trí giao trên thiết bị để sắp xếp store. Khoảng cách hiển thị là đường chim bay, không phải quãng đường giao thực tế.
 - Thiếu key hoặc SDK lỗi vẫn dùng được danh sách store và địa chỉ nhập tay.

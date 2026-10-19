@@ -1,4 +1,5 @@
 "use client";
+import { hanoiDateKey } from "@/lib/date-time";
 import Link from "./routing";
 import Image from "next/image";
 import FlowerImage from "./flower-image";
@@ -11,8 +12,8 @@ import {
   Plus,
 } from "lucide-react";
 import type { Catalog, Product } from "@/lib/types";
-export const money = (n: number) =>
-  new Intl.NumberFormat("vi-VN").format(n) + " ₫";
+import { formatMoney as money } from "@/lib/money";
+export { money };
 export default function Home({ data }: { data: Catalog }) {
   return (
     <main>
@@ -185,7 +186,7 @@ export function Footer({ name = "Fleurious" }: { name?: string }) {
       </div>
       <div className="footer-bottom">
         <span>
-          © {new Date().getFullYear()} {name}.
+          © {hanoiDateKey().slice(0, 4)} {name}.
         </span>
         <span>Một chút hoa. Thật nhiều yêu thương.</span>
         <Link href="/privacy">Quyền riêng tư</Link>

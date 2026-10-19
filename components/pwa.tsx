@@ -1,4 +1,6 @@
 "use client";
+import { formatDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -63,8 +65,8 @@ export default function AppNavigation() {
         {[
           ["overview", "Tổng quan"],
           ["stores", "Stores"],
+          ["emails", "Email"],
           ["invoices", "Hóa đơn"],
-          ["health", "Hệ thống"],
         ].map(([k, t]) => (
           <Link key={k} href={"/platform/" + k} scroll={false}>
             <Store size={20} />
@@ -203,7 +205,7 @@ export function Inbox() {
         <h3>Cài đặt nhận tin theo cửa hàng</h3>
         <label className="field">
           Cửa hàng
-          <select
+          <Select
             value={store}
             disabled={!storeIds.length}
             onChange={(e) => setStore(e.target.value)}
@@ -214,7 +216,7 @@ export function Inbox() {
                   "Store #" + id}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="check-field">
           <input
@@ -262,7 +264,7 @@ export function Inbox() {
           className={"inbox-item " + (!i.read_at ? "unread" : "")}
           key={i.id}
         >
-          <span className="eyebrow">{i.created_at}</span>
+          <span className="eyebrow">{formatDateTime(i.created_at)}</span>
           <h3>{i.title}</h3>
           <p>{i.body}</p>
           <Link

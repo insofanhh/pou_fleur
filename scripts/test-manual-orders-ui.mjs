@@ -1,3 +1,4 @@
+import { nativeSelect, chooseSelect } from "./ui-controls.mjs";
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdirSync } from "node:fs";
@@ -53,12 +54,10 @@ try {
     page.url().includes("/orders/new"),
     "Create button opens editor in current workspace",
   );
-  const assignee = page.getByLabel("Người phụ trách", { exact: true });
+  const assignee = nativeSelect(page, "Người phụ trách");
   await expect(assignee).toHaveValue(String(signedIn.user.id));
   check(true, "New order preselects the signed-in store member as assignee");
-  const paymentStatus = page.getByLabel("Trạng thái thanh toán", {
-    exact: true,
-  });
+  const paymentStatus = nativeSelect(page, "Trạng thái thanh toán");
   await expect(paymentStatus).toHaveValue("unpaid");
   await expect(paymentStatus).toBeEnabled();
   check(true, "New order starts unpaid and owner can choose payment status");
@@ -68,9 +67,7 @@ try {
   await page
     .getByLabel("Số điện thoại người đặt", { exact: true })
     .fill("09" + String(Date.now()).slice(-8));
-  await page
-    .getByLabel("Kênh tiếp nhận", { exact: true })
-    .selectOption("phone");
+  await chooseSelect(nativeSelect(page, "Kênh tiếp nhận"), "phone");
   await page.getByRole("button", { name: "Bó hoa QA", exact: false }).click();
   await page
     .getByRole("button", { name: "Thêm thiết kế riêng", exact: false })
@@ -78,7 +75,7 @@ try {
   await page
     .getByLabel("Tên thiết kế riêng", { exact: true })
     .fill("Bó hoa trắng UI");
-  await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("250000");
+  await page.getByLabel("Đơn giá (VNĐ)", { exact: true }).fill("250000");
   const upload = page.getByLabel("Ảnh tham khảo (tùy chọn)", { exact: true });
   let uploadRequests = 0;
   await page.route("**/api/upload?purpose=order-reference", async (route) => {
@@ -158,7 +155,7 @@ try {
         options.find((o) => o.value && o.value !== String(current)).value,
       signedIn.user.id,
     );
-  await assignee.selectOption(otherAssignee);
+  await chooseSelect(assignee, otherAssignee);
   await page.getByRole("button", { name: "Lưu nháp", exact: true }).click();
   await expect(page).toHaveURL(/draft=\d+/);
   await page
@@ -172,10 +169,10 @@ try {
   );
   await expect(assignee).toHaveValue(otherAssignee);
   check(true, "Draft reload preserves a manually selected assignee");
-  const received = page.getByLabel("Số tiền thực tế đã nhận (đ)", {
+  const received = page.getByLabel("Số tiền thực tế đã nhận (VNĐ)", {
     exact: true,
   });
-  await paymentStatus.selectOption("partially_paid");
+  await chooseSelect(paymentStatus, "partially_paid");
   await expect(received).toHaveValue("");
   await page
     .getByRole("button", { name: "Tính giá & rà soát", exact: true })
@@ -187,18 +184,16 @@ try {
         .count()) === 0,
     "Choosing partial payment requires entering a positive amount before review",
   );
-  await paymentStatus.selectOption("paid");
+  await chooseSelect(paymentStatus, "paid");
   await expect(received).not.toHaveValue("0");
   const originalTotal = Number(await received.inputValue());
   check(
     originalTotal === 451000,
     "Paid amount uses only product totals when delivery fee is blank",
   );
-  await page
-    .getByLabel("Giảm giá thủ công", { exact: true })
-    .selectOption("amount");
+  await chooseSelect(nativeSelect(page, "Giảm giá thủ công"), "amount");
   await page.getByLabel("Giá trị giảm", { exact: true }).fill("50000");
-  await page.getByLabel("Phí giao riêng (đ)", { exact: true }).fill("27000");
+  await page.getByLabel("Phí giao riêng (VNĐ)", { exact: true }).fill("27000");
   const reason = page.getByLabel("Lý do giảm giá / sửa phí giao", {
     exact: true,
   });
@@ -222,7 +217,7 @@ try {
         .then((s) => s.includes("50.000") && s.includes("27.000"))),
     "Paid review accepts blank adjustment reason and uses discounted total including shipping",
   );
-  await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("260000");
+  await page.getByLabel("Đơn giá (VNĐ)", { exact: true }).fill("260000");
   await expect(received).toHaveValue(String(fullTotal + 10000));
   await expect(paymentStatus).toHaveValue("paid");
   check(
@@ -239,16 +234,14 @@ try {
     true,
     "Direct amount entry automatically resolves partial, paid, and unpaid",
   );
-  await paymentStatus.selectOption("paid");
+  await chooseSelect(paymentStatus, "paid");
   await expect(received).toHaveValue(String(fullTotal + 10000));
-  await paymentStatus.selectOption("unpaid");
+  await chooseSelect(paymentStatus, "unpaid");
   await expect(received).toHaveValue("0");
   check(true, "Choosing unpaid clears a previously populated payment amount");
-  await paymentStatus.selectOption("partially_paid");
+  await chooseSelect(paymentStatus, "partially_paid");
   await received.fill("100000");
-  await page
-    .getByLabel("Phương thức đã nhận", { exact: true })
-    .selectOption("bank");
+  await chooseSelect(nativeSelect(page, "Phương thức đã nhận"), "bank");
   const reference = page.getByLabel("Mã tham chiếu / biên nhận", {
     exact: true,
   });
@@ -310,7 +303,7 @@ try {
     "Finalized draft opens order panel with deposit and internal note",
   );
   const panel = page.getByRole("dialog");
-  const panelAssignee = panel.getByLabel("Người phụ trách", { exact: true });
+  const panelAssignee = nativeSelect(panel, "Người phụ trách");
   await expect(panelAssignee).toBeEnabled();
   await expect(panelAssignee).toHaveValue(otherAssignee);
   check(
@@ -324,7 +317,7 @@ try {
     "Khách VIP, Giao gấp",
   );
   check(true, "Labels entered in Internal store are shown in order assignment");
-  await panelAssignee.selectOption(String(signedIn.user.id));
+  await chooseSelect(panelAssignee, String(signedIn.user.id));
   await panel.getByLabel(labels, { exact: true }).fill("Khách VIP, Sinh nhật");
   await panel
     .getByRole("button", { name: "Lưu phân công", exact: true })
@@ -353,15 +346,13 @@ try {
     true,
     "Reopening order details shows the latest saved assignee and labels",
   );
-  await panelAssignee.scrollIntoViewIfNeeded();
+  await panelAssignee.locator("..").scrollIntoViewIfNeeded();
   await page.screenshot({
     path: ".local/manual-ui/assignment-panel.png",
     fullPage: true,
   });
   await page.getByRole("button", { name: "Đóng", exact: true }).click();
-  await page
-    .getByLabel("Nguồn tạo đơn", { exact: true })
-    .selectOption("manual");
+  await chooseSelect(nativeSelect(page, "Nguồn tạo đơn"), "manual");
   await expect(page.locator(".kanban-card").first()).toBeVisible();
   await page.screenshot({
     path: ".local/manual-ui/desktop-board.png",
@@ -369,9 +360,9 @@ try {
   });
   for (const status of ["paid", "unpaid"]) {
     await page.goto(base + "/workspace/" + fixture.sid + "/orders/new");
-    await paymentStatus.waitFor();
+    await paymentStatus.locator("..").getByRole("combobox").waitFor();
     await expect(assignee).toHaveValue(String(signedIn.user.id));
-    await paymentStatus.selectOption(status);
+    await chooseSelect(paymentStatus, status);
     await expect(received).toHaveValue("0");
     await page
       .getByLabel("Tên người đặt", { exact: true })
@@ -385,7 +376,7 @@ try {
     await page
       .getByLabel("Tên thiết kế riêng", { exact: true })
       .fill("Hoa " + status);
-    await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("300000");
+    await page.getByLabel("Đơn giá (VNĐ)", { exact: true }).fill("300000");
     await page.getByLabel("Giao cho khách", { exact: true }).check();
     await page
       .getByLabel("Ngày giao hoa", { exact: true })
@@ -400,7 +391,7 @@ try {
         shipping === 0,
         "New manual orders never inherit the fixed storefront delivery fee",
       );
-      const deliveryFee = page.getByLabel("Phí giao riêng (đ)", {
+      const deliveryFee = page.getByLabel("Phí giao riêng (VNĐ)", {
         exact: true,
       });
       await deliveryFee.fill("45000");
@@ -429,9 +420,9 @@ try {
           await route.fulfill({ response });
         } else await route.continue();
       });
-      await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("320000");
+      await page.getByLabel("Đơn giá (VNĐ)", { exact: true }).fill("320000");
       await started;
-      await page.getByLabel("Đơn giá (đ)", { exact: true }).fill("330000");
+      await page.getByLabel("Đơn giá (VNĐ)", { exact: true }).fill("330000");
       await expect(received).toHaveValue(String(330000 + shipping));
       const oldResponse = page.waitForResponse(
         (r) =>
@@ -581,17 +572,13 @@ try {
     .waitFor();
   check(
     (await sp
-      .getByLabel("Số tiền thực tế đã nhận (đ)", { exact: true })
+      .getByLabel("Số tiền thực tế đã nhận (VNĐ)", { exact: true })
       .count()) === 0 &&
-      (await sp.getByLabel("Giảm giá thủ công", { exact: true }).count()) === 0,
+      (await nativeSelect(sp, "Giảm giá thủ công").count()) === 0,
     "Support UI hides collection and price override",
   );
-  await expect(
-    sp.getByLabel("Trạng thái thanh toán", { exact: true }),
-  ).toHaveValue("unpaid");
-  await expect(
-    sp.getByLabel("Trạng thái thanh toán", { exact: true }),
-  ).toBeDisabled();
+  await expect(nativeSelect(sp, "Trạng thái thanh toán")).toHaveValue("unpaid");
+  await expect(nativeSelect(sp, "Trạng thái thanh toán")).toBeDisabled();
   await sp.screenshot({
     path: ".local/manual-ui/mobile-support.png",
     fullPage: true,

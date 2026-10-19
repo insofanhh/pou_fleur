@@ -31,7 +31,7 @@ export default async function WorkspaceLayout({
   children: ReactNode;
 }) {
   const store = await workspaceStore(storeRef);
-  if (store.status !== "approved" && (await storeApprovalRequired())) {
+  if (store.status !== "approved" && store.status !== "suspended" && (await storeApprovalRequired())) {
     if (!(await ghostContext())) {
       const user = await currentUser();
       if (!user)

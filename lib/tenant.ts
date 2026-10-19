@@ -23,6 +23,8 @@ export const tenantId = () => {
 const tables = new Set([
   "products",
   "categories",
+  "flower_components",
+  "product_flower_components",
   "orders",
   "order_items",
   "promotions",

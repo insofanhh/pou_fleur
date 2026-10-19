@@ -1,3 +1,4 @@
+import { hanoiDateKey } from "./date-time";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { activeBank, createIntent } from "./sepay";
@@ -9,6 +10,7 @@ import { assertStoreOpen, jsonValue, storeBy } from "./stores";
 import { calculate, calculateTotals } from "./commerce";
 import { validateFulfillment } from "./fulfillment";
 import { recordOrderPayment } from "./order-payments";
+import { orderPaymentStatusSQL } from "./order-payment-state";
 import { orderCapabilities } from "./order-capabilities";
 import { enqueueOrderEmail } from "./email";
 import { emit } from "./domain-events";
@@ -302,7 +304,7 @@ async function finalize(raw: any, actor: Actor) {
     const customerId = await contact(c, b);
     const reference =
       "FL" +
-      new Date().toISOString().slice(0, 10).replaceAll("-", "") +
+      hanoiDateKey().replaceAll("-", "") +
       randomBytes(4).toString("hex").toUpperCase();
     if (ghostCookie && !ghost?.valid)
       throw new HttpError(403, "Phiên Ghost đã hết hạn.");
@@ -527,7 +529,7 @@ export async function manualOrdersAPI(
   if (area === "manual-orders" && path.length === 2 && method === "GET") {
     const id = z.coerce.number().int().positive().parse(path[1]);
     const [order] = await query<any[]>(
-      "SELECT o.*,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected FROM orders o WHERE o.id=?",
+      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected FROM orders o WHERE o.id=?",
       [id],
     );
     if (!order) throw new HttpError(404, "Không tìm thấy đơn.");

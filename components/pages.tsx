@@ -1,8 +1,10 @@
 "use client";
+import { formatDate } from "@/lib/date-time";
 import { orderLabels, displayLabel } from "@/lib/display-labels";
 import { loginDestination } from "@/lib/login-redirect";
 import Link, { useScopedRouter } from "./routing";
 import FlowerImage from "./flower-image";
+import { TableAction } from "./table-actions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -18,6 +20,8 @@ import {
   Mail,
   CalendarDays,
   MapPin,
+  RotateCcw,
+  Ban,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
@@ -380,8 +384,7 @@ export function Account() {
                         Tổng cộng <strong>{money(o.total)}</strong>
                       </span>
                       {o.status === "delivered" && (
-                        <button
-                          className="text-button"
+                        <TableAction icon={RotateCcw}
                           onClick={async () => {
                             try {
                               const d = await api(
@@ -412,11 +415,10 @@ export function Account() {
                           }}
                         >
                           Đặt lại
-                        </button>
+                        </TableAction>
                       )}
                       {["pending", "confirmed"].includes(o.status) && (
-                        <button
-                          className="text-button"
+                        <TableAction icon={Ban}
                           onClick={async () => {
                             if (
                               !confirm("Bạn muốn huỷ đơn " + o.reference + "?")
@@ -436,7 +438,7 @@ export function Account() {
                           }}
                         >
                           Huỷ đơn
-                        </button>
+                        </TableAction>
                       )}
                     </div>
                   </div>
@@ -604,7 +606,7 @@ export function Events({ data }: { data: Catalog }) {
             <div>
               <span className="eyebrow">
                 <CalendarDays size={16} />
-                {e.starts_at} — {e.ends_at}
+                {formatDate(e.starts_at)} — {formatDate(e.ends_at)}
               </span>
               <h2>{e.name}</h2>
               <p>{e.description}</p>
@@ -897,7 +899,7 @@ const content: Record<
     sections: [
       [
         "Phạm vi & phí giao hàng",
-        "Giao trong khu vực TP. Hà Nội với phí 35.000 ₫. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 ₫ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
+        "Giao trong khu vực TP. Hà Nội với phí 35.000 VNĐ. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 VNĐ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
       ],
       [
         "Chuẩn bị & thay thế hoa",

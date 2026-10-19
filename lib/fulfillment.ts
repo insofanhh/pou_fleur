@@ -1,3 +1,4 @@
+import { hanoiDateKey } from "./date-time";
 import type { PoolConnection } from "mysql2/promise";
 import { HttpError } from "./auth";
 import { distanceKm, type StoreRecord } from "./stores";
@@ -16,16 +17,8 @@ export async function validateFulfillment(
   requireCoordinates = false,
 ) {
   const { settings } = store;
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const today = formatter.format(new Date());
-  const latest = formatter.format(
-    new Date(Date.now() + settings.advance_days * 86400000),
-  );
+  const today = hanoiDateKey();
+  const latest = hanoiDateKey(Date.now() + settings.advance_days * 86400000);
   const date = Date.parse(body.deliveryDate + "T12:00:00Z");
   const start = Date.parse(
     body.deliveryDate + "T" + body.deliverySlot.slice(0, 5) + ":00+07:00",

@@ -80,6 +80,7 @@ try {
     "INSERT IGNORE INTO platform_memberships(user_id) VALUES(?)",
     [me.user.id],
   );
+  await admin("platform/config", "PATCH", { storeApprovalRequired: true });
   await owner("auth/register", "POST", {
     name: "Store Two Owner",
     email: "second-" + Date.now() + "@example.test",
@@ -93,9 +94,29 @@ try {
   });
   const sid = store.id;
   let settings = await owner("workspace/settings", "GET", undefined, sid);
-  check(settings.status === "draft", "New store starts draft");
+  check(settings.status === "pending", "New store waits for platform approval when enabled");
   await anon("store", "GET", undefined, sid, 404);
-  await owner("workspace/submit", "POST", {}, sid, 400);
+  await owner("workspace/submit", "POST", {}, sid, 403);
+  await owner(
+    "workspace/settings",
+    "PATCH",
+    {
+      ...settings,
+      lat: 10.77,
+      lng: 106.7,
+      settings: { ...settings.settings, lead_minutes: 0, capacity: 2 },
+    },
+    sid,
+    403,
+  );
+  settings = await owner("workspace/settings", "GET", undefined, sid);
+  await owner("platform/overview", "GET", undefined, sid, 403);
+  await admin("platform/stores/" + sid + "/status", "PATCH", {
+    status: "approved",
+    reason: "Đủ điều kiện kiểm thử",
+    version: settings.version,
+  });
+  settings = await owner("workspace/settings","GET",undefined,sid);
   await owner(
     "workspace/settings",
     "PATCH",
@@ -107,14 +128,7 @@ try {
     },
     sid,
   );
-  await owner("workspace/submit", "POST", {}, sid);
-  settings = await owner("workspace/settings", "GET", undefined, sid);
-  await owner("platform/overview", "GET", undefined, sid, 403);
-  await admin("platform/stores/" + sid + "/status", "PATCH", {
-    status: "approved",
-    reason: "Đủ điều kiện kiểm thử",
-    version: settings.version,
-  });
+
   check(
     (await anon("store", "GET", undefined, sid)).status === "approved",
     "Platform approval publishes store",
@@ -457,11 +471,11 @@ try {
   const sub = (await owner("workspace/billing", "GET", undefined, sid))
     .subscription;
   await admin("platform/stores/" + sid + "/subscription", "PATCH", {
-    plan_id: 2,
-    status: "active",
-    period_end: tomorrow,
-    version: sub.version,
-  });
+    plan_id: 2,status:"active",period_end:tomorrow,version:sub.version,
+  },1,409);
+  // Place this fixture at the end of a Studio trial; periods are no longer
+  // editable through the generic platform form.
+  await db.execute("UPDATE subscriptions SET plan_id=2,plan_version_id=(SELECT id FROM plan_versions WHERE plan_id=2 ORDER BY id DESC LIMIT 1),registration_plan_version_id=(SELECT id FROM plan_versions WHERE plan_id=2 ORDER BY id DESC LIMIT 1),trial_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 DAY),access_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 DAY) WHERE store_id=?",[sid]);
   const period = new Date().toISOString().slice(0, 7);
   await admin("platform/invoices/generate", "POST", {
     period,
@@ -472,7 +486,7 @@ try {
     due_date: tomorrow,
   });
   const invoices = (await owner("workspace/billing", "GET", undefined, sid))
-    .invoices;
+    .invoices.filter(i => i.status === "open");
   check(invoices.length === 1, "Monthly invoice generation is idempotent");
   await db.execute(
     "UPDATE subscriptions SET status='restricted' WHERE store_id=?",

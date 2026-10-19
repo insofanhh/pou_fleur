@@ -90,6 +90,6 @@ export function invalidateCatalog(area: string) {
   if (["products", "categories", "posts", "events"].includes(area))
     revalidateTag("catalog-" + area, { expire: 0 });
   // Product rows include category names; orders can reserve or restore stock.
-  if (["categories", "orders", "checkout"].includes(area))
+  if (["categories", "flower_components", "orders", "checkout"].includes(area))
     revalidateTag("catalog-products", { expire: 0 });
 }

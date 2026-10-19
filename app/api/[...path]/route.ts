@@ -1,3 +1,4 @@
+import { enqueueAccountWelcome } from "@/lib/system-email";
 import { requestPasswordReset, processIdentityMail } from "@/lib/identity-mail";
 import { cookies } from "next/headers";
 import { withStore, withSystem, tenantId } from "@/lib/tenant";
@@ -6,7 +7,9 @@ import { saasAPI } from "@/lib/saas";
 import { emit, processDomainEvents } from "@/lib/domain-events";
 import { NextRequest, NextResponse, after } from "next/server";
 import { emailAdminRead, emailAdminAction } from "@/lib/email-admin";
-import { safelyProcessEmails } from "@/lib/email";
+import { updateCustomerMarketingConsent } from "@/lib/crm-consent";
+import { orderPaymentStatusSQL } from "@/lib/order-payment-state";
+import { safelyProcessEmails, processAllStoreEmails } from "@/lib/email";
 import { z } from "zod";
 import { adminNotifications } from "@/lib/notifications";
 import { publicProducts, invalidateCatalog } from "@/lib/catalog";
@@ -34,6 +37,7 @@ import {
   changeOrder,
 } from "@/lib/commerce";
 import { adminRead, adminWrite } from "@/lib/admin";
+import { refreshBillingAccess } from "@/lib/billing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -68,9 +72,12 @@ async function handle(
       digest(req.headers.get("x-forwarded-for")?.split(",")[0] || "local"),
     );
     if (result !== undefined) {
-      if (method !== "GET")
+      if (method !== "GET" && !(path[0] === "platform" && path[1] === "emails" && !["campaigns", "retry"].includes(path[2])))
         after(async () => {
-          await safelyProcessEmails();
+          const deadline=Date.now()+45000;
+          await processIdentityMail();
+          if (path[0] === 'platform' || key === 'stores') await processAllStoreEmails(deadline);
+          else await safelyProcessEmails();
           await processDomainEvents();
         });
       return NextResponse.json(result, {
@@ -107,12 +114,17 @@ async function handle(
         })
         .parse(body);
       await throttle("register:" + b.email);
-      const r = await mutate(
-        "INSERT INTO users(name,email,password_hash,phone,address,marketing_consent) VALUES(?,?,?,?,'',?)",
-        [b.name, b.email, passwordHash(b.password), b.phone, b.consent ? 1 : 0],
-      );
-
-      await setSession(r.insertId);
+      const c=await pool.getConnection();
+      let userId:number;
+      try{
+        await c.beginTransaction();
+        const [r]:any=await c.execute("INSERT INTO users(name,email,password_hash,phone,address,marketing_consent) VALUES(?,?,?,?,'',?)",[b.name,b.email,passwordHash(b.password),b.phone,b.consent?1:0]);
+        userId=r.insertId;
+        await enqueueAccountWelcome(c,userId);
+        await c.commit();
+      }catch(e){await c.rollback();throw e;}finally{c.release();}
+      await setSession(userId!);
+      after(async()=>{await processIdentityMail();});
       result = { user: await currentUser() };
     } else if (key === "auth/login" && method === "POST") {
       const b = z
@@ -201,7 +213,7 @@ async function handle(
       if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
       result = await withSystem(() =>
         query(
-          "SELECT o.id,o.reference,o.user_id,o.customer_name,o.email,o.phone,o.address,o.recipient_name,o.recipient_phone,o.delivery_date,o.delivery_slot,o.message,o.notes,o.payment_method,o.payment_status,o.status,o.subtotal,o.discount,o.shipping,o.total,o.created_at,o.store_id,o.store_name,o.delivery_mode,o.version,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
+          "SELECT o.id,o.reference,o.user_id,o.customer_name,o.email,o.phone,o.address,o.recipient_name,o.recipient_phone,o.delivery_date,o.delivery_slot,o.message,o.notes,o.payment_method," + orderPaymentStatusSQL() + " payment_status,o.status,o.subtotal,o.discount,o.shipping,o.total,o.created_at,o.store_id,o.store_name,o.delivery_mode,o.version,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
           [user.id],
         ),
       );
@@ -381,7 +393,10 @@ async function handle(
         );
         if (!customer)
           throw new HttpError(404, "Không tìm thấy khách hàng trong cửa hàng.");
-        if (path[3] === "notes") {
+        if (path.length === 4 && path[3] === "marketing-consent" && method === "PATCH") {
+          return NextResponse.json(await updateCustomerMarketingConsent(id, user.id, body), { headers: { "Cache-Control": "no-store" } });
+        }
+        if (path.length === 4 && path[3] === "notes" && method === "POST") {
           const content = z
             .string()
             .trim()
@@ -392,7 +407,7 @@ async function handle(
             "INSERT INTO crm_notes(customer_id,author_id,content) VALUES(?,?,?)",
             [id, user.id, content],
           );
-        } else if (path[3] === "tasks" && method === "POST") {
+        } else if (path.length === 4 && path[3] === "tasks" && method === "POST") {
           const b = z
             .object({
               title: z.string().min(2).max(200),
@@ -403,8 +418,8 @@ async function handle(
             "INSERT INTO crm_tasks(customer_id,title,due_date) VALUES(?,?,?)",
             [id, b.title, b.due_date],
           );
-        } else if (path[3] === "tasks" && method === "PATCH") {
-          await mutate(
+        } else if (path.length === 4 && path[3] === "tasks" && method === "PATCH") {
+          const updated=await mutate(
             "UPDATE crm_tasks SET status=? WHERE id=? AND customer_id=?",
             [
               z.enum(["open", "done"]).parse(body.status),
@@ -412,7 +427,8 @@ async function handle(
               id,
             ],
           );
-        } else {
+          if(!updated.affectedRows) throw new HttpError(404,"Không tìm thấy công việc của khách hàng này.");
+        } else if(path.length===3 && method==="PATCH") {
           const b = z
             .object({
               segment: z.enum(["new", "loyal", "vip", "inactive"]),
@@ -428,6 +444,7 @@ async function handle(
             id,
           ]);
         }
+        else throw new HttpError(405,"Thao tác CRM không hỗ trợ.");
         await mutate(
           "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,'update','crm',?)",
           [user.id, String(id)],
@@ -501,6 +518,10 @@ async function scopedHandle(
     const store = await requestStore(req);
     return await withStore(store.id, async () => {
       const { path } = await ctx.params;
+      if (req.method !== "GET" && ["admin", "workspace"].includes(path[0]) && path[1] !== "billing") {
+        const access = await refreshBillingAccess(store.id);
+        if (access.status !== "approved") throw new HttpError(403, access.suspension_reason || "Cửa hàng chưa thể vận hành. Vui lòng xem mục Gói & hóa đơn.");
+      }
       if (
         path.join("/") === "catalog/products" &&
         store.status !== "approved"

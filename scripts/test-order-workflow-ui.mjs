@@ -1,3 +1,4 @@
+import { nativeSelect, chooseSelect } from "./ui-controls.mjs";
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import mysql from "mysql2/promise";
@@ -76,7 +77,7 @@ try {
       "Clear order sections fit width " + width,
     );
     await expect(details.locator(".order-overview .order-total")).toHaveText(
-      /₫|đ/,
+      /VNĐ/,
     );
     await expect(details.locator(".order-price-list")).toContainText(
       "Phí giao hoa",
@@ -96,11 +97,9 @@ try {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await open();
   const before = await read();
-  const paymentSelect = details.getByLabel("Phương thức thanh toán", {
-    exact: true,
-  });
+  const paymentSelect = nativeSelect(details, "Phương thức thanh toán");
   const method = before.payment_method === "bank" ? "cod" : "bank";
-  await paymentSelect.selectOption(method);
+  await chooseSelect(paymentSelect, method);
   await details
     .getByRole("button", { name: "Lưu phương thức", exact: true })
     .click();
@@ -122,7 +121,7 @@ try {
     "Đã đổi phương thức thanh toán",
   );
   check(true, "Saved payment method and history survive reopening");
-  await details.getByLabel("Trạng thái mới").selectOption("shipping");
+  await chooseSelect(nativeSelect(details, "Trạng thái mới"), "shipping");
   await details
     .getByRole("button", { name: "Cập nhật trạng thái", exact: true })
     .click();
@@ -144,7 +143,10 @@ try {
     .getByLabel("Lý do chuyển trạng thái")
     .fill("Khách yêu cầu giao hoa trở lại");
   await confirmation.getByLabel("Ngày giao khi khôi phục").fill(date);
-  await confirmation.getByLabel("Khung giờ khi khôi phục").selectOption(slot);
+  await chooseSelect(
+    nativeSelect(confirmation, "Khung giờ khi khôi phục"),
+    slot,
+  );
   await confirmation
     .getByRole("button", { name: "Xác nhận chuyển trạng thái", exact: true })
     .click();
@@ -183,7 +185,7 @@ try {
   await expect.poll(async () => (await read()).status).toBe("delivered");
   check(true, "Dragging from pending straight to delivered works");
   await open();
-  await details.getByLabel("Trạng thái mới").selectOption("cancelled");
+  await chooseSelect(nativeSelect(details, "Trạng thái mới"), "cancelled");
   await details
     .getByRole("button", { name: "Cập nhật trạng thái", exact: true })
     .click();

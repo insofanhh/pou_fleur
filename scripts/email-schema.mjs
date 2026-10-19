@@ -24,10 +24,10 @@ export async function setupEmail(c) {
     status ENUM('pending','sending','sent','failed','uncertain','cancelled') NOT NULL DEFAULT 'pending',
     attempts INT NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     lease_until DATETIME NULL, claim_token CHAR(36) NULL, last_error VARCHAR(240) NULL,
-    message_id VARCHAR(255) NULL, sent_at DATETIME NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    quota_at DATETIME NULL, message_id VARCHAR(255) NULL, sent_at DATETIME NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX email_pending(status,next_attempt_at), INDEX email_campaign(campaign_id), INDEX email_order(order_id)
   )`);
-  for (const t of defaults)
+  for (const t of defaults.filter(t=>t.key.startsWith("order_")||t.key.startsWith("crm_")))
     await c.execute(
       "INSERT IGNORE INTO email_templates(template_key,name,kind,subject,body) VALUES(?,?,?,?,?)",
       [t.key, t.name, t.kind, t.subject, t.body],

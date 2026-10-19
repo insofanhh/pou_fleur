@@ -4,7 +4,7 @@ import { tenantId } from "./tenant";
 import { requirePermission, HttpError } from "./auth";
 import { emit } from "./domain-events";
 export async function broadcast(input: unknown) {
-  const actor = await requirePermission("crm");
+  const actor = await requirePermission("emails");
   if (!["owner", "admin", "manager"].includes(actor.role))
     throw new HttpError(403, "Bạn không có quyền gửi chương trình.");
   const b = z

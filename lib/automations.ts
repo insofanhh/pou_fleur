@@ -1,3 +1,4 @@
+import { hanoiDateKey } from "./date-time";
 import { query, mutate, pool } from "./db";
 import { withStore } from "./tenant";
 import { randomBytes } from "node:crypto";
@@ -9,12 +10,7 @@ export async function processAutomations() {
     "SELECT id FROM stores WHERE status='approved'",
   );
   let queued = 0;
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = hanoiDateKey();
   for (const s of stores)
     await withStore(s.id, async () => {
       const rules = await query<any[]>(
@@ -79,6 +75,7 @@ export async function processAutomations() {
             const values = {
               customer_name: customer.name,
               store_name: store.name,
+              store_url: (process.env.APP_ORIGIN || '').replace(/\/$/,'')+'/s/'+store.slug,
               campaign_message: r.message,
               campaign_name: r.name,
               promotion_code: "",

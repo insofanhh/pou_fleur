@@ -14,6 +14,8 @@ import {
 import { api, useShop } from "./context";
 import FlowerImage from "./flower-image";
 import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
+import { money } from "./home";
+import { HANOI_LOCATION } from "@/lib/regional";
 export default function Marketplace() {
   const [stores, setStores] = useState<any[]>([]),
     [error, setError] = useState(""),
@@ -63,7 +65,7 @@ export default function Marketplace() {
         api(
           "goong/search?input=" +
             encodeURIComponent(address) +
-            "&session=discovery",
+            "&session=discovery" + (location ? `&lat=${location.lat}&lng=${location.lng}` : ""),
         )
           .then((d) => active && setSuggestions(d.predictions || []))
           .catch((e) => active && setError(e.message)),
@@ -73,7 +75,7 @@ export default function Marketplace() {
       active = false;
       clearTimeout(t);
     };
-  }, [address]);
+  }, [address, location]);
   function choose(p: any) {
     setLocation(p);
     localStorage.setItem("fleur.delivery-location", JSON.stringify(p));
@@ -316,7 +318,7 @@ export function StoreMap({
         map.current = new g.Map({
           container: el.current,
           style: "https://tiles.goong.io/assets/goong_map_web.json",
-          center: location ? [location.lng, location.lat] : [106.7009, 10.7769],
+          center: location ? [location.lng, location.lat] : [HANOI_LOCATION.lng, HANOI_LOCATION.lat],
           zoom: 12,
         });
         map.current.on("error", () =>
@@ -349,6 +351,10 @@ export function StoreMap({
       map.current.flyTo({ center: [s.lng, s.lat], zoom: 13 });
     return () => markers.forEach((m) => m.remove());
   }, [ready, stores, selected]);
+  useEffect(() => {
+    if (ready && location && selected === null)
+      map.current.flyTo({ center: [location.lng, location.lat], zoom: 12 });
+  }, [ready, location, selected]);
   return (
     <aside className="store-map">
       <div ref={el} className="map-canvas" />
@@ -385,12 +391,20 @@ export function StartStore() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [address, setAddress] = useState(""),
-    [location, setLocation] = useState<DeliveryLocation | null>(null);
+    [location, setLocation] = useState<DeliveryLocation | null>(null),
+    [plans, setPlans] = useState<any[]>([]),
+    [planId, setPlanId] = useState(1);
+  async function loadPlans() {
+    try { setPlans(await api("billing/plans")); }
+    catch { setError("Chưa tải được gói dịch vụ. Vui lòng tải lại trang trước khi đăng ký."); }
+  }
+  useEffect(() => { if (ready) void loadPlans(); }, [ready, user?.id]);
+  const selectedPlan = plans.find(p => Number(p.id) === planId);
   if (searchParams.get("pending")) return <PendingStore />;
   if (ready && user?.memberships?.some((membership) => membership.status === "pending"))
     return <PendingStore />;
   return (
-    <main className="page narrow">
+    <main className="page start-store-page">
       <span className="eyebrow">YOUR NEXT CHAPTER</span>
       <h1>Mở tiệm hoa của bạn.</h1>
       <p>
@@ -405,9 +419,11 @@ export function StartStore() {
         </Link>
       ) : (
         <form
+          className="start-store-layout"
           aria-busy={busy}
           onSubmit={async (e) => {
             e.preventDefault();
+            if (busy || !selectedPlan) return;
             setBusy(true);
             try {
               const form = Object.fromEntries(new FormData(e.currentTarget));
@@ -416,6 +432,8 @@ export function StartStore() {
                 "POST",
                 {
                   ...form,
+                  plan_id: planId,
+                  offer_version_id: selectedPlan?.offer_version_id,
                   lat: location?.lat ?? null,
                   lng: location?.lng ?? null,
                 },
@@ -423,47 +441,29 @@ export function StartStore() {
               window.location.href =
                 d.status === "pending"
                   ? "/start/pending?store=" + d.id
-                  : "/workspace/" + d.id + "/settings";
+                  : "/workspace/" + d.id + (d.requiresPayment ? "/billing" : "/settings");
             } catch (e) {
               setError((e as Error).message);
+              await loadPlans();
             } finally {
               setBusy(false);
             }
           }}
         >
-          <label className="field">
-            Tên cửa hàng
-            <input required name="name" maxLength={160} />
-          </label>
-          <label className="field">
-            Đường dẫn store
-            <input
-              required
-              name="slug"
-              pattern="[a-z0-9]+(-[a-z0-9]+)*"
-              minLength={3}
-              placeholder="ten-tiem-hoa"
-            />
-          </label>
-          <DeliveryAddress
-            value={address}
-            onChange={setAddress}
-            location={location}
-            onLocation={setLocation}
-            enabled
-            label="Địa chỉ cửa hàng"
-            className=""
-            selectionHint="Đã chọn vị trí cửa hàng. Bạn vẫn có thể bổ sung số nhà hoặc hướng dẫn trong địa chỉ."
-          />
-          <label className="field">
-            Điện thoại
-            <input required name="phone" minLength={9} />
-          </label>
-          {error && <p className="error">{error}</p>}
-          <button className="button" disabled={busy}>
-            {busy && <span className="button-spinner" aria-hidden="true" />}
-            {busy ? "Đang tạo cửa hàng…" : "Tạo cửa hàng"}
-          </button>
+          <section className="start-store-plans">
+            <div className="section-heading"><div><span className="eyebrow">CHỌN GÓI PHÙ HỢP</span><h2>Gói dịch vụ cho tiệm hoa</h2><p className="small">Gói dùng thử không tự động trừ tiền. Khi thời gian dùng thử kết thúc, bạn có thể tiếp tục theo giá tháng hiển thị.</p></div></div>
+            <div className="start-store-plan-grid">{plans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; const isSelected = Number(p.id) === planId; const hasTrial = Number(p.trial_days) > 0 && (p.registration_trial_available); return <button type="button" disabled={busy} className={"start-store-plan-card" + (isSelected ? " selected" : "")} key={p.id} onClick={() => setPlanId(Number(p.id))} aria-pressed={isSelected}><span className="eyebrow">GÓI {p.id}</span><div className="start-store-plan-title"><h3>{p.name}</h3>{isSelected && <span className="tag">Đang chọn</span>}</div>{hasTrial ? <><div className="start-store-trial-price">0 VNĐ <small>trong {p.trial_days} ngày dùng thử</small></div><p className="start-store-original-price">Sau dùng thử: <strong>{money(Number(p.monthly_price))}</strong> / tháng</p></> : <div className="start-store-trial-price">{money(Number(p.monthly_price))}<small>/ tháng</small></div>}<div className="start-store-plan-limits"><span>{Number(limits.products || 0).toLocaleString("vi-VN")} sản phẩm</span><span>{Number(limits.staff || 0).toLocaleString("vi-VN")} nhân sự</span><span>{Number(limits.storage_mb || 0).toLocaleString("vi-VN")} MB lưu trữ</span><span>{Number(limits.email_sends || 0).toLocaleString("vi-VN")} email cửa hàng/tháng</span></div><span className="text-link">Chọn gói này <ArrowRight size={15}/></span></button>; })}</div>
+          </section>
+          <section className="panel start-store-form">
+            <div className="section-heading"><div><span className="eyebrow">THÔNG TIN CỬA HÀNG</span><h2>Tạo workspace</h2><p className="small">Bạn có thể cập nhật giao diện, sản phẩm và thành viên sau khi mở cửa hàng.</p></div></div>
+            <p className="start-store-selected-plan">Gói đang chọn: <strong>{selectedPlan?.name || "—"}</strong>{selectedPlan && <span> · {selectedPlan.registration_trial_available ? `0 VNĐ trong ${selectedPlan.trial_days} ngày dùng thử` : `${money(Number(selectedPlan.monthly_price))}/tháng`}</span>}</p>
+            <label className="field">Tên cửa hàng<input required name="name" maxLength={160} /></label>
+            <label className="field">Đường dẫn store<input required name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" minLength={3} placeholder="ten-tiem-hoa" /></label>
+            <DeliveryAddress value={address} onChange={setAddress} location={location} onLocation={setLocation} enabled label="Địa chỉ cửa hàng" className="" selectionHint="Đã chọn vị trí cửa hàng. Bạn vẫn có thể bổ sung số nhà hoặc hướng dẫn trong địa chỉ." />
+            <label className="field">Điện thoại<input required name="phone" minLength={9} /></label>
+            {error && <p className="error">{error}</p>}
+            <button className="button" disabled={busy || !selectedPlan}>{busy && <span className="button-spinner" aria-hidden="true" />}{busy ? "Đang tạo cửa hàng…" : "Tạo cửa hàng"}</button>
+          </section>
         </form>
       )}
     </main>

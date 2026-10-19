@@ -1,17 +1,31 @@
 [
   {
+    "key": "store_registration_pending",
+    "name": "Đăng ký cửa hàng đang chờ duyệt",
+    "kind": "transactional",
+    "subject": "{{store_name}} đã được gửi để duyệt",
+    "body": "Chào {{owner_name}},\n\nYêu cầu mở cửa hàng {{store_name}} đã được Fleurious Platform tiếp nhận. Cửa hàng đang chờ admin platform duyệt. Bạn sẽ nhận được email tiếp theo khi cửa hàng được chấp thuận.\n\nCửa hàng: {{store_url}}\nWorkspace: {{workspace_url}}\n\nThân mến,\nFleurious Platform"
+  },
+  {
+    "key": "store_approved",
+    "name": "Cửa hàng được duyệt",
+    "kind": "transactional",
+    "subject": "{{store_name}} đã được duyệt",
+    "body": "Chào {{owner_name}},\n\nCửa hàng {{store_name}} đã được admin platform chấp thuận. Mở workspace để xem gói dịch vụ, thiết lập sản phẩm và giao diện. Nếu gói cần thanh toán trước khi sử dụng, vui lòng hoàn tất hóa đơn trong mục Gói dịch vụ để bắt đầu vận hành.\n\nCửa hàng: {{store_url}}\nWorkspace: {{workspace_url}}\n\nChúc bạn kinh doanh thuận lợi,\nFleurious Platform"
+  },
+  {
     "key": "order_confirmation",
     "name": "Xác nhận đặt hoa",
     "kind": "transactional",
-    "subject": "Fleurious đã nhận đơn {{order_reference}}",
-    "body": "Chào {{customer_name}},\n\nCảm ơn bạn đã chọn Fleurious. Chúng mình đã nhận đơn {{order_reference}} và sẽ sớm xác nhận với bạn.\n\n{{order_items}}\n\nTổng thanh toán: {{order_total}}\nHình thức: thanh toán khi nhận hàng (COD)\nNgười nhận: {{recipient_name}}\nĐịa chỉ: {{delivery_address}}\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTrạng thái: {{order_status}}\n\nBạn có thể tra cứu đơn tại {{tracking_url}} bằng mã đơn và email đặt hàng.\n\nThân mến,\nFleurious"
+    "subject": "{{store_name}} đã nhận đơn {{order_reference}}",
+    "body": "Chào {{customer_name}},\n\nCảm ơn bạn đã chọn {{store_name}}. Chúng mình đã nhận đơn {{order_reference}} và sẽ sớm xác nhận với bạn.\n\n{{order_items}}\n\nTổng thanh toán: {{order_total}}\nHình thức: {{payment_method}}\nNgười nhận: {{recipient_name}}\nĐịa chỉ: {{delivery_address}}\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTrạng thái: {{order_status}}\n\nBạn có thể tra cứu đơn tại {{tracking_url}} bằng mã đơn và email đặt hàng.\n\nThân mến,\nFleurious"
   },
   {
     "key": "order_status",
     "name": "Cập nhật trạng thái đơn",
     "kind": "transactional",
     "subject": "Đơn {{order_reference}} · {{order_status}}",
-    "body": "Chào {{customer_name}},\n\nĐơn hoa {{order_reference}} đã chuyển từ “{{previous_status}}” sang “{{order_status}}”.\n\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTổng thanh toán: {{order_total}}\n\nTra cứu đơn tại {{tracking_url}}.\nCảm ơn bạn đã chọn Fleurious."
+    "body": "Chào {{customer_name}},\n\nĐơn hoa {{order_reference}} đã chuyển từ “{{previous_status}}” sang “{{order_status}}”.\n\nLịch giao: {{delivery_date}} · {{delivery_slot}}\nTổng thanh toán: {{order_total}}\n\nTra cứu đơn tại {{tracking_url}}.\nCảm ơn bạn đã chọn {{store_name}}."
   },
   {
     "key": "crm_aftercare",
@@ -40,5 +54,103 @@
     "kind": "marketing",
     "subject": "{{campaign_name}} · dành cho {{customer_name}}",
     "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nMã ưu đãi: {{promotion_code}}\nCảm ơn bạn đã đồng hành cùng Fleurious."
+  },
+  {
+    "key": "subscription_renewal_5d",
+    "name": "Nhắc gia hạn trước 5 ngày",
+    "kind": "transactional",
+    "subject": "Gói {{plan_name}} của {{store_name}} sắp đến hạn",
+    "body": "Chào {{owner_name}},\n\nHóa đơn {{invoice_reference}} của {{store_name}} sẽ đến hạn sau 5 ngày ({{invoice_due_date}}). Số tiền cần thanh toán: {{invoice_amount}}.\n\nVui lòng mở {{billing_url}} để thanh toán và duy trì hoạt động của cửa hàng.\n\nFleurious"
+  },
+  {
+    "key": "subscription_renewal_1d",
+    "name": "Nhắc gia hạn trước 1 ngày",
+    "kind": "transactional",
+    "subject": "Còn 1 ngày để gia hạn gói {{plan_name}}",
+    "body": "Chào {{owner_name}},\n\nHóa đơn {{invoice_reference}} của {{store_name}} sẽ đến hạn vào ngày mai ({{invoice_due_date}}). Số tiền cần thanh toán: {{invoice_amount}}.\n\nThanh toán tại {{billing_url}} để tránh cửa hàng bị tạm đóng băng.\n\nFleurious"
+  },
+  {
+    "key": "subscription_suspended",
+    "name": "Cửa hàng tạm đóng băng do quá hạn",
+    "kind": "transactional",
+    "subject": "{{store_name}} đã tạm đóng băng vì hóa đơn quá hạn",
+    "body": "Chào {{owner_name}},\n\n{{store_name}} đã tạm đóng băng vì hóa đơn {{invoice_reference}} quá hạn chưa thanh toán. Vui lòng thanh toán tại {{billing_url}} để khôi phục cửa hàng.\n\nTrong thời gian này storefront sẽ không nhận đơn mới.\n\nFleurious"
+  },
+  {
+    "key": "subscription_payment_received",
+    "name": "Xác nhận thanh toán gói dịch vụ",
+    "kind": "transactional",
+    "subject": "Đã nhận thanh toán hóa đơn {{invoice_reference}}",
+    "body": "Chào {{owner_name}},\n\nFleurious đã ghi nhận thanh toán {{invoice_amount}} cho hóa đơn {{invoice_reference}} của {{store_name}}.\nKỳ đã thanh toán: {{invoice_period_start}} → {{invoice_period_end}}. Quyền lợi áp dụng từ ngày đầu kỳ.\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "subscription_trial_started",
+    "name": "Bắt đầu dùng thử gói dịch vụ",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Bắt đầu {{trial_days}} ngày dùng thử",
+    "body": "Chào {{owner_name}},\n\nCửa hàng {{store_name}} đã được cấp {{trial_days}} ngày dùng thử gói {{plan_name}}.\nHết hạn: {{invoice_due_date}} (giờ Việt Nam).\nGiá tháng đầu sau thử: {{invoice_amount}}. Thanh toán sớm vẫn giữ đủ ngày thử.\n\nXem gói và hóa đơn: {{billing_url}}"
+  },
+  {
+    "key": "subscription_trial_expired",
+    "name": "Hết hạn dùng thử",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Thời gian dùng thử đã kết thúc",
+    "body": "Chào {{owner_name}},\n\nThời gian dùng thử của {{store_name}} đã kết thúc. Cửa hàng tạm ngưng vận hành; dữ liệu và lịch sử vẫn được giữ.\nThanh toán tại {{billing_url}} để tiếp tục sử dụng. Kỳ tháng được tính từ khi nhận đủ tiền nếu bạn thanh toán sau hạn.\n\nNếu cửa hàng bị đóng băng thủ công, vui lòng liên hệ admin platform."
+  },
+  {
+    "key": "account_welcome",
+    "name": "Chào mừng tài khoản mới",
+    "kind": "transactional",
+    "subject": "Chào mừng {{customer_name}} đến với Fleurious",
+    "body": "Chào {{customer_name}},\n\nTài khoản Fleurious của bạn đã được tạo thành công. Khám phá các cửa hàng hoa và theo dõi đơn hàng tại {{account_url}}.\n\nCảm ơn bạn đã tham gia Fleurious."
+  },
+  {
+    "key": "account_password_reset",
+    "name": "Khôi phục mật khẩu",
+    "kind": "transactional",
+    "subject": "Đặt lại mật khẩu Fleurious",
+    "body": "Chào {{customer_name}},\n\nBạn đã yêu cầu đặt lại mật khẩu. Liên kết có hiệu lực 30 phút:\n{{reset_url}}\n\nNếu bạn không yêu cầu, hãy bỏ qua email này."
+  },
+  {
+    "key": "subscription_registered",
+    "name": "Đăng ký gói thành công",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Đăng ký gói {{plan_name}} thành công",
+    "body": "Chào {{owner_name}},\n\nGói {{plan_name}} của {{store_name}} đã được thanh toán và xác nhận thành công.\nKỳ đã thanh toán: {{invoice_period_start}} → {{invoice_period_end}}. Quyền lợi bắt đầu từ ngày đầu kỳ này.\nHóa đơn: {{invoice_reference}}\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "subscription_renewed",
+    "name": "Gia hạn gói thành công",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Gia hạn gói {{plan_name}} thành công",
+    "body": "Chào {{owner_name}},\n\nFleurious đã xác nhận gia hạn gói {{plan_name}} cho {{store_name}}.\nKỳ đã thanh toán: {{invoice_period_start}} → {{invoice_period_end}}. Thanh toán trước hạn vẫn giữ trọn kỳ hiện tại.\nHóa đơn: {{invoice_reference}}\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "subscription_change_confirmed",
+    "name": "Xác nhận thanh toán đổi gói",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Đã thanh toán đổi sang gói {{plan_name}}",
+    "body": "Chào {{owner_name}},\n\nThanh toán đổi sang gói {{plan_name}} đã được xác nhận.\nGói mới có hiệu lực từ {{invoice_period_start}} đến {{invoice_period_end}}. Trước thời điểm bắt đầu, cửa hàng tiếp tục dùng quyền lợi hiện tại.\nHóa đơn: {{invoice_reference}}\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "subscription_changed",
+    "name": "Đổi gói đã có hiệu lực",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Gói {{plan_name}} đã có hiệu lực",
+    "body": "Chào {{owner_name}},\n\nCửa hàng {{store_name}} đã chuyển thành công sang gói {{plan_name}}. Quyền lợi mới hiện đã có hiệu lực.\nKỳ sử dụng: {{invoice_period_start}} → {{invoice_period_end}}.\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "subscription_trial_reserved",
+    "name": "Đăng ký lượt trải nghiệm thành công",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Đã đăng ký trải nghiệm {{plan_name}}",
+    "body": "Chào {{owner_name}},\n\nĐã đăng ký {{trial_days}} ngày trải nghiệm gói {{plan_name}} cho {{store_name}}.\nThời gian: {{invoice_period_start}} → {{invoice_period_end}}. Quyền lợi bắt đầu từ ngày đầu kỳ trải nghiệm. Không tự trích tiền sau dùng thử.\n\nChi tiết: {{billing_url}}"
+  },
+  {
+    "key": "platform_news",
+    "name": "Chương trình của nền tảng",
+    "kind": "marketing",
+    "subject": "{{campaign_name}} · Fleurious",
+    "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nMã ưu đãi: {{promotion_code}}\nThời gian: {{event_date}}\n\nThân mến,\nFleurious"
   }
 ]

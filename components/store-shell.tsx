@@ -1,4 +1,5 @@
 "use client";
+import { hanoiDateKey } from "@/lib/date-time";
 import Link, { useLocalPath } from "./routing";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, useShop } from "./context";
 import { Footer } from "./home";
+import { formatMoney } from "@/lib/money";
 import { WebTools } from "./web-tools";
 export default function StoreShell({ children }: { children: ReactNode }) {
   const path = useLocalPath();
@@ -80,10 +82,9 @@ export default function StoreShell({ children }: { children: ReactNode }) {
             </span>
             <span className="announcement-message">
               Miễn phí giao hàng cho đơn từ{" "}
-              {new Intl.NumberFormat("vi-VN").format(
+              {formatMoney(
                 store?.settings?.free_shipping ?? 1000000,
-              )}{" "}
-              ₫ <ArrowUpRight size={12} />
+              )} <ArrowUpRight size={12} />
             </span>
             <span className="announcement-message" aria-hidden="true">
               Một chút hoa. Một ngày thật khác.
@@ -163,7 +164,7 @@ export default function StoreShell({ children }: { children: ReactNode }) {
               <Link href="/inbox">Thông báo</Link>
             </nav>
           </div>
-          <small>© {new Date().getFullYear()} Fleurious</small>
+          <small>© {hanoiDateKey().slice(0, 4)} Fleurious</small>
         </footer>
       ) : (
         <Footer name={store?.name || "Fleurious"} />

@@ -1,6 +1,8 @@
+import { hanoiDateKey } from "./date-time";
 import { tenantId } from "./tenant";
 import { needsTransitionReason, orderStates } from "./order-workflow";
 import { orderLabels } from "./display-labels";
+import { orderPaymentStatusSQL } from "./order-payment-state";
 import { validateFulfillment } from "./fulfillment";
 import { assertStoreOpen } from "./stores";
 import { emit } from "./domain-events";
@@ -134,12 +136,7 @@ export async function createOrder(
   checkoutOwner?: string,
 ) {
   const store = await assertStoreOpen();
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = hanoiDateKey();
   const date = new Date(body.deliveryDate + "T00:00:00+07:00");
   if (
     Number.isNaN(date.getTime()) ||
@@ -194,7 +191,7 @@ export async function createOrder(
       );
     const reference =
       "FL" +
-      new Date().toISOString().slice(0, 10).replaceAll("-", "") +
+      hanoiDateKey().replaceAll("-", "") +
       randomBytes(4).toString("hex").toUpperCase();
     const [result] = await c.execute(
       "INSERT INTO orders(reference,user_id,customer_name,email,phone,address,recipient_name,recipient_phone,delivery_date,delivery_slot,message,notes,payment_method,subtotal,discount,shipping,total,promotion_id,idempotency_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -327,7 +324,7 @@ export async function changeOrder(
       tenantId(),
     ]);
     const [rows] = await c.execute(
-      "SELECT * FROM orders WHERE id=? FOR UPDATE",
+      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status FROM orders o WHERE o.id=? FOR UPDATE",
       [id],
     );
     const o = (rows as any[])[0];

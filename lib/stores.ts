@@ -2,12 +2,15 @@ import { query, mutate } from "./db";
 import { currentUser, HttpError, permissions } from "./auth";
 import { tenantId, withStore } from "./tenant";
 import type { PoolConnection } from "mysql2/promise";
+import { refreshBillingAccess } from "./billing";
 export type StoreRecord = {
   id: number;
   slug: string;
   name: string;
   owner_id: number;
   status: string;
+  billing_suspended: boolean;
+  suspension_reason: string | null;
   description: string;
   address: string;
   lat: number | null;
@@ -91,6 +94,8 @@ export function publicStore(s: StoreRecord) {
     slug: s.slug,
     name: s.name,
     status: s.status,
+    billing_suspended: !!s.billing_suspended,
+    suspension_reason: s.suspension_reason,
     description: s.description,
     address: s.address,
     lat: s.lat,
@@ -122,6 +127,7 @@ export function distanceKm(a: number, b: number, c: number, d: number) {
   );
 }
 export async function assertStoreOpen(c?: PoolConnection) {
+  const billing = await refreshBillingAccess(tenantId(), c);
   const s: StoreRecord = c
     ? await (async () => {
         const [rows]: any = await c.execute("SELECT * FROM stores WHERE id=?", [
@@ -131,21 +137,8 @@ export async function assertStoreOpen(c?: PoolConnection) {
         return { ...rows[0], settings: jsonValue(rows[0].settings) };
       })()
     : await storeBy(tenantId());
-  if (s.status !== "approved" || !s.settings.open)
+  if (billing.status !== "approved" || !s.settings.open)
     throw new HttpError(409, "Cửa hàng hiện chưa nhận đơn mới.");
-  const [subscriptions]: any = c
-    ? await c.execute("SELECT status FROM subscriptions WHERE store_id=?", [
-        s.id,
-      ])
-    : [
-        await query<any[]>(
-          "SELECT status FROM subscriptions WHERE store_id=?",
-          [s.id],
-        ),
-      ];
-  const sub = subscriptions[0];
-  if (!sub || !["free", "active", "past_due"].includes(sub.status))
-    throw new HttpError(409, "Cửa hàng đang tạm ngưng nhận đơn.");
   return s;
 }
 export async function quota(
@@ -154,7 +147,7 @@ export async function quota(
 ) {
   const id = tenantId();
   const [plan] = await query<any[]>(
-    "SELECT p.limits FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.store_id=?",
+    "SELECT COALESCE(v.limits,p.limits) limits FROM subscriptions s JOIN plans p ON p.id=s.plan_id LEFT JOIN plan_versions v ON v.id=s.plan_version_id WHERE s.store_id=?",
     [id],
   );
   if (!plan) throw new HttpError(409, "Chưa có gói dịch vụ.");

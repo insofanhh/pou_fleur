@@ -64,10 +64,10 @@ try {
   });
   const sidebar = page.locator(".admin-sidebar nav");
   await sidebar
-    .getByRole("link", { name: "Khách hàng & CRM", exact: true })
+    .getByRole("link", { name: "Email & chương trình", exact: true })
     .click();
-  await page.waitForURL(base + root + "/crm");
-  await expect(page.locator(".crm-summary")).toBeVisible();
+  await page.waitForURL(base + root + "/emails");
+  await expect(page.locator(".email-workspace")).toBeVisible();
   check(
     await page.evaluate(
       () =>
@@ -93,8 +93,8 @@ try {
     "Menu navigation never reloads the document or removes the management shell",
   );
   await page.goBack();
-  await page.waitForURL(base + root + "/crm");
-  await expect(page.locator(".crm-summary")).toBeVisible();
+  await page.waitForURL(base + root + "/emails");
+  await expect(page.locator(".email-workspace")).toBeVisible();
   await page.goForward();
   await page.waitForURL(base + root + "/audit");
   await expect(page.locator(".admin-table-panel")).toBeVisible();
@@ -118,7 +118,7 @@ try {
   const finished = new Promise((resolve) => {
     fulfilled = resolve;
   });
-  await page.route("**/api/admin/crm", async (route) => {
+  await page.route("**/api/admin/emails", async (route) => {
     const response = await route.fetch();
     started();
     await delayedResponse;
@@ -126,7 +126,7 @@ try {
     fulfilled();
   });
   await sidebar
-    .getByRole("link", { name: "Khách hàng & CRM", exact: true })
+    .getByRole("link", { name: "Email & chương trình", exact: true })
     .click();
   await startedRequest;
   await sidebar.getByRole("link", { name: "Sản phẩm", exact: true }).click();
@@ -154,7 +154,7 @@ try {
       .getAttribute("aria-current")) === "page",
     "A slow response from the previous menu cannot replace the current page",
   );
-  await page.unroute("**/api/admin/crm");
+  await page.unroute("**/api/admin/emails");
   await page.reload();
   await expect(page.locator(".admin-table-panel")).toBeVisible();
   check(
@@ -167,11 +167,11 @@ try {
     .getByRole("button", { name: "Mở menu quản trị", exact: true })
     .click();
   await sidebar
-    .getByRole("link", { name: "Khách hàng & CRM", exact: true })
+    .getByRole("link", { name: "Email & chương trình", exact: true })
     .click();
-  await page.waitForURL(base + root + "/crm");
+  await page.waitForURL(base + root + "/emails");
   await expect(page.locator(".admin-sidebar")).not.toHaveClass(/mobile-open/);
-  await expect(page.locator(".crm-summary")).toBeVisible();
+  await expect(page.locator(".email-workspace")).toBeVisible();
   await page.evaluate(() => {
     window.mobileShell = document.querySelector(".admin-shell");
   });
@@ -199,10 +199,10 @@ try {
     window.legacySidebar = document.querySelector(".admin-sidebar");
   });
   await sidebar
-    .getByRole("link", { name: "Khách hàng & CRM", exact: true })
+    .getByRole("link", { name: "Email & chương trình", exact: true })
     .click();
-  await page.waitForURL(base + "/admin/crm");
-  await expect(page.locator(".crm-summary")).toBeVisible();
+  await page.waitForURL(base + "/admin/emails");
+  await expect(page.locator(".email-workspace")).toBeVisible();
   check(
     await page.evaluate(
       () => window.legacySidebar === document.querySelector(".admin-sidebar"),

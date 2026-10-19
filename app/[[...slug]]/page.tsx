@@ -87,7 +87,7 @@ export default async function Page({
     slug[0] === "platform" &&
     slug.length <= 2 &&
     (!slug[1] ||
-      ["overview", "plans", "stores", "invoices", "users", "health", "config"].includes(slug[1]))
+      ["overview", "plans", "stores", "emails", "invoices", "users", "config"].includes(slug[1]))
   )
     return <Platform area={slug[1] || "overview"} />;
   const { store, parts } = await route(slug);

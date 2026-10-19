@@ -124,7 +124,6 @@ try {
     "theme",
     "billing",
     "users",
-    "crm",
     "emails",
     "automations",
   ]) {
@@ -265,7 +264,11 @@ try {
       "Template " + template + " keeps checkout and message",
     );
     const dateBox = await m.locator('input[name="deliveryDate"]').boundingBox(),
-      slotBox = await m.locator('select[name="deliverySlot"]').boundingBox();
+      slotBox = await m
+        .locator('select[name="deliverySlot"]')
+        .locator("..")
+        .getByRole("combobox")
+        .boundingBox();
     check(
       dateBox &&
         slotBox &&
@@ -297,7 +300,15 @@ try {
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await page.waitForURL("**/platform");
   check(true, "Platform admin login redirects to platform console");
-  for (const area of ["overview", "stores", "invoices", "users", "health"]) {
+  for (const area of [
+    "overview",
+    "plans",
+    "stores",
+    "emails",
+    "invoices",
+    "users",
+    "config",
+  ]) {
     await page.goto(base + "/platform/" + area);
     await page.locator(".admin-content").waitFor();
     await page

@@ -5,6 +5,9 @@ import { randomUUID } from "node:crypto";
 import type { PoolConnection } from "mysql2/promise";
 import { pool, mutate } from "./db";
 import { emailHTML, interpolateEmail, orderStatusNames } from "./email-content";
+import { systemTemplate } from "./system-email";
+import { formatMoney as money } from "./money";
+import { emailAllowance, isPlatformEmail } from './email-policy';
 
 export function emailConfiguration() {
   const missing = [
@@ -63,6 +66,40 @@ export async function verifySMTP() {
     transport.close();
   }
 }
+export type StoreLifecycleEmailKey = "store_registration_pending" | "store_approved";
+export async function enqueueStoreLifecycleEmail(
+  c: PoolConnection,
+  storeId: number,
+  key: StoreLifecycleEmailKey,
+) {
+  return withStore(storeId, async () => {
+    const [rows] = await c.execute(
+      "SELECT s.name store_name,s.slug,s.status,u.name owner_name,u.email owner_email FROM stores s JOIN users u ON u.id=s.owner_id WHERE s.id=?",
+      [storeId],
+    );
+    const t = (rows as any[])[0];
+    const template=await systemTemplate(c,key);
+    if (!t?.owner_email) return;
+    const origin = (process.env.APP_ORIGIN || "").replace(/\/$/, "");
+    const values = {
+      owner_name: t.owner_name || "bạn",
+      store_name: t.store_name,
+      store_url: origin + "/s/" + t.slug,
+      workspace_url: origin + "/workspace/" + storeId,
+      approval_status: t.status === "approved" ? "Đã duyệt" : "Đang chờ duyệt",
+    };
+    await c.execute(
+      "INSERT INTO email_outbox(dedupe_key,template_key,kind,recipient,subject,body) VALUES(?,?,'transactional',?,?,?) ON DUPLICATE KEY UPDATE dedupe_key=dedupe_key",
+      [
+        key + ":" + storeId,
+        key,
+        t.owner_email,
+        interpolateEmail(template.subject, values).replace(/[\r\n]/g, " ").slice(0, 500),
+        interpolateEmail(template.body, values),
+      ],
+    );
+  });
+}
 export async function enqueueOrderEmail(
   c: PoolConnection,
   id: number,
@@ -86,18 +123,13 @@ export async function enqueueOrderEmail(
     return;
   }
   const [storeRows]: any = await c.execute(
-    "SELECT slug FROM stores WHERE id=?",
+    "SELECT slug,name FROM stores WHERE id=?",
     [tenantId()],
   );
   const [items] = await c.execute(
     "SELECT product_name,size,quantity,price FROM order_items WHERE order_id=? ORDER BY id",
     [id],
   );
-  const money = (n: number) =>
-    new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
-    }).format(n);
   const values = {
     customer_name: o.customer_name,
     order_reference: o.reference,
@@ -120,13 +152,19 @@ export async function enqueueOrderEmail(
     delivery_address: o.address,
     delivery_date: String(o.delivery_date).slice(0, 10),
     delivery_slot: o.delivery_slot,
-    store_name: o.store_name,
+    store_name: o.store_name || storeRows[0].name,
+    payment_method: o.payment_method === 'bank' ? 'Chuyển khoản ngân hàng' : 'Thanh toán khi nhận hàng (COD)',
+    store_url: (process.env.APP_ORIGIN || '').replace(/\/$/,'')+'/s/'+storeRows[0].slug,
     tracking_url:
       (process.env.APP_ORIGIN || "").replace(/\/$/, "") +
       "/s/" +
       storeRows[0].slug +
       "/track-order",
   };
+  const renderedSubject=interpolateEmail(t.subject,values);
+  const renderedBody=interpolateEmail(t.body,values);
+  // Identify the seller even when an older customized template omits store_name.
+  const seller=values.store_name;
   await c.execute(
     "INSERT INTO email_outbox(dedupe_key,template_key,kind,recipient,order_id,subject,body) VALUES(?,?,'transactional',?,?,?,?) ON DUPLICATE KEY UPDATE dedupe_key=dedupe_key",
     [
@@ -134,10 +172,10 @@ export async function enqueueOrderEmail(
       key,
       o.email,
       id,
-      interpolateEmail(t.subject, values)
+      (renderedSubject.includes(seller) ? renderedSubject : seller+' · '+renderedSubject)
         .replace(/[\r\n]/g, " ")
         .slice(0, 500),
-      interpolateEmail(t.body, values),
+      renderedBody.includes(seller) ? renderedBody : 'Cửa hàng: '+seller+'\n\n'+renderedBody,
     ],
   );
 }
@@ -147,6 +185,8 @@ export type OutgoingEmail = {
   body: string;
   unsubscribe_token: string | null;
   id: number;
+  sender_name?: string;
+  store_name?: string;
 };
 export async function sendSMTP(
   mail: OutgoingEmail,
@@ -161,17 +201,17 @@ export async function sendSMTP(
   try {
     const result = await transport.sendMail({
       from: {
-        name: process.env.SMTP_FROM_NAME || "Fleurious",
+        name: mail.sender_name || process.env.SMTP_FROM_NAME || "Fleurious",
         address: process.env.SMTP_FROM_EMAIL!,
       },
       to: { address: mail.recipient, name: "" },
       subject: mail.subject,
       text:
-        mail.body +
+        (mail.store_name ? `Fleurious\n${mail.store_name}'s workspace\n\n` : "") + mail.body +
         (unsubscribeUrl
           ? "\n\nHủy nhận email chương trình: " + unsubscribeUrl
           : ""),
-      html: emailHTML(mail.body, unsubscribeUrl),
+      html: emailHTML(mail.body, unsubscribeUrl, mail.sender_name, mail.store_name),
       messageId:
         "<fleur-" +
         mail.id +
@@ -222,6 +262,8 @@ export async function processEmails(limit = 20, sender = sendSMTP) {
     let mail: any;
     try {
       await c.beginTransaction();
+      // Serialize quota reservations across workers for the same store.
+      const [storeRows]: any = await c.execute('SELECT name FROM stores WHERE id=? FOR UPDATE',[tenantId()]);
       const [rows] = await c.query(
         "SELECT * FROM email_outbox WHERE status='pending' AND next_attempt_at<=NOW() ORDER BY id LIMIT 1 FOR UPDATE",
       );
@@ -245,8 +287,19 @@ export async function processEmails(limit = 20, sender = sendSMTP) {
           continue;
         }
       }
+      if (!isPlatformEmail(mail.template_key)) {
+        const allowance=await emailAllowance(c,tenantId());
+        if (allowance.used>=allowance.limit) {
+          await c.execute("UPDATE email_outbox SET last_error='EMAIL_MONTHLY_LIMIT',next_attempt_at=DATE_ADD(NOW(),INTERVAL 1 HOUR) WHERE id=?",[mail.id]);
+          await c.commit();
+          processed++;
+          continue;
+        }
+        mail.sender_name=storeRows[0]?.name ? storeRows[0].name+' qua Fleurious' : 'Fleurious';
+        mail.store_name=storeRows[0]?.name;
+      } else mail.sender_name='Fleurious Platform';
       await c.execute(
-        "UPDATE email_outbox SET status='sending',attempts=attempts+1,claim_token=?,lease_until=DATE_ADD(NOW(),INTERVAL 5 MINUTE) WHERE id=?",
+        "UPDATE email_outbox SET status='sending',quota_at=UTC_TIMESTAMP(),attempts=attempts+1,claim_token=?,lease_until=DATE_ADD(NOW(),INTERVAL 5 MINUTE) WHERE id=?",
         [claim, mail.id],
       );
       await c.commit();
@@ -349,21 +402,33 @@ export async function unsubscribeEmail(token: string) {
       [token],
     ),
   );
-  return mail
-    ? withStore(mail.store_id, () => unsubscribeScoped(token))
-    : false;
+  if(mail) return withStore(mail.store_id, () => unsubscribeScoped(token));
+  const c=await pool.getConnection();
+  try{
+    await c.beginTransaction();
+    const [rows]:any=await c.execute("SELECT user_id FROM identity_mail WHERE unsubscribe_token=? AND kind='marketing' FOR UPDATE",[token]);
+    if(!rows[0]){await c.rollback();return false;}
+    await c.execute("UPDATE users SET marketing_consent=0 WHERE id=?",[rows[0].user_id]);
+    await c.execute("UPDATE identity_mail SET status='cancelled',last_error='CONSENT_WITHDRAWN' WHERE user_id=? AND kind='marketing' AND status IN ('pending','failed')",[rows[0].user_id]);
+    await c.commit();return true;
+  }catch(e){await c.rollback();throw e;}finally{c.release();}
 }
 export async function processAllStoreEmails(deadline = Date.now() + 30000) {
-  const stores = await withSystem(() =>
-    query<any[]>(
-      "SELECT store_id id FROM email_outbox WHERE status IN ('pending','sending') GROUP BY store_id ORDER BY MIN(id) LIMIT 20",
-    ),
-  );
   let processed = 0;
-  for (const s of stores) {
-    if (Date.now() + 21000 > deadline) break;
-    const r = await withStore(s.id, () => processEmails(1));
-    processed += r.processed;
+  // Round robin drains both trial and approval emails after registration while
+  // leaving time for SMTP deadlines and sharing the worker across stores.
+  while (Date.now() + 21000 <= deadline) {
+    const stores = await withSystem(() => query<any[]>(
+      "SELECT store_id id FROM email_outbox WHERE (status='pending' AND next_attempt_at<=NOW()) OR (status='sending' AND lease_until<NOW()) GROUP BY store_id ORDER BY MIN(id) LIMIT 20",
+    ));
+    let progress = 0;
+    for (const s of stores) {
+      if (Date.now() + 21000 > deadline) break;
+      const r = await withStore(s.id, () => processEmails(1));
+      progress += r.processed;
+    }
+    processed += progress;
+    if (!progress) break;
   }
   return { processed };
 }

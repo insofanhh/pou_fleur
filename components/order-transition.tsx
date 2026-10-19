@@ -1,4 +1,5 @@
 "use client";
+import Select from "./ui-select";
 import { useEffect, useRef, useState } from "react";
 import { api, useShop } from "./context";
 import { needsTransitionReason } from "@/lib/order-workflow";
@@ -172,7 +173,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             </label>
             <label className="field">
               Khung giờ khi khôi phục
-              <select
+              <Select
                 name="slot"
                 defaultValue={order.delivery_slot}
                 required
@@ -185,7 +186,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
                 {slots?.map((s) => (
                   <option key={s}>{s}</option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
         )}

@@ -1,10 +1,14 @@
 "use client";
+import { formatDate, formatDateTime, parseDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
+import { TableAction, TableActions } from "./table-actions";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useShop, api } from "./context";
 import { money } from "./home";
 import PlatformUsers from "./platform-users";
+import EmailWorkspace from "./email-admin";
 import PlatformDialog from "./platform-dialog";
 import {
   Menu,
@@ -12,20 +16,56 @@ import {
   BarChart3,
   Receipt,
   Users,
-  Activity,
   Package,
   Settings,
   ArrowUpRight,
   Ghost,
+  Check,
+  Snowflake,
   LogOut,
+  Mail,
+  Search,
+  Ban,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 
 function PlatformPlans({ plans, toast, refresh }: { plans: any[]; toast: (message: string) => void; refresh: () => Promise<void> }) {
-  return <div className="panel">
-    <div className="section-heading"><div><h3>Danh mục gói dịch vụ</h3><p className="small">Điều chỉnh giá, thời gian dùng thử và hạn mức riêng cho từng gói.</p></div><div className="button-row"><span className="tag">{plans.length} gói</span><button type="button" className="button" onClick={() => document.querySelectorAll<HTMLFormElement>(".platform-plan-card").forEach((form) => form.requestSubmit())}>Lưu tất cả thay đổi</button></div></div>
-    <div className="platform-plan-list">{plans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; return <form className="platform-plan-card" key={p.id} onSubmit={async e => { e.preventDefault(); const f:any=Object.fromEntries(new FormData(e.currentTarget)); try { await api("platform/plans/"+p.id,"PATCH",{name:String(f.name).trim(),monthly_price:Number(f.monthly_price),trial_days:Number(f.trial_days),limits:{products:Number(f.products),staff:Number(f.staff),storage_mb:Number(f.storage_mb)}}); toast("Đã cập nhật gói " + f.name + "."); void refresh(); } catch(err) { toast((err as Error).message); } }}><div className="platform-plan-card-header"><div><span className="eyebrow">GÓI {p.id}</span><h4>{p.name}</h4></div><span className="plan-price">{money(Number(p.monthly_price))}<small>/tháng</small></span></div><div className="platform-plan-fields"><label className="field">Tên gói<input name="name" defaultValue={p.name} /></label><label className="field">Giá / tháng<input name="monthly_price" type="number" min="0" step="1000" defaultValue={p.monthly_price} /></label><label className="field">Dùng thử (ngày)<input name="trial_days" type="number" min="0" max="90" defaultValue={p.trial_days ?? 14} /></label></div><div className="platform-limit-box"><div className="platform-limit-heading"><strong>Hạn mức sử dụng</strong><span className="small">Áp dụng cho store dùng gói này</span></div><div className="platform-limit-grid"><label className="field">Sản phẩm đang bán<input name="products" type="number" min="1" defaultValue={limits.products ?? 1} /><small>Số sản phẩm active</small></label><label className="field">Nhân sự hoạt động<input name="staff" type="number" min="1" defaultValue={limits.staff ?? 1} /><small>Bao gồm chủ store</small></label><label className="field">Dung lượng (MB)<input name="storage_mb" type="number" min="1" defaultValue={limits.storage_mb ?? 100} /><small>Ảnh và file đã upload</small></label></div></div><div className="platform-plan-actions"><span className="small">Hạn mức mới áp dụng cho store đang dùng gói này sau khi lưu.</span><button className="button secondary">Lưu thay đổi</button></div></form>; })}</div>
-  </div>;
+  const [busy,setBusy] = useState(false);
+  return <form className="panel" onSubmit={async e => {
+    e.preventDefault(); if(busy) return; const f = new FormData(e.currentTarget); setBusy(true);
+    try {
+      for (const p of plans) await api("platform/plans/"+p.id,"PATCH",{name:String(f.get(p.id+"-name")).trim(),monthly_price:Number(f.get(p.id+"-price")),trial_days:Number(f.get(p.id+"-trial")),limits:{products:Number(f.get(p.id+"-products")),staff:Number(f.get(p.id+"-staff")),storage_mb:Number(f.get(p.id+"-storage_mb")),email_sends:Number(f.get(p.id+"-email_sends"))}});
+      toast("Đã lưu cấu hình. Cửa hàng đã đăng ký giữ ưu đãi được cấp."); await refresh();
+    } catch(err) { toast((err as Error).message); } finally { setBusy(false); }
+  }}>
+    <div className="section-heading"><div><h3>Danh mục gói dịch vụ</h3><p className="small">Gói Khởi đầu tự động cấp số ngày dùng thử đang cấu hình cho cửa hàng đầu tiên của tài khoản. Các gói khác dùng chung một lượt trải nghiệm. Cấu hình mới chỉ áp dụng cho đăng ký mới.</p></div><button className="button" disabled={busy}>{busy ? "Đang lưu…" : "Lưu tất cả thay đổi"}</button></div>
+    <div className="platform-plan-list">{plans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; return <article className="platform-plan-card" key={p.id}>
+      <div className="platform-plan-card-header"><div><h4>{p.name}</h4><p className="small">{p.pending_offers || 0} cửa hàng chờ duyệt · {p.trialing_stores || 0} đang dùng thử</p></div><span className="plan-price">{money(Number(p.monthly_price))}<small>/tháng</small></span></div>
+      <div className="platform-plan-fields"><label className="field">Tên gói<input required name={p.id+"-name"} defaultValue={p.name}/></label><label className="field">Giá / tháng<input required name={p.id+"-price"} type="number" min="0" max="100000000" defaultValue={p.monthly_price}/></label><label className="field">Dùng thử (ngày)<input required name={p.id+"-trial"} type="number" min="0" max="90" defaultValue={p.trial_days}/><small>{Number(p.id)===1 ? "Tự động áp dụng cho cửa hàng đầu tiên" : "Lượt trải nghiệm dùng chung"}</small></label></div>
+      <div className="platform-limit-box"><strong>Hạn mức sử dụng</strong><div className="platform-limit-grid">{[["products","Sản phẩm đang bán",100000],["staff","Nhân sự hoạt động",10000],["storage_mb","Dung lượng (MB)",1000000],["email_sends","Email cửa hàng / tháng",1000000]].map(([key,label,max]) => <label className="field" key={key}>{label}<input required type="number" min="1" max={Number(max)} name={p.id+"-"+key} defaultValue={limits[key] || 1}/></label>)}</div></div>
+      <p className="small">Giá và quyền lợi đã cam kết được giữ theo phiên bản; cấu hình mới áp dụng khi đăng ký hoặc chọn gói cho kỳ tiếp theo. 0 ngày: không dùng thử. Giá 0 VNĐ: vẫn miễn phí sau thử.</p>
+    </article>; })}</div>
+  </form>;
+}
+
+function TrialExtension({ detail, action }: { detail:any; action:(path:string, method:string, body:any)=>Promise<void> }) {
+  const [days,setDays] = useState(7), [busy,setBusy] = useState(false);
+  const sub = detail.subscription;
+  const end = sub?.trial_ends_at || sub?.access_ends_at;
+  const format = (value:string) => formatDateTime(value, "utc");
+  return <section className="panel merchant-detail-section"><h3>Gói dịch vụ</h3><p><strong>{sub?.plan_name || "Gói #"+sub?.plan_id}</strong> · {statusText("subscription",sub?.status)}</p>
+    <p className="small">{end ? "Hết kỳ: "+format(end) : "Chưa bắt đầu kỳ sử dụng"}</p>
+    {sub?.trial_days_granted !== null && <p className="small">Đã cấp {sub?.trial_days_granted} ngày thử · Phiên bản ưu đãi #{sub?.registration_plan_version_id}</p>}
+    {detail.account_trials && <div className="notice"><strong>Lượt trải nghiệm gói khác: còn {detail.account_trials.available}/1</strong><p className="small">Gói Khởi đầu tự động dùng số ngày do admin platform cấu hình cho cửa hàng đầu tiên; đây không phải lượt chọn thêm trong workspace.</p>{detail.account_trials.claims.map((t:any)=><p className="small" key={t.bucket}>{t.bucket==='starter'?'Khởi đầu tự động':'Trải nghiệm gói khác'} · {t.plan_name} · {t.trial_days} ngày · {t.starts_at ? `${format(t.starts_at)} → ${format(t.ends_at)}` : 'Đang giữ lượt, chờ duyệt'} · {Number(t.store_id)===Number(detail.store.id)?'Cửa hàng này':'Cửa hàng khác của tài khoản'}</p>)}</div>}
+    <p className="small">Kỳ tháng được cập nhật qua thanh toán hóa đơn. Cập nhật danh mục gói không thay đổi hạn dùng thử này.</p>
+    {sub?.status === "trialing" && <form onSubmit={async e=>{e.preventDefault();if(busy)return;const f=new FormData(e.currentTarget);setBusy(true);try{await action("stores/"+detail.store.id+"/trial-extension","POST",{days,reason:String(f.get("reason")),version:sub.version});}finally{setBusy(false);}}}>
+      <label className="field">Số ngày cộng thêm<input type="number" required min="1" max="90" value={days} onChange={e=>setDays(Number(e.target.value))}/></label>
+      <p className="small">Hạn mới: {end && Number.isInteger(days) && days>0 && days<=90 ? format(new Date(parseDateTime(end, "utc").getTime()+days*86400000).toISOString().slice(0,19)) : "Chọn số ngày hợp lệ"}</p>
+      <label className="field">Lý do gia hạn<textarea name="reason" minLength={5} maxLength={500} required/></label>
+      <p className="small">Hóa đơn kỳ tới chưa thu và QR cũ sẽ được hủy. Đã nhận tiền thì cần đối soát trước khi gia hạn thử.</p>
+      <button className="button secondary" disabled={busy}>{busy ? "Đang cập nhật…" : "Xác nhận gia hạn dùng thử"}</button>
+    </form>}
+  </section>;
 }
 
 function PlatformSepay({ sepay, setSepay, sepayBusy, setSepayBusy, toast }: { sepay: any; setSepay: (value: any) => void; sepayBusy: boolean; setSepayBusy: (value: boolean) => void; toast: (message: string) => void }) {
@@ -59,6 +99,9 @@ export default function Platform({
   const activeArea = useRef(area);
   activeArea.current = area;
   const [usersRefresh, setUsersRefresh] = useState(0);
+  const [freezeStore, setFreezeStore] = useState<any>(null);
+  const [freezeBusy, setFreezeBusy] = useState(false);
+  const [freezeError, setFreezeError] = useState("");
   const [ghostStore, setGhostStore] = useState<any>(null),
     [ghostBusy, setGhostBusy] = useState(false),
     [ghostError, setGhostError] = useState("");
@@ -113,7 +156,8 @@ export default function Platform({
     return () => {
       requestId.current++;
     };
-  }, [area, user]);
+    // Identity checks on window focus must not reset filters or open dialogs.
+  }, [area, user?.id, user?.platformRole]);
   async function loadStore(id: number) {
     try {
       setDetail(await api("platform/stores/" + id));
@@ -146,9 +190,9 @@ export default function Platform({
     ["overview", "Tổng quan", BarChart3],
     ["plans", "Danh mục gói dịch vụ", Package],
     ["stores", "Cửa hàng & Merchant CRM", Store],
+    ["emails", "Email & chương trình", Mail],
     ["invoices", "Hóa đơn dịch vụ", Receipt],
     ["users", "Tài khoản", Users],
-    ["health", "Tích hợp & hàng đợi", Activity],
     ["config", "Cấu hình", Settings],
   ] as const;
   return (
@@ -276,6 +320,8 @@ export default function Platform({
             </>
           ) : area === "plans" ? (
             <PlatformPlans plans={data} toast={toast} refresh={refresh} />
+          ) : area === "emails" ? (
+            <EmailWorkspace payload={data} refresh={refresh} canEdit platform />
           ) : area === "config" ? (
             <div className="platform-config">
               <div className="panel">
@@ -322,7 +368,22 @@ export default function Platform({
                   </div>
                 ))}
               </div>
+              {!!data.paymentIssues?.length && <section className="panel table-scroll"><h3>Giao dịch cần đối soát</h3><p className="small">Các giao dịch chưa áp dụng được không tự cộng kỳ sử dụng. Kiểm tra ngân hàng và hóa đơn trước khi xác nhận thủ công.</p><table><thead><tr><th>Mã giao dịch SePay</th><th>Lý do</th><th>Thời điểm</th></tr></thead><tbody>{data.paymentIssues.map((i:any)=><tr key={i.provider_event_id}><td>{i.provider_event_id}</td><td>{i.error_message}</td><td>{formatDateTime(i.received_at)}</td></tr>)}</tbody></table></section>}
               <PlatformSepay sepay={sepay} setSepay={setSepay} sepayBusy={sepayBusy} setSepayBusy={setSepayBusy} toast={toast} />
+              <form className="panel" key={JSON.stringify(data.billingBank)} onSubmit={async (e) => {
+                e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget));
+                try { await api("platform/config", "PATCH", { billingBank: { ...values, enabled: values.enabled === "on" } }); toast("Đã lưu ngân hàng nhận phí dịch vụ."); await refresh(); } catch (error) { toast((error as Error).message); }
+              }}>
+                <h3>Ngân hàng nhận phí dịch vụ</h3><p className="small">QR gia hạn gói dùng tài khoản của nền tảng. Tài khoản ngân hàng của store chỉ nhận tiền đơn hoa.</p>
+                <div className="form-grid">
+                  <label className="field">Mã ngân hàng (VietQR)<input name="bank_code" required defaultValue={data.billingBank?.bank_code || ""} placeholder="VD: MB" /></label>
+                  <label className="field">Tên ngân hàng<input name="bank_name" required defaultValue={data.billingBank?.bank_name || ""} /></label>
+                  <label className="field">Số tài khoản<input name="account_number" required pattern="[0-9]{4,30}" defaultValue={data.billingBank?.account_number || ""} /></label>
+                  <label className="field">Chủ tài khoản<input name="account_holder" required defaultValue={data.billingBank?.account_holder || ""} /></label>
+                </div>
+                <label className="platform-user-check"><input type="checkbox" name="enabled" defaultChecked={!!data.billingBank?.enabled} />Cho phép thanh toán gói bằng QR</label>
+                <button className="button">Lưu ngân hàng</button>
+              </form>
             </div>
           ) : area === "stores" ? (
             <>
@@ -333,7 +394,7 @@ export default function Platform({
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Tên store, email chủ store…"
                 />
-                <select
+                <Select
                   aria-label="Trạng thái store"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -351,7 +412,7 @@ export default function Platform({
                       {statusText("store", v)}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="panel table-scroll">
                 <table>
@@ -364,7 +425,7 @@ export default function Platform({
                       <th>GMV</th>
                       <th>Khách hàng</th>
                       <th>Đơn gần nhất</th>
-                      <th>Thao tác</th>
+                      <th className="table-actions-heading" scope="col">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -400,10 +461,12 @@ export default function Platform({
                           <td>{s.customers}</td>
                           <td>{s.last_order || "—"}</td>
                           <td>
-                            <div className="platform-store-actions">
+                            <TableActions className="platform-user-actions platform-store-actions">
                               {s.status === "pending" && (
-                                <button
-                                  className="button platform-store-approve"
+                                <TableAction icon={Check}
+                                  type="button"
+                                  className="text-button platform-store-approve"
+                                  title={"Duyệt cửa hàng " + s.name}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     void action(
@@ -418,19 +481,35 @@ export default function Platform({
                                   }}
                                 >
                                   Duyệt
-                                </button>
+                                </TableAction>
                               )}
-                              <button
-                                className="button secondary platform-store-ghost"
+                              {s.status === "approved" && (
+                                <TableAction icon={Snowflake}
+                                  type="button"
+                                  className="text-button"
+                                  title={"Đóng băng cửa hàng " + s.name}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFreezeError("");
+                                    setFreezeStore(s);
+                                  }}
+                                >
+                                  Đóng băng
+                                </TableAction>
+                              )}
+                              <TableAction icon={Ghost}
+                                type="button"
+                                className="text-button platform-store-ghost"
+                                title={"Ghost cửa hàng " + s.name}
                                 aria-label={"Ghost cửa hàng " + s.name}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   openStoreGhost(s);
                                 }}
                               >
-                                <Ghost size={16} aria-hidden="true" /> Ghost
-                              </button>
-                            </div>
+                                Ghost
+                              </TableAction>
+                            </TableActions>
                           </td>
                         </tr>
                       ))}
@@ -451,19 +530,8 @@ export default function Platform({
                   );
                 }}
               >
-                <label>
-                  Kỳ{" "}
-                  <input
-                    type="month"
-                    name="period"
-                    defaultValue={new Date().toISOString().slice(0, 7)}
-                    required
-                  />
-                </label>
-                <label>
-                  Hạn thanh toán <input type="date" name="due_date" required />
-                </label>
-                <button className="button">Tạo hóa đơn tháng</button>
+                <p className="small">Hóa đơn gia hạn được tạo trước hạn 5 ngày, theo ngày đăng ký của từng cửa hàng.</p>
+                <button className="button">Đồng bộ hóa đơn & trạng thái</button>
               </form>
               <div className="panel table-scroll">
                 <table>
@@ -475,21 +543,21 @@ export default function Platform({
                       <th>Tiền</th>
                       <th>Đã thu</th>
                       <th>Trạng thái</th>
-                      <th>Ghi nhận thu</th>
+                      <th className="table-actions-heading" scope="col">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.map((i: any) => (
                       <tr key={i.id}>
                         <td>{i.store_name}</td>
-                        <td>{i.period_key}</td>
+                        <td>{i.effective_start_at ? `${formatDateTime(i.effective_start_at, "utc")} → ${formatDateTime(i.effective_end_at, "utc")}` : i.period_start && i.period_end ? `Dự kiến: ${formatDate(i.period_start)} → ${formatDate(i.period_end)}` : i.period_key}<small>Hạn thanh toán: {i.due_at ? formatDateTime(i.due_at, "utc") : formatDate(i.due_date)}</small></td>
                         <td>{i.plan_name}</td>
                         <td>{money(i.amount)}</td>
                         <td>{money(i.paid)}</td>
-                        <td>{statusText("invoice", i.status)}</td>
+                        <td>{statusText("invoice", i.void_reason === "payment_timeout" ? "payment_timeout" : i.status)}{i.purpose === "plan_change" && i.status === "open" && Number(i.paid) === 0 && <small>Hạn đổi gói: {i.payment_deadline_at} UTC</small>}</td>
                         <td>
                           {i.status === "open" && (
-                            <form
+                            <form className="table-action-form"
                               onSubmit={(e) => {
                                 e.preventDefault();
                                 const f = Object.fromEntries(
@@ -518,15 +586,15 @@ export default function Platform({
                                 required
                                 placeholder="Mã giao dịch"
                               />
-                              <button className="button secondary">
+                              <TableAction icon={Check} type="submit">
                                 Ghi nhận
-                              </button>
+                              </TableAction>
                             </form>
                           )}
                           {i.status === "open" && i.paid === 0 && (
-                            <details>
-                              <summary>Hủy hóa đơn</summary>
-                              <form
+                            <details className="table-action-disclosure">
+                              <summary><Ban size={15} aria-hidden="true" />Hủy hóa đơn</summary>
+                              <form className="table-action-form"
                                 onSubmit={(e) => {
                                   e.preventDefault();
                                   const f = Object.fromEntries(
@@ -547,9 +615,9 @@ export default function Platform({
                                   placeholder="Lý do hủy"
                                   required
                                 />
-                                <button className="button secondary">
+                                <TableAction icon={Ban} type="submit">
                                   Xác nhận hủy
-                                </button>
+                                </TableAction>
                               </form>
                             </details>
                           )}
@@ -560,34 +628,27 @@ export default function Platform({
                 </table>
               </div>
             </>
-          ) : (
-            <div className="dashboard-grid">
-              {["google", "goong", "push", "smtp"].map((k) => (
-                <div className="panel" key={k}>
-                  <h3>{k.toUpperCase()}</h3>
-                  <p>{data[k] ? "Đã có cấu hình" : "Chưa có cấu hình"}</p>
-                </div>
-              ))}
-              <div className="panel">
-                <h3>Hàng đợi thông báo</h3>
-                {data.jobs?.map((r: any) => (
-                  <p key={r.status}>
-                    {statusText("notification", r.status)}: {r.count}
-                  </p>
-                ))}
-              </div>
-              <div className="panel">
-                <h3>Hàng đợi email</h3>
-                {data.emails?.map((r: any) => (
-                  <p key={r.status}>
-                    {statusText("email", r.status)}: {r.count}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
+          ) : null}
         </main>
       </div>
+      {freezeStore && (
+        <PlatformDialog title={"Đóng băng " + freezeStore.name} onClose={() => { if (!freezeBusy) setFreezeStore(null); }}>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            setFreezeBusy(true); setFreezeError("");
+            try {
+              await api("platform/stores/" + freezeStore.id + "/status", "PATCH", { status: "suspended", reason: form.get("reason"), version: freezeStore.version });
+              setFreezeStore(null); toast("Đã đóng băng cửa hàng và thông báo cho chủ store."); await refresh();
+            } catch (error) { setFreezeError((error as Error).message); } finally { setFreezeBusy(false); }
+          }}>
+            <p>Cửa hàng sẽ ngừng nhận đơn và các thao tác vận hành. Chủ store vẫn có thể xem thông tin và hóa đơn. Chỉ admin platform có thể mở lại sau khi đóng băng thủ công.</p>
+            <label className="field">Lý do đóng băng<textarea name="reason" required minLength={5} maxLength={1000} /></label>
+            {freezeError && <p className="error" role="alert">{freezeError}</p>}
+            <div className="button-row"><button className="button" disabled={freezeBusy}>{freezeBusy ? "Đang xử lý…" : "Đóng băng cửa hàng"}</button><button type="button" className="button secondary" disabled={freezeBusy} onClick={() => setFreezeStore(null)}>Hủy</button></div>
+          </form>
+        </PlatformDialog>
+      )}
       {ghostStore && (
         <PlatformDialog
           title="Ghost tài khoản cửa hàng"
@@ -714,7 +775,7 @@ export default function Platform({
             <h3>Vận hành store</h3>
             <label className="field">
               Chuyển trạng thái
-              <select name="status" defaultValue={detail.store.status}>
+              <Select name="status" defaultValue={detail.store.status}>
                 {[detail.store.status, ...(detail.store.status === "pending"
                   ? ["approved", "rejected"]
                   : ["approved", "rejected", "suspended", "closed"])]
@@ -724,7 +785,7 @@ export default function Platform({
                     {statusText("store", s)}
                   </option>
                   ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               Lý do
@@ -748,6 +809,7 @@ export default function Platform({
               <button className="button secondary">Cập nhật trạng thái</button>
             </div>
           </form>
+          {detail.subscription?.billing_policy === 1 || detail.subscription?.trial_started_at ? <TrialExtension key={detail.subscription?.version} detail={detail} action={action}/> : <>
           <form
             className="panel merchant-detail-section"
             key={detail.subscription?.version}
@@ -769,18 +831,18 @@ export default function Platform({
             <h3>Gói dịch vụ</h3>
             <label className="field">
               Gói
-              <select
+              <Select
                 name="plan_id"
                 defaultValue={detail.subscription?.plan_id}
               >
                 <option value="1">Khởi đầu</option>
                 <option value="2">Studio</option>
                 <option value="3">Atelier</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               Trạng thái
-              <select name="status" defaultValue={detail.subscription?.status}>
+              <Select name="status" defaultValue={detail.subscription?.status}>
                 {["free", "active", "past_due", "restricted", "cancelled"].map(
                   (s) => (
                     <option key={s} value={s}>
@@ -788,7 +850,7 @@ export default function Platform({
                     </option>
                   ),
                 )}
-              </select>
+              </Select>
             </label>
             <label className="field">
               Cuối kỳ
@@ -799,7 +861,8 @@ export default function Platform({
               />
             </label>
             <button className="button secondary">Lưu gói</button>
-          </form>
+          </form></>}
+
           </div>
           <div className="panel merchant-detail-section merchant-detail-full">
             <h3>Merchant CRM · Việc chăm sóc</h3>
@@ -808,7 +871,7 @@ export default function Platform({
                 <strong>{t.title}</strong>
                 <p>{t.note}</p>
                 <small>
-                  {t.due_date} · {statusText("task", t.status)}
+                  {formatDate(t.due_date)} · {statusText("task", t.status)}
                 </small>
                 <button
                   className="text-button"
@@ -853,8 +916,9 @@ export default function Platform({
             <h3>Nhật ký</h3>
             {detail.audit.map((a: any) => (
               <p key={a.id}>
-                {a.created_at} · {auditAction(a.action, a.entity)} ·{" "}
+                {formatDateTime(a.created_at)} · {auditAction(a.action, a.entity)} ·{" "}
                 {statusText("entity", a.entity)}
+                {a.detail && <small>{(() => { const d=typeof a.detail === "string" ? JSON.parse(a.detail) : a.detail;return d.reason ? `+${d.days} ngày · ${d.previous_end} → ${d.new_end} UTC · ${d.reason}` : "";})()}</small>}
               </p>
             ))}
           </div>

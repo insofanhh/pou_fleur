@@ -12,17 +12,17 @@ Nhân viên tạo đơn từ cuộc gọi, Zalo, Facebook hoặc khách đến c
 
 ## 2. Đối chiếu với hệ thống hiện tại
 
-| Hiện trạng đã đọc trong code | Thay đổi cần thiết |
-| --- | --- |
-| Workspace có bảng đơn, Kanban, lịch và cập nhật trạng thái | Thêm nút tạo đơn ở các màn hình này, dùng chung một form |
-| Checkout yêu cầu email, gắn người mua bằng userId/checkout owner | API riêng cho nhân viên; tách người tạo khỏi người mua; email tùy chọn |
-| CRM tìm và liên kết đơn theo email | Thêm customer_id theo store, xử lý khách chỉ có điện thoại và trùng thông tin |
-| Giá, tồn kho, mã giảm giá, lịch giao được kiểm tra trong checkout | Tách thành dịch vụ dùng chung, giữ kiểm tra ở server khi chốt |
-| Thu/hoàn tiền có sổ giao dịch, hiện giới hạn chủ store | Dùng lại sổ này; tiền cọc không đi qua ô đánh dấu đã trả |
-| order_items.product_id bắt buộc; hủy đơn hoàn kho theo product_id | Hỗ trợ dòng thiết kế riêng và quy tắc không hoàn kho cho dòng đó |
+| Hiện trạng đã đọc trong code                                             | Thay đổi cần thiết                                                              |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Workspace có bảng đơn, Kanban, lịch và cập nhật trạng thái               | Thêm nút tạo đơn ở các màn hình này, dùng chung một form                        |
+| Checkout yêu cầu email, gắn người mua bằng userId/checkout owner         | API riêng cho nhân viên; tách người tạo khỏi người mua; email tùy chọn          |
+| CRM tìm và liên kết đơn theo email                                       | Thêm customer_id theo store, xử lý khách chỉ có điện thoại và trùng thông tin   |
+| Giá, tồn kho, mã giảm giá, lịch giao được kiểm tra trong checkout        | Tách thành dịch vụ dùng chung, giữ kiểm tra ở server khi chốt                   |
+| Thu/hoàn tiền có sổ giao dịch, hiện giới hạn chủ store                   | Dùng lại sổ này; tiền cọc không đi qua ô đánh dấu đã trả                        |
+| order_items.product_id bắt buộc; hủy đơn hoàn kho theo product_id        | Hỗ trợ dòng thiết kế riêng và quy tắc không hoàn kho cho dòng đó                |
 | Email giao dịch mặc định lấy orders.email; CRM automation nối theo email | Bỏ qua email rỗng có lý do hiển thị; chuyển liên kết nghiệp vụ sang customer_id |
-| Đặt lại đơn mặc định đưa mọi dòng qua catalog | Dòng thiết kế riêng phải chuyển thành yêu cầu tư vấn, không tự bán với giá cũ |
-| Quyền hiện tại chủ yếu theo nhóm chức năng orders | Thêm quyền thao tác cụ thể cho tạo đơn, xác nhận, sửa giá và thu tiền |
+| Đặt lại đơn mặc định đưa mọi dòng qua catalog                            | Dòng thiết kế riêng phải chuyển thành yêu cầu tư vấn, không tự bán với giá cũ   |
+| Quyền hiện tại chủ yếu theo nhóm chức năng orders                        | Thêm quyền thao tác cụ thể cho tạo đơn, xác nhận, sửa giá và thu tiền           |
 
 Các file liên quan: lib/commerce.ts, lib/operations.ts, lib/order-list.ts, lib/saas.ts, lib/auth.ts, lib/stores.ts, lib/tenant.ts, lib/email.ts, lib/automations.ts và components/workspace.tsx. Đây là phạm vi dự kiến, không phải danh sách file đã sửa.
 
@@ -64,14 +64,14 @@ Các file liên quan: lib/commerce.ts, lib/operations.ts, lib/order-list.ts, lib
 - Dòng catalog lưu snapshot tên/ảnh/size/đơn giá, đồng thời giữ product_id. Dòng thiết kế riêng có loại dòng riêng, product_id rỗng, không trừ tồn sản phẩm. UI nêu rõ chưa theo dõi nguyên liệu cho dòng này.
 - Quyền điều chỉnh giá tách khỏi quyền nhập đơn. Lưu giá gốc, giá áp dụng, người sửa và lý do; đơn giá 0 chỉ khi có quyền và lý do, không mặc định coi là thiếu giá.
 - Bản đầu chọn một trong mã khuyến mãi hoặc giảm giá thủ công, không cộng chồng. Giảm thủ công theo số tiền hoặc %, giảm tối đa tiền hàng. Giá và tổng tiền dùng số nguyên VND, quy tắc làm tròn thống nhất ở server.
-- Tổng tiền = tiền hàng − giảm giá + phí giao. Phí giao dùng cấu hình store; sửa phí cần quyền điều chỉnh và lý do. Không cho tổng âm.
+- Tổng tiền = tiền hàng − giảm giá + phí giao. Phí giao dùng cấu hình cửa hàng; sửa phí cần quyền điều chỉnh và lý do. Không cho tổng âm.
 - Mở lại nháp phải cảnh báo sản phẩm bị ẩn/xóa, thay đổi giá hoặc hết hàng; nhân viên rà soát và chấp nhận báo giá mới trước khi chốt.
 
 ### 5.3. Giao hoa và nội dung thiệp
 
 - Giữ “Gửi đến người bạn thương” đứng trước và mặc định; “Giao cho tôi” dùng tên/số điện thoại người đặt, không lặp lại hai input.
 - Cả hai có địa chỉ, ngày, khung giờ, lời nhắn trên thiệp, ghi chú giao. Ghi chú nội bộ tách riêng và không đưa vào email/tra cứu của khách.
-- Kiểm tra ngày thật, giờ Việt Nam, thời gian chuẩn bị, ngày nghỉ, khoảng đặt trước, sức chứa khung giờ và vùng giao theo cấu hình store.
+- Kiểm tra ngày thật, giờ Việt Nam, thời gian chuẩn bị, ngày nghỉ, khoảng đặt trước, sức chứa khung giờ và vùng giao theo cấu hình cửa hàng.
 - Nếu chưa định vị được địa chỉ thì báo trạng thái chưa xác minh. Khi store có giới hạn bán kính, cần tọa độ hợp lệ để chốt; không âm thầm bỏ qua kiểm tra. Cho phép nhập/chọn vị trí để xử lý khi dịch vụ bản đồ không sẵn sàng.
 - Bản đầu không cho vượt tồn hoặc vượt sức chứa bằng thao tác tạo thủ công. Điều chỉnh lịch sau tạo dùng cùng dịch vụ đổi lịch và kiểm tra phiên bản hiện có.
 
@@ -112,14 +112,14 @@ flowchart LR
 
 Đề xuất bổ sung capability trong lớp phân quyền hiện có, không xây hệ RBAC mới chỉ cho màn hình này.
 
-| Thao tác | Owner | Admin/Manager store | Support | Editor/Customer |
-| --- | --- | --- | --- | --- |
-| Tạo, mở và sửa nháp; tạo đơn chờ xác nhận | Có | Có | Có | Không |
-| Thêm dòng thiết kế riêng với giá nhập ban đầu | Có | Có | Có | Không |
-| Tạo và xác nhận ngay | Có | Có | Không | Không |
-| Ghi đè giá catalog, giảm giá thủ công, sửa phí giao | Có | Có, bắt buộc lý do | Không | Không |
-| Ghi nhận thu/hoàn tiền | Có | Không trong bản đầu | Không | Không |
-| Xem người tạo và lịch sử thao tác | Có | Theo quyền đơn | Theo quyền đơn | Không |
+| Thao tác                                            | Owner | Admin/Manager store | Support        | Editor/Customer |
+| --------------------------------------------------- | ----- | ------------------- | -------------- | --------------- |
+| Tạo, mở và sửa nháp; tạo đơn chờ xác nhận           | Có    | Có                  | Có             | Không           |
+| Thêm dòng thiết kế riêng với giá nhập ban đầu       | Có    | Có                  | Có             | Không           |
+| Tạo và xác nhận ngay                                | Có    | Có                  | Không          | Không           |
+| Ghi đè giá catalog, giảm giá thủ công, sửa phí giao | Có    | Có, bắt buộc lý do  | Không          | Không           |
+| Ghi nhận thu/hoàn tiền                              | Có    | Không trong bản đầu | Không          | Không           |
+| Xem người tạo và lịch sử thao tác                   | Có    | Theo quyền đơn      | Theo quyền đơn | Không           |
 
 Nhập giá cho thiết kế riêng là báo giá mới, vẫn lưu người báo giá; không cho support lợi dụng loại dòng này để tự đánh dấu giá catalog đã giảm. Mọi khoản giảm/miễn phí cần quyền tương ứng.
 
@@ -136,14 +136,14 @@ Mọi API xác minh membership đang hoạt động và capability tại store t
 
 Endpoint dự kiến, xác minh lại với router khi triển khai:
 
-| Endpoint trong API hiện tại | Mục đích |
-| --- | --- |
-| GET workspace/order-customers?q= | Tìm CRM của store với dữ liệu tối thiểu cần thiết |
-| POST workspace/order-drafts | Lưu nháp |
-| GET/PATCH workspace/order-drafts/:id | Đọc/sửa theo version |
-| POST workspace/order-drafts/:id/archive | Lưu trữ nháp |
-| POST workspace/manual-orders/quote | Tính giá, kiểm tra dữ liệu; báo giá chưa giữ kho/slot |
-| POST workspace/manual-orders | Chốt trực tiếp hoặc chuyển nháp bằng draftId/version |
+| Endpoint trong API hiện tại             | Mục đích                                              |
+| --------------------------------------- | ----------------------------------------------------- |
+| GET workspace/order-customers?q=        | Tìm CRM của store với dữ liệu tối thiểu cần thiết     |
+| POST workspace/order-drafts             | Lưu nháp                                              |
+| GET/PATCH workspace/order-drafts/:id    | Đọc/sửa theo version                                  |
+| POST workspace/order-drafts/:id/archive | Lưu trữ nháp                                          |
+| POST workspace/manual-orders/quote      | Tính giá, kiểm tra dữ liệu; báo giá chưa giữ kho/slot |
+| POST workspace/manual-orders            | Chốt trực tiếp hoặc chuyển nháp bằng draftId/version  |
 
 Service đề xuất: quoteOrder, validateFulfillment, finalizeOrder, recordOrderPayment dùng chung. Checkout công khai tiếp tục dùng schema riêng, chỉ chia sẻ nghiệp vụ; nhân viên không gọi checkout công khai với danh tính của mình thay khách.
 
@@ -169,13 +169,13 @@ Service đề xuất: quoteOrder, validateFulfillment, finalizeOrder, recordOrde
 
 ## 10. Trình tự triển khai và điều kiện bàn giao
 
-| Chặng | Công việc | Điều kiện hoàn thành |
-| --- | --- | --- |
-| 1 | Migration, liên kết CRM bằng ID, capability, dịch vụ giá/lịch/thu tiền dùng chung | Checkout cũ và dữ liệu cũ chạy đúng; tenant/Ghost isolation đạt |
-| 2 | API nháp, báo giá, chốt và transaction tồn kho/slot/thu tiền | Retry/concurrency/rollback đúng; tiền và tồn không bị lệch |
-| 3 | Form desktop/mobile, tìm khách/sản phẩm, custom, tổng kết và rà soát | Dùng được bằng bàn phím, không mất form khi lỗi, không tràn 360/390px |
-| 4 | Kanban/lịch/CRM/email/báo cáo/đặt lại | Một đơn đi xuyên suốt hệ thống; không lộ ghi chú hoặc liên kết sai user |
-| 5 | Kiểm thử hồi quy, build production và báo cáo kết quả | Có bằng chứng từng ca, ghi rõ phần cần cấu hình ngoài hệ thống |
+| Chặng | Công việc                                                                         | Điều kiện hoàn thành                                                    |
+| ----- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1     | Migration, liên kết CRM bằng ID, capability, dịch vụ giá/lịch/thu tiền dùng chung | Checkout cũ và dữ liệu cũ chạy đúng; tenant/Ghost isolation đạt         |
+| 2     | API nháp, báo giá, chốt và transaction tồn kho/slot/thu tiền                      | Retry/concurrency/rollback đúng; tiền và tồn không bị lệch              |
+| 3     | Form desktop/mobile, tìm khách/sản phẩm, custom, tổng kết và rà soát              | Dùng được bằng bàn phím, không mất form khi lỗi, không tràn 360/390px   |
+| 4     | Kanban/lịch/CRM/email/báo cáo/đặt lại                                             | Một đơn đi xuyên suốt hệ thống; không lộ ghi chú hoặc liên kết sai user |
+| 5     | Kiểm thử hồi quy, build production và báo cáo kết quả                             | Có bằng chứng từng ca, ghi rõ phần cần cấu hình ngoài hệ thống          |
 
 Các ca bắt buộc:
 

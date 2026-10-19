@@ -4,6 +4,8 @@ import { z } from "zod";
 import { MAX_PRODUCT_IMAGES } from "./product-images";
 import { pool, query, mutate } from "./db";
 import { HttpError, requirePermission } from "./auth";
+import { orderPaymentStatusSQL } from "./order-payment-state";
+import { flowerComposition } from "./product-taxonomy";
 const text = z.string().trim().min(1).max(200);
 const long = z.string().trim().max(15000);
 const flag = z.coerce.number().int().min(0).max(1);
@@ -34,14 +36,24 @@ export const schemas: Record<string, z.ZodType> = {
         v === undefined ? undefined : JSON.stringify([...new Set(v)]),
       ),
     description: long.min(10),
-    flowers: text,
+    flowers: z.string().trim().max(255),
+    flower_component_ids: z
+      .array(z.number().int().positive())
+      .max(30)
+      .optional(),
+    flower_other: z.string().trim().max(255).optional(),
     care: long,
     badge: z.string().max(60),
     active: flag,
   }),
   categories: z.object({
-    name: text,
-    slug: text.regex(/^[a-z0-9-]+$/),
+    name: text.max(120),
+    slug: text.max(160).regex(/^[a-z0-9-]+$/),
+    description: long,
+  }),
+  flower_components: z.object({
+    name: text.max(120),
+    slug: text.max(160).regex(/^[a-z0-9-]+$/),
     description: long,
   }),
   promotions: z
@@ -91,7 +103,37 @@ export const schemas: Record<string, z.ZodType> = {
   inquiries: z.object({ status: z.enum(["new", "resolved"]) }),
 };
 export async function adminRead(area: string) {
-  await requirePermission(area);
+  await requirePermission(
+    area === "flower_components"
+      ? "categories"
+      : area === "product-taxonomy"
+        ? "products"
+        : area,
+  );
+  if (area === "product-taxonomy") {
+    const [categories, components] = await Promise.all([
+      query("SELECT * FROM categories ORDER BY name"),
+      query("SELECT * FROM flower_components ORDER BY name"),
+    ]);
+    return { categories, components };
+  }
+  if (area === "products") {
+    const [products, links] = await Promise.all([
+      query<any[]>(
+        "SELECT p.*,c.name category FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.id DESC LIMIT 500",
+      ),
+      query<any[]>(
+        "SELECT product_id,component_id FROM product_flower_components ORDER BY component_id",
+      ),
+    ]);
+    return products.map((p) => ({
+      ...p,
+      flower_other: p.flower_other ?? p.flowers,
+      flower_component_ids: links
+        .filter((l) => l.product_id === p.id)
+        .map((l) => l.component_id),
+    }));
+  }
   if (area === "overview") {
     const [stats, revenue, recent, top] = await Promise.all([
       query(
@@ -119,14 +161,18 @@ export async function adminRead(area: string) {
       ),
       query("SELECT * FROM crm_tasks ORDER BY due_date"),
       query(
-        "SELECT id,reference,customer_id,email,total,status,payment_status,delivery_date,created_at FROM orders ORDER BY id DESC LIMIT 500",
+        "SELECT o.id,o.reference,o.customer_id,o.email,o.total,o.status," +
+          orderPaymentStatusSQL() +
+          " payment_status,o.delivery_date,o.created_at FROM orders o ORDER BY o.id DESC LIMIT 500",
       ),
     ]);
     return { customers, notes, tasks, orders };
   }
   if (area === "orders") {
     return query(
-      "SELECT o.*,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o ORDER BY id DESC LIMIT 500",
+      "SELECT o.*," +
+        orderPaymentStatusSQL() +
+        " payment_status,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o ORDER BY o.id DESC LIMIT 500",
     );
   }
   if (area === "users")
@@ -147,7 +193,9 @@ export async function adminWrite(
   body: unknown,
   remove = false,
 ) {
-  const actor = await requirePermission(area);
+  const actor = await requirePermission(
+    area === "flower_components" ? "categories" : area,
+  );
   const c = await pool.getConnection();
   const query = async <T = any>(
     sql: string,
@@ -162,6 +210,11 @@ export async function adminWrite(
   };
   try {
     await c.beginTransaction();
+    // Serialize taxonomy changes and product associations within this store.
+    if (["categories", "flower_components"].includes(area))
+      await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
+        tenantId(),
+      ]);
     if (area === "products") {
       await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
         tenantId(),
@@ -211,6 +264,22 @@ export async function adminWrite(
         await mutate("UPDATE " + area + " SET active=0 WHERE id=?", [id]);
       } else if (area === "posts") {
         await mutate("UPDATE posts SET published=0 WHERE id=?", [id]);
+      } else if (area === "flower_components") {
+        const [used] = await query<any[]>(
+          "SELECT COUNT(*) n FROM product_flower_components WHERE component_id=?",
+          [id],
+        );
+        if (used.n)
+          throw new HttpError(
+            409,
+            "Thành phần hoa đang có sản phẩm sử dụng. Hãy bỏ chọn thành phần trong sản phẩm trước.",
+          );
+        const result = await mutate(
+          "DELETE FROM flower_components WHERE id=?",
+          [id],
+        );
+        if (!result.affectedRows)
+          throw new HttpError(404, "Không tìm thấy thành phần hoa.");
       } else if (area === "categories") {
         const [r] = await query<{ n: number }[]>(
           "SELECT COUNT(*) n FROM products WHERE category_id=?",
@@ -221,10 +290,42 @@ export async function adminWrite(
             409,
             "Danh mục đang có sản phẩm. Hãy chuyển sản phẩm trước.",
           );
-        await mutate("DELETE FROM categories WHERE id=?", [id]);
+        const result = await mutate("DELETE FROM categories WHERE id=?", [id]);
+        if (!result.affectedRows)
+          throw new HttpError(404, "Không tìm thấy danh mục.");
       } else throw new HttpError(400, "Mục này không hỗ trợ xoá.");
     } else {
       const value = schemas[area].parse(body) as Record<string, unknown>;
+      const componentIds =
+        area === "products" && value.flower_component_ids !== undefined
+          ? [...new Set(value.flower_component_ids as number[])]
+          : undefined;
+      if (area === "products") {
+        if (componentIds) {
+          value.flower_other = (value.flower_other as string | undefined) || "";
+          value.flowers = await flowerComposition(
+            query,
+            componentIds,
+            value.flower_other as string,
+          );
+        } else {
+          if (!value.flowers)
+            throw new HttpError(400, "Vui lòng nhập thành phần hoa.");
+          value.flower_other = value.flowers;
+        }
+        delete value.flower_component_ids;
+      }
+      if (["categories", "flower_components"].includes(area)) {
+        const [duplicate] = await query<any[]>(
+          "SELECT id FROM " + area + " WHERE (slug=? OR name=?) AND id<>?",
+          [value.slug, value.name, id || 0],
+        );
+        if (duplicate)
+          throw new HttpError(
+            409,
+            "Tên hoặc đường dẫn đã tồn tại. Vui lòng chọn mục đã có hoặc dùng tên khác.",
+          );
+      }
       if (area === "users") {
         if (!id)
           throw new HttpError(400, "Tài khoản được tạo qua trang đăng ký.");
@@ -260,6 +361,38 @@ export async function adminWrite(
           Object.values(value),
         );
         id = result.insertId;
+      }
+      if (area === "products") {
+        await mutate(
+          "DELETE FROM product_flower_components WHERE product_id=?",
+          [id],
+        );
+        for (const componentId of componentIds || [])
+          await mutate(
+            "INSERT INTO product_flower_components(product_id,component_id) VALUES(?,?)",
+            [id, componentId],
+          );
+      }
+      if (area === "flower_components" && id) {
+        const products = await query<any[]>(
+          "SELECT p.id,p.flower_other FROM products p JOIN product_flower_components l ON l.product_id=p.id WHERE l.component_id=?",
+          [id],
+        );
+        for (const product of products) {
+          const links = await query<any[]>(
+            "SELECT component_id FROM product_flower_components WHERE product_id=? ORDER BY component_id",
+            [product.id],
+          );
+          const flowers = await flowerComposition(
+            query,
+            links.map((l) => l.component_id),
+            product.flower_other || "",
+          );
+          await mutate("UPDATE products SET flowers=? WHERE id=?", [
+            flowers,
+            product.id,
+          ]);
+        }
       }
     }
     await mutate(

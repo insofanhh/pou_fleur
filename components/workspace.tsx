@@ -1,4 +1,10 @@
 "use client";
+import { hanoiDateKey, formatDateTime, formatDate, parseDateTime } from "@/lib/date-time";
+import { APP_TIME_ZONE_LABEL } from "@/lib/regional";
+import Select from "./ui-select";
+import StoreTeam from "./store-team";
+import { Eye, Trash2, Pause, Play, QrCode } from "lucide-react";
+import { TableAction, TableActions } from "./table-actions";
 import { Fragment, useEffect, useState, useRef, useCallback } from "react";
 import { api, useShop } from "./context";
 import { Status, statusNames } from "./pages";
@@ -8,8 +14,10 @@ import { displayLabel } from "@/lib/display-labels";
 import ManualOrderEditor from "./manual-order-editor";
 import DeliveryAddress from "./delivery-address";
 import { useOrderTransition } from "./order-transition";
-import { paymentMethods } from "@/lib/order-workflow";
+import { paymentMethods, orderChannel } from "@/lib/order-workflow";
 import { orderCapabilities } from "@/lib/order-capabilities";
+import OrderPaymentEditor from "./order-payment-editor";
+import BoardToolbar from "./board-toolbar";
 const statuses = [
   "pending",
   "confirmed",
@@ -82,6 +90,14 @@ function Loading({ error }: { error: string }) {
     </p>
   );
 }
+function OrderChannelTag({ order }: { order: any }) {
+  const channel = orderChannel(order);
+  return (
+    <span className={"tag order-channel-tag order-channel-" + channel.key} title={"Kênh tiếp nhận: " + channel.label}>
+      {channel.label}
+    </span>
+  );
+}
 function OrderCard({
   order,
   onOpen,
@@ -101,9 +117,7 @@ function OrderCard({
       <span className="eyebrow">{order.reference}</span>
       <div className="kanban-card-heading">
         <strong>{order.customer_name}</strong>
-        {order.creation_source === "manual" && (
-          <span className="tag">Thủ công</span>
-        )}
+        <OrderChannelTag order={order} />
       </div>
       <p>
         {order.delivery_date} · {order.delivery_slot}
@@ -112,7 +126,7 @@ function OrderCard({
         {order.recipient_name} · {order.recipient_phone}
       </small>
       <div className="flex-between">
-        <strong>{money(order.total)}</strong>
+        <strong className="kanban-card-price">{money(order.total)}</strong>
         <Status value={order.payment_status} />
       </div>
       {(typeof order.tags === "string"
@@ -202,7 +216,14 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
   );
   return (
     <div data-no-fade-in>
-      <div className="board-toolbar">
+      {!table ? <BoardToolbar
+        search={search} date={date} payment={payment} source={source}
+        onSearch={setSearch}
+        onDate={value => { setDate(value); setPages({}); }}
+        onPayment={value => { setPayment(value); setPages({}); }}
+        onSource={value => { setSource(value); setPages({}); }}
+        onRefresh={() => void refresh()}
+      /> : <div className="board-toolbar">
         <Link href="/admin/orders/new?drafts=1" className="text-link">
           Đơn nháp
         </Link>
@@ -221,7 +242,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
             setPages({});
           }}
         />
-        <select
+        <Select
           aria-label="Lọc thanh toán"
           value={payment}
           onChange={(e) => {
@@ -241,8 +262,8 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
               {statusNames[s] || s}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Nguồn tạo đơn"
           value={source}
           onChange={(e) => {
@@ -253,9 +274,9 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
           <option value="">Tất cả nguồn</option>
           <option value="web">Website</option>
           <option value="manual">Thủ công</option>
-        </select>
+        </Select>
         {table && (
-          <select
+          <Select
             aria-label="Lọc trạng thái"
             value={statusFilter}
             onChange={(e) => {
@@ -269,12 +290,12 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                 {statusNames[s]}
               </option>
             ))}
-          </select>
+          </Select>
         )}
         <button className="button secondary" onClick={() => void refresh()}>
           Làm mới
         </button>
-      </div>
+      </div>}
       <p className="small">
         {table
           ? "Mở mã đơn để xem chi tiết và cập nhật."
@@ -290,7 +311,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
         <Loading error={error} />
       ) : table ? (
         <div className="panel">
-          <div className="table-wrap">
+          <div className="table-wrap table-scroll">
             <table>
               <thead>
                 <tr>
@@ -300,6 +321,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                   <th>Trạng thái</th>
                   <th>Thanh toán</th>
                   <th>Tổng</th>
+                  <th className="table-actions-heading" scope="col">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,6 +339,8 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                       {o.customer_name}
                       <br />
                       <small>{o.phone}</small>
+                      <br />
+                      <OrderChannelTag order={o} />
                     </td>
                     <td>
                       {o.delivery_date}
@@ -330,6 +354,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                       <Status value={o.payment_status} />
                     </td>
                     <td>{money(o.total)}</td>
+                    <td><TableActions><TableAction icon={Eye} onClick={() => setSelected(o)}>Chi tiết</TableAction></TableActions></td>
                   </tr>
                 ))}
               </tbody>
@@ -373,6 +398,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
       )}
       {selected && (
         <OrderPanel
+          key={selected.id}
           order={selected}
           close={() => setSelected(null)}
           move={move}
@@ -384,7 +410,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
   );
 }
 function OrderPanel({
-  order: o,
+  order,
   close,
   move,
   refresh,
@@ -394,7 +420,8 @@ function OrderPanel({
   move: (o: any, s: string) => void;
   refresh: () => Promise<void>;
 }) {
-  const { data } = useLoad("workspace/orders/" + o.id + "/timeline"),
+  const [o, setOrder] = useState(order);
+  const { data, refresh: reloadTimeline } = useLoad("workspace/orders/" + o.id + "/timeline"),
     { user, toast } = useShop();
   const {
     data: assignment,
@@ -480,7 +507,7 @@ function OrderPanel({
         >
           <label className="field">
             Chuyển trạng thái đơn
-            <select
+            <Select
               value={targetStatus}
               onChange={(e) => setTargetStatus(e.target.value)}
               aria-label="Trạng thái mới"
@@ -490,7 +517,7 @@ function OrderPanel({
                   {statusNames[s]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className="button"
@@ -546,20 +573,8 @@ function OrderPanel({
                 <dd>{o.email || "Chưa cung cấp"}</dd>
               </div>
               <div>
-                <dt>Nguồn đơn</dt>
-                <dd>
-                  {o.creation_source === "manual"
-                    ? (
-                        {
-                          phone: "Điện thoại",
-                          zalo: "Zalo",
-                          social: "Mạng xã hội",
-                          in_person: "Tại cửa hàng",
-                          other: "Khác",
-                        } as Record<string, string>
-                      )[o.sales_channel] || "Thủ công"
-                    : "Website"}
-                </dd>
+                <dt>Kênh tiếp nhận</dt>
+                <dd><OrderChannelTag order={o} /></dd>
               </div>
               {o.creation_source === "manual" && (
                 <div>
@@ -666,6 +681,19 @@ function OrderPanel({
                 </dd>
               </div>
             </dl>
+            {user?.role === "owner" && (
+              <OrderPaymentEditor
+                key={o.id + ":" + o.version}
+                order={o}
+                disabled={busy}
+                onBusy={setBusy}
+                onSaved={async () => {
+                  const updated = await api("workspace/manual-orders/" + o.id);
+                  setOrder(updated);
+                  await Promise.all([refresh(), reloadTimeline(), reloadAssignment()]);
+                }}
+              />
+            )}
             {canAdjustPayment ? (
               <form
                 className="order-method-form"
@@ -693,7 +721,7 @@ function OrderPanel({
               >
                 <label className="field">
                   Phương thức thanh toán
-                  <select
+                  <Select
                     name="method"
                       aria-label="Phương thức thanh toán"
                     defaultValue={o.payment_method}
@@ -704,7 +732,7 @@ function OrderPanel({
                         {label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <button className="button secondary" disabled={busy}>
                   Lưu phương thức
@@ -800,7 +828,7 @@ function OrderPanel({
             >
               <label className="field">
                 Người phụ trách
-                <select
+                <Select
                   name="assigned_to"
                   aria-label="Người phụ trách"
                   defaultValue={assignment?.assigned_to || ""}
@@ -821,7 +849,7 @@ function OrderPanel({
                       {s.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 Nhãn (phân cách bằng dấu phẩy, tối đa 6)
@@ -866,17 +894,17 @@ function OrderPanel({
             >
               <label className="field">
                 Phương thức
-                <select name="method">
+                <Select name="method">
                   <option value="cash">Tiền mặt</option>
                   <option value="bank">Chuyển khoản</option>
-                </select>
+                </Select>
               </label>
               <label className="field">
                 Loại
-                <select name="kind">
+                <Select name="kind">
                   <option value="collect">Thu tiền</option>
                   <option value="refund">Hoàn tiền</option>
-                </select>
+                </Select>
               </label>
               <label className="field">
                 Số tiền
@@ -944,7 +972,7 @@ function OrderPanel({
             {data?.events?.map((e: any) => (
               <p key={e.id} className="timeline-entry">
                 <strong>{statusNames[e.status] || e.status}</strong> ·{" "}
-                {e.created_at}
+                {formatDateTime(e.created_at)}
                 {e.detail && (
                   <span className="order-event-detail">{e.detail}</span>
                 )}
@@ -954,7 +982,7 @@ function OrderPanel({
               <p key={e.id}>
                 {e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
                 {e.method === "bank" ? "Chuyển khoản" : "Tiền mặt"} ·{" "}
-                {e.reference} · {e.received_at || e.created_at}
+                {e.reference} · {e.received_at ? formatDateTime(e.received_at, "utc") : formatDateTime(e.created_at)}
               </p>
             ))}
           </div>
@@ -964,22 +992,17 @@ function OrderPanel({
   );
 }
 function Calendar() {
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = hanoiDateKey();
   const [month, setMonth] = useState(today.slice(0, 7)),
     [selected, setSelected] = useState(today),
     [view, setView] = useState("month"),
     [order, setOrder] = useState<any>(null),
     { toast } = useShop();
-  const end = new Date(
+  const end = new Date(Date.UTC(
       Number(month.slice(0, 4)),
       Number(month.slice(5)),
       0,
-    ).getDate(),
+    )).getUTCDate(),
     weekStart = new Date(selected + "T12:00:00Z");
   weekStart.setUTCDate(
     weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7),
@@ -1048,7 +1071,7 @@ function Calendar() {
             }}
           />
         )}
-        <p>Ngày giao hoa · Asia/Ho_Chi_Minh</p>
+        <p>Ngày giao hoa · {APP_TIME_ZONE_LABEL}</p>
       </div>
       {!data ? (
         <Loading error={error} />
@@ -1113,7 +1136,7 @@ function Calendar() {
                   length:
                     view === "week"
                       ? 0
-                      : (new Date(from + "T12:00:00").getDay() + 6) % 7,
+                      : (new Date(from + "T12:00:00Z").getUTCDay() + 6) % 7,
                 },
                 (_, i) => (
                   <div key={"blank" + i} />
@@ -1164,7 +1187,7 @@ function Calendar() {
             </div>
           )}
           <aside className="calendar-detail panel">
-            <h3>Ngày {selected}</h3>
+            <h3>Ngày {formatDate(selected)}</h3>
             {data.orders
               .filter((o: any) => o.delivery_date === selected)
               .map((o: any) => (
@@ -1183,8 +1206,7 @@ function Calendar() {
                 >
                   <strong>{n.title}</strong>
                   <p>{n.content}</p>
-                  <button
-                    className="text-button"
+                  <TableActions><TableAction icon={Trash2}
                     onClick={async () => {
                       try {
                         await api(
@@ -1199,7 +1221,7 @@ function Calendar() {
                     }}
                   >
                     Xóa ghi chú
-                  </button>
+                  </TableAction></TableActions>
                 </div>
               ))}
             <form
@@ -1229,7 +1251,7 @@ function Calendar() {
               </label>
               <label className="field">
                 Màu
-                <select name="color">
+                <Select name="color">
                   {[
                     ["#555555", "Xám"],
                     ["#a34b40", "Đỏ"],
@@ -1241,7 +1263,7 @@ function Calendar() {
                       {t}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <button className="button">Thêm ghi chú</button>
             </form>
@@ -1250,6 +1272,7 @@ function Calendar() {
       )}
       {order && (
         <OrderPanel
+          key={order.id}
           order={order}
           close={() => setOrder(null)}
           move={move}
@@ -1262,9 +1285,9 @@ function Calendar() {
 }
 function Analytics() {
   const [from, setFrom] = useState(
-      new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+      hanoiDateKey(Date.now() - 30 * 86400000),
     ),
-    [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+    [to, setTo] = useState(hanoiDateKey());
   const { data, error } = useLoad(
     "workspace/analytics?from=" + from + "&to=" + to,
   );
@@ -1337,17 +1360,7 @@ function Analytics() {
             <h3>Nguồn đơn hàng</h3>
             {data.sources?.map((s: any) => (
               <p key={s.creation_source + ":" + s.sales_channel}>
-                {s.creation_source === "manual" ? "Thủ công" : "Website"} ·{" "}
-                {(
-                  {
-                    phone: "Điện thoại",
-                    zalo: "Zalo",
-                    social: "Mạng xã hội",
-                    in_person: "Tại cửa hàng",
-                    other: "Khác",
-                    website: "Website",
-                  } as Record<string, string>
-                )[s.sales_channel] || s.sales_channel}
+                <OrderChannelTag order={s} />
                 : {s.orders_count} đơn · {money(Number(s.revenue))}
               </p>
             ))}
@@ -1503,10 +1516,10 @@ function StoreSettings() {
             ["name", "Tên cửa hàng", data.name, "text"],
             ["phone", "Điện thoại", data.phone, "text"],
             ["radius_km", "Bán kính giao (km)", data.radius_km, "number"],
-            ["shipping", "Phí giao (₫)", data.settings.shipping, "number"],
+            ["shipping", "Phí giao (VNĐ)", data.settings.shipping, "number"],
             [
               "free_shipping",
-              "Miễn phí giao từ (₫)",
+              "Miễn phí giao từ (VNĐ)",
               data.settings.free_shipping,
               "number",
             ],
@@ -1568,7 +1581,7 @@ function StoreSettings() {
           />
           Nhận đơn mới
         </label>
-        <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><div className="form-grid">{[["bank_code","Mã ngân hàng / BIN",data.bank?.bank_code||""],["bank_name","Tên ngân hàng",data.bank?.bank_name||""],["account_number","Số tài khoản",data.bank?.account_number||""],["account_holder","Chủ tài khoản",data.bank?.account_holder||""]].map(([name,label,value])=><label className="field" key={name}>{label}<input name={name} defaultValue={value}/></label>)}</div><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></select></label></div>
+        <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><div className="form-grid">{[["bank_code","Mã ngân hàng / BIN",data.bank?.bank_code||""],["bank_name","Tên ngân hàng",data.bank?.bank_name||""],["account_number","Số tài khoản",data.bank?.account_number||""],["account_holder","Chủ tài khoản",data.bank?.account_holder||""]].map(([name,label,value])=><label className="field" key={name}>{label}<input name={name} defaultValue={value}/></label>)}</div><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<Select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></Select></label></div>
         <button className="button" disabled={busy}>
           Lưu cấu hình
         </button>
@@ -1684,7 +1697,7 @@ function ThemeEditor() {
           </label>
           <label className="field">
             Font
-            <select
+            <Select
               value={draft.font}
               onChange={(e) => setDraft({ ...draft, font: e.target.value })}
             >
@@ -1692,7 +1705,7 @@ function ThemeEditor() {
               <option value="serif">Serif</option>
               <option value="sans">Sans serif</option>
               <option value="mono">Monospace</option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             Tiêu đề
@@ -1760,91 +1773,9 @@ function ThemeEditor() {
               )
             }
           >
-            Khôi phục bản {v.created_at} vào bản nháp
+            Khôi phục bản {formatDateTime(v.created_at)} vào bản nháp
           </button>
         ))}
-      </div>
-    </div>
-  );
-}
-function Billing() {
-  const { data, error, refresh } = useLoad("workspace/billing"),
-    { toast } = useShop();
-  const [payment, setPayment] = useState<any>(null);
-  if (!data) return <Loading error={error} />;
-  return (
-    <div>
-      <div className="panel">
-        <h2>Gói {data.subscription.name}</h2>
-        <p>
-          {money(data.subscription.monthly_price)} / tháng ·{" "}
-          {displayLabel("subscription", data.subscription.status)}
-        </p>
-        <p>
-          Kết thúc kỳ:{" "}
-          {data.subscription.period_end || "Không giới hạn với gói miễn phí"}
-        </p>
-        <div>
-          <h3>Hạn mức gói</h3>
-          {Object.entries(
-            typeof data.subscription.limits === "string"
-              ? JSON.parse(data.subscription.limits)
-              : data.subscription.limits || {},
-          ).map(([key, value]) => (
-            <p key={key}>
-              {displayLabel("limit", key)}: <strong>{String(value)}</strong>
-            </p>
-          ))}
-        </div>
-        <button
-          className="button secondary"
-          onClick={async () => {
-            try {
-              await api("workspace/billing/cancel", "POST", {
-                cancel: !data.subscription.cancel_at_period_end,
-              });
-              await refresh();
-            } catch (e) {
-              toast((e as Error).message);
-            }
-          }}
-        >
-          {data.subscription.cancel_at_period_end
-            ? "Tiếp tục gia hạn"
-            : "Ngừng gia hạn cuối kỳ"}
-        </button>
-        <p className="small">
-          Chọn gói bên dưới để bắt đầu dùng thử hoặc tạo mã QR thanh toán. Giá và hạn mức do nền tảng cấu hình.
-        </p>
-      </div>
-      <div className="panel"><h3>Gói dịch vụ</h3><div className="form-grid">{data.plans.map((p:any)=><div className="card" key={p.id}><strong>{p.name}</strong><p>{money(p.monthly_price)} / tháng</p><p className="small">Dùng thử {p.trial_days ?? 14} ngày</p><div className="button-row"><button className="button secondary" onClick={async()=>{try{await api("workspace/billing/start","POST",{plan_id:p.id,trial:true});toast("Đã kích hoạt thời gian trải nghiệm.");await refresh();}catch(e){toast((e as Error).message)}}}>Dùng thử</button><button className="button" onClick={async()=>{try{const r=await api("workspace/billing/start","POST",{plan_id:p.id,trial:false});setPayment(r.payment);await refresh();}catch(e){toast((e as Error).message)}}}>Thanh toán</button></div></div>)}</div></div>
-      {payment && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={()=>setPayment(null)} aria-label="Đóng">×</button><h2>Thanh toán gói dịch vụ</h2><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{width:280,maxWidth:"100%"}}/><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></div></div>}
-      <div className="panel table-scroll">
-        <h3>Hóa đơn dịch vụ</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Kỳ</th>
-              <th>Gói</th>
-              <th>Tổng</th>
-              <th>Đã thu</th>
-              <th>Hạn</th>
-              <th>Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.invoices.map((i: any) => (
-              <tr key={i.id}>
-                <td>{i.period_key}</td>
-                <td>{i.plan_name}</td>
-                <td>{money(i.amount)}</td>
-                <td>{money(i.paid)}</td>
-                <td>{i.due_date}</td>
-                <td>{displayLabel("invoice", i.status)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -1853,20 +1784,37 @@ const billingLimitMeta: Record<string, { label: string; unit: string; descriptio
   products: { label: "Sản phẩm đang bán", unit: "sản phẩm", description: "Sản phẩm active trong cửa hàng" },
   staff: { label: "Nhân sự hoạt động", unit: "người", description: "Bao gồm chủ store và nhân sự active" },
   storage_mb: { label: "Dung lượng lưu trữ", unit: "MB", description: "Ảnh và file đã upload" },
+  email_sends: { label: "Email cửa hàng", unit: "email/tháng", description: "Email đơn hàng, chương trình và chăm sóc; làm mới đầu tháng (giờ Việt Nam)" },
 };
 function billingLimits(value: any) {
   return typeof value === "string" ? JSON.parse(value) : value || {};
 }
+function billingTime(value: string) {
+  return formatDateTime(value, "utc");
+}
 function billingRemainingLabel(subscription: any) {
-  if (!subscription.expires_at || subscription.days_remaining === null || subscription.days_remaining === undefined)
-    return "Không giới hạn";
-  const days = Number(subscription.days_remaining);
-  return days <= 0 ? "Hết hạn hôm nay" : `Còn ${days} ngày sử dụng`;
+  if (!subscription.expires_at) return subscription.status === "awaiting_payment" ? "Kỳ tháng bắt đầu khi nhận đủ tiền" : "Chưa bắt đầu kỳ sử dụng";
+  const seconds = Number(subscription.seconds_remaining || 0);
+  return seconds <= 0 ? "Đã hết hạn" : seconds < 86400 ? `Còn ${Math.ceil(seconds / 3600)} giờ` : `Còn ${subscription.days_remaining} ngày sử dụng`;
 }
 function BillingCards() {
-  const { data, error, refresh } = useLoad("workspace/billing"),
+  const { data, error, refresh } = useLoad("workspace/billing", true),
     { toast } = useShop();
   const [payment, setPayment] = useState<any>(null);
+  const [preview, setPreview] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const requestPending = useRef(false);
+  const waitingChange = data?.pending_plan?.purpose === "plan_change" && Number(data?.pending_plan?.paid) === 0;
+  useEffect(() => {
+    if (!payment && !waitingChange) return;
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [payment, waitingChange, refresh]);
+  useEffect(() => {
+    if (payment && data?.invoices?.find((i: any) => Number(i.id) === Number(payment.invoiceId))?.status === "paid") {
+      setPayment(null); toast("Đã nhận thanh toán và cập nhật gói dịch vụ.");
+    }
+  }, [data, payment, toast]);
   if (!data) return <Loading error={error} />;
   const currentLimits = billingLimits(data.subscription.limits);
   const usage = data.usage || {};
@@ -1875,153 +1823,111 @@ function BillingCards() {
     const used = Number(usage[key] || 0);
     return { key, limit, used, percent: limit ? Math.min(100, Math.round((used / limit) * 100)) : 0 };
   });
-  async function start(planId: number, trial: boolean) {
+  async function start(planId: number, trial: boolean, invoiceId?: number, quote?: any) {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    setBusy(true);
     try {
-      const result = await api("workspace/billing/start", "POST", { plan_id: planId, trial });
-      if (result.payment) setPayment(result.payment);
-      toast(trial ? "Đã kích hoạt thời gian dùng thử." : "Đã tạo mã QR thanh toán.");
+      const result = await api("workspace/billing/start", "POST", { plan_id: planId, trial, invoice_id: invoiceId, quote_token: quote?.token, quote_expires_at: quote?.expires_at });
+      setPreview(null);
+      if (result.payment) setPayment({ ...result.payment, invoiceId: result.invoiceId });
+      toast(result.trial ? "Đã đăng ký dùng thử theo lịch hiển thị." : result.payment ? "Đã tạo mã QR. Gói được xác nhận khi nhận đủ tiền." : "Đã xác nhận gói theo lịch áp dụng.");
       await refresh();
-    } catch (e) { toast((e as Error).message); }
+    } catch (e) { setPreview(null); toast((e as Error).message); await refresh(); }
+    finally { requestPending.current = false; setBusy(false); }
+  }
+  async function selectPlan(planId: number, trial = false) {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    setBusy(true);
+    try { setPreview(await api("workspace/billing/preview", "POST", { plan_id: planId, trial })); }
+    catch (e) { toast((e as Error).message); }
+    finally { requestPending.current = false; setBusy(false); }
   }
   return <div className="billing-page">
+    {data.store?.status === "suspended" && <section className="panel" role="alert"><h3>Cửa hàng đang tạm đóng băng</h3><p>{data.store.suspension_reason}</p><p className="small">{data.store.billing_suspended ? "Thanh toán đủ công nợ để hệ thống tự khôi phục cửa hàng." : "Cửa hàng bị đóng băng bởi admin platform. Vui lòng liên hệ để được mở lại."}</p></section>}
     <section className="billing-current panel">
-      <div className="billing-current-heading"><div><span className="eyebrow">GÓI ĐANG SỬ DỤNG</span><h2>{data.subscription.name}</h2><p>{money(Number(data.subscription.monthly_price))} / tháng · {displayLabel("subscription", data.subscription.status)}</p></div><span className="tag">{data.subscription.cancel_at_period_end ? "Sắp dừng gia hạn" : "Đang hoạt động"}</span></div>
-      <p className="small billing-period">{data.subscription.expires_at ? <>Kết thúc kỳ: {data.subscription.expires_at} · <strong>{billingRemainingLabel(data.subscription)}</strong></> : billingRemainingLabel(data.subscription)}</p>
+      <div className="billing-current-heading"><div><span className="eyebrow">GÓI ĐANG SỬ DỤNG</span><h2>{data.subscription.name}</h2><p>{money(Number(data.subscription.monthly_price))} / tháng · {displayLabel("subscription", data.subscription.status)}</p></div><span className="tag">{data.store?.status === "suspended" ? "Đóng băng" : data.subscription.cancel_at_period_end ? "Sắp dừng gia hạn" : displayLabel("subscription", data.subscription.status)}</span></div>
+      <p className="small billing-period">{data.subscription.expires_at ? <>{data.subscription.trial_ends_at ? "Hết dùng thử" : "Kết thúc kỳ"}: {billingTime(data.subscription.expires_at)} · <strong>{billingRemainingLabel(data.subscription)}</strong></> : billingRemainingLabel(data.subscription)}</p>
+      {data.subscription.status === "trialing" && <p className="small">Đã cấp {data.subscription.trial_days_granted} ngày dùng thử. Giá tháng đầu sau thử: {money(Number(data.subscription.monthly_price))}. Thanh toán sớm giữ nguyên ngày thử còn lại.</p>}
+      {(data.reservations || []).map((i: any) => <p className="notice" key={i.id}>{Number(i.amount) === 0 ? "Đã chọn kỳ miễn phí" : "Đã thanh toán kỳ tiếp theo"} · {i.plan_name} · {billingTime(i.effective_start_at)} → {billingTime(i.effective_end_at)}</p>)}
+      {data.pending_plan && <div className="notice">Chờ thanh toán · {data.pending_plan.plan_name} · Dự kiến từ {billingTime(data.pending_plan.starts_at || data.pending_plan.period_start)}. Gói hiện tại được giữ đến hết kỳ đã cấp.{waitingChange && <><p><BillingDeadline until={data.pending_plan.payment_deadline_at} serverNow={data.server_now} onExpired={refresh} /></p><p className="small">Chưa nhận tiền sau 10 phút: tự hủy yêu cầu đổi gói, giữ lựa chọn trước đó. Mở lại QR không kéo dài thời hạn.</p></>}{Number(data.pending_plan.paid) > 0 && <p className="small">Đã nhận {money(data.pending_plan.paid)}. Hóa đơn được giữ để thanh toán phần còn lại, không tự hủy.</p>}</div>}
       <div className="billing-usage-grid">{usageRows.map((row) => { const meta = billingLimitMeta[row.key]; return <div className="billing-usage-card" key={row.key}><div className="flex-between"><strong>{meta.label}</strong><span>{row.used.toLocaleString("vi-VN")} / {row.limit.toLocaleString("vi-VN")} {meta.unit}</span></div><div className="usage-track"><span style={{ width: row.percent + "%" }} /></div><small>{meta.description} · đã dùng {row.percent}%</small></div>; })}</div>
       <div className="button-row"><button className="button secondary" onClick={async () => { try { await api("workspace/billing/cancel", "POST", { cancel: !data.subscription.cancel_at_period_end }); await refresh(); } catch (e) { toast((e as Error).message); } }}>{data.subscription.cancel_at_period_end ? "Tiếp tục gia hạn" : "Ngừng gia hạn cuối kỳ"}</button></div>
     </section>
-    <section className="billing-plans-section"><div className="section-heading"><div><span className="eyebrow">LỰA CHỌN CỦA BẠN</span><h2>Các gói dịch vụ</h2><p className="small">So sánh giá và hạn mức trước khi nâng cấp hoặc trải nghiệm.</p></div></div><div className="billing-plan-grid">{data.plans.map((plan: any) => { const limits = billingLimits(plan.limits); const isCurrent = Number(plan.id) === Number(data.subscription.plan_id); return <article className={"billing-plan-card" + (isCurrent ? " is-current" : "")} key={plan.id}><div className="billing-plan-header"><div><span className="eyebrow">GÓI {plan.id}</span><h3>{plan.name}</h3></div>{isCurrent && <span className="tag">Đang dùng</span>}</div><div className="billing-plan-price">{money(Number(plan.monthly_price))}<small>/ tháng</small></div><p className="small">Dùng thử {plan.trial_days ?? 14} ngày</p><div className="billing-plan-limits">{Object.keys(billingLimitMeta).map((key) => { const meta = billingLimitMeta[key]; return <div key={key}><span>{meta.label}</span><strong>{Number(limits[key] || 0).toLocaleString("vi-VN")} {meta.unit}</strong></div>; })}</div><div className="button-row">{!isCurrent && <><button className="button secondary" onClick={() => void start(Number(plan.id), true)}>Dùng thử</button><button className="button" onClick={() => void start(Number(plan.id), false)}>Thanh toán</button></>}{isCurrent && <span className="small">Gói hiện tại</span>}</div></article>; })}</div></section>
-    {payment && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={() => setPayment(null)} aria-label="Đóng">×</button><h2>Thanh toán gói dịch vụ</h2><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></div></div>}
-    <section className="panel table-scroll"><h3>Hóa đơn dịch vụ</h3><table><thead><tr><th>Kỳ</th><th>Gói</th><th>Tổng</th><th>Đã thu</th><th>Hạn</th><th>Trạng thái</th></tr></thead><tbody>{data.invoices.map((invoice: any) => <tr key={invoice.id}><td>{invoice.period_key}</td><td>{invoice.plan_name}</td><td>{money(invoice.amount)}</td><td>{money(invoice.paid)}</td><td>{invoice.due_date}</td><td>{displayLabel("invoice", invoice.status)}</td></tr>)}</tbody></table></section>
+    <section className="billing-plans-section"><div className="section-heading"><div><span className="eyebrow">LỰA CHỌN CỦA BẠN</span><h2>Các gói dịch vụ</h2><p className="small">Gói Khởi đầu tự động dùng thử theo số ngày admin platform cấu hình khi bạn mở cửa hàng đầu tiên. Bạn còn 1 lượt trải nghiệm dùng chung cho một gói khác trên mọi cửa hàng; lượt này không được cấp lại khi đổi gói.</p></div></div><div className="billing-plan-grid">{data.plans.map((plan: any) => { const limits = billingLimits(plan.limits); const isStarter = Number(plan.id) === 1; const isCurrent = Number(plan.id) === Number(data.subscription.plan_id); const reserved = (data.reservations || []).find((i: any) => Number(i.plan_id) === Number(plan.id)); const pending = Number(data.pending_plan?.plan_id) === Number(plan.id); const trialClaim = !isStarter && data.account_trials?.claims.find((t: any) => t.bucket === "discovery"); const canTrial = !isStarter && !trialClaim && Number(plan.trial_days) > 0 && !(data.store.status === "suspended" && !data.store.billing_suspended); return <article className={"billing-plan-card" + (isCurrent ? " is-current" : "")} key={plan.id}><div className="billing-plan-header"><div><span className="eyebrow">GÓI {plan.id}</span><h3>{plan.name}</h3></div>{isCurrent && <span className="tag">Đang dùng</span>}</div><div className="billing-plan-price">{money(Number(plan.monthly_price))}<small>/ tháng</small></div><p className="small">{isStarter ? `Tự động dùng thử ${plan.trial_days} ngày cho cửa hàng đầu tiên` : canTrial ? `Còn 1 lượt dùng thử ${plan.trial_days} ngày dùng chung` : trialClaim ? "Tài khoản đã dùng hoặc đang giữ lượt trải nghiệm gói khác" : "Gói hiện không mở dùng thử"}</p><div className="billing-plan-limits">{Object.keys(billingLimitMeta).map((key) => { const meta = billingLimitMeta[key]; return <div key={key}><span>{meta.label}</span><strong>{Number(limits[key] || 0).toLocaleString("vi-VN")} {meta.unit}</strong></div>; })}</div>{reserved && <p className="small">{Number(reserved.amount) === 0 ? "Đã chọn miễn phí" : "Đã thanh toán"} · Từ {billingTime(reserved.effective_start_at)}</p>}{pending && <p className="small">Đã chọn · Chờ thanh toán</p>}<div className="button-row">{canTrial && <button className="button secondary" disabled={busy} onClick={() => void selectPlan(Number(plan.id), true)}>Dùng thử {plan.trial_days} ngày</button>}<button className="button" disabled={busy} onClick={() => void selectPlan(Number(plan.id))}>{reserved ? "Xem lịch áp dụng" : pending ? "Tiếp tục thanh toán" : isCurrent ? "Gia hạn / Thanh toán" : "Đổi sang gói này"}</button></div></article>; })}</div></section>
+    {preview && <BillingChangeDialog quote={preview} busy={busy} close={() => setPreview(null)} confirm={() => void start(preview.plan_id, Boolean(preview.trial), undefined, preview)} />}
+    {payment && <SubscriptionPaymentDialog payment={payment} invoice={data.invoices.find((i: any) => Number(i.id) === Number(payment.invoiceId))} serverNow={data.server_now} refresh={refresh} close={() => setPayment(null)} renew={() => void start(Number(data.subscription.plan_id), false, Number(payment.invoiceId))} busy={busy} />}
+    <section className="panel table-scroll"><h3>Hóa đơn dịch vụ</h3><table><thead><tr><th>Mã / Kỳ sử dụng</th><th>Gói</th><th>Tổng</th><th>Đã thu</th><th>Hạn</th><th>Trạng thái</th><th className="table-actions-heading" scope="col">Thao tác</th></tr></thead><tbody>{data.invoices.map((invoice: any) => <tr key={invoice.id}><td><strong>INV-{invoice.id}</strong><small>{invoice.effective_start_at ? `${billingTime(invoice.effective_start_at)} → ${billingTime(invoice.effective_end_at)}` : invoice.starts_at ? `Dự kiến: ${billingTime(invoice.starts_at)} → ${billingTime(invoice.ends_at)}` : invoice.period_key}</small></td><td>{invoice.plan_name}</td><td>{money(invoice.amount)}</td><td>{money(invoice.paid)}</td><td>{invoice.purpose === "plan_change" && invoice.status === "open" && Number(invoice.paid) === 0 ? <>Chờ đổi gói đến {billingTime(invoice.payment_deadline_at)}</> : invoice.due_at ? billingTime(invoice.due_at) : formatDate(invoice.due_date)}</td><td>{displayLabel("invoice", invoice.void_reason === "payment_timeout" ? "payment_timeout" : invoice.status)}</td><td><TableActions>{invoice.status === "open" && <TableAction icon={QrCode} disabled={busy} onClick={() => void start(Number(data.subscription.plan_id), false, Number(invoice.id))}>Thanh toán</TableAction>}</TableActions></td></tr>)}</tbody></table></section>
   </div>;
 }
+function useBillingDeadline(until: string, serverNow?: string, onExpired?: () => unknown) {
+  const deadline = parseDateTime(until, "utc").getTime();
+  const [now, setNow] = useState(Date.now());
+  const offset = useRef(0), expired = useRef("");
+  const callback = useRef(onExpired); callback.current = onExpired;
+  useEffect(() => { offset.current = serverNow ? Date.parse(serverNow) - Date.now() : 0; setNow(Date.now()); }, [serverNow]);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  const seconds = Math.max(0, Math.ceil((deadline - now - offset.current) / 1000));
+  useEffect(() => { if (seconds === 0 && expired.current !== until) { expired.current = until; void callback.current?.(); } }, [seconds, until]);
+  return seconds;
+}
+function BillingDeadline({ until, serverNow, onExpired }: { until: string; serverNow?: string; onExpired: () => unknown }) {
+  const seconds = useBillingDeadline(until,serverNow,onExpired);
+  return <strong className="billing-countdown" role="timer">{seconds > 0 ? `Còn ${Math.floor(seconds / 60).toString().padStart(2,"0")}:${(seconds % 60).toString().padStart(2,"0")} để thanh toán` : "Đã hết thời gian chờ thanh toán"}</strong>;
+}
+function SubscriptionPaymentDialog({ payment, invoice, serverNow, refresh, close, renew, busy }: { payment: any; invoice: any; serverNow?: string; refresh: () => unknown; close: () => void; renew: () => void; busy: boolean }) {
+  const seconds = useBillingDeadline(payment.expiresAt,serverNow,refresh);
+  const closed = invoice?.status === "void";
+  const expired = closed || seconds === 0;
+  const request = invoice?.purpose === "plan_change" && Number(invoice.paid) === 0;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="subscription-payment-title"><div className="modal-card billing-change-dialog"><button className="modal-close" onClick={close} aria-label="Đóng thanh toán">×</button><h2 id="subscription-payment-title">Thanh toán gói dịch vụ</h2>
+    <p>INV-{payment.invoiceId} · {money(payment.amount)}</p>
+    {!expired ? <><strong className="billing-countdown" role="timer">{Math.floor(seconds / 60).toString().padStart(2,"0")}:{(seconds % 60).toString().padStart(2,"0")}</strong><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></> : <div className="notice" role="status"><strong>{closed ? "Yêu cầu thanh toán đã đóng" : "QR của phiên này đã hết hạn"}</strong><p>{request || closed ? "Yêu cầu đổi gói chưa thu tiền tự hủy sau 10 phút. Quyền sử dụng đã cấp được giữ nguyên. Nếu đã chuyển tiền nhưng chưa được ghi nhận, vui lòng liên hệ platform để đối soát." : "Hóa đơn và số tiền đã nhận vẫn được giữ. Bạn có thể tạo QR mới để tiếp tục thanh toán."}</p></div>}
+    {!expired && <p className="small">{request ? "Yêu cầu đổi gói tự hủy sau 10 phút nếu chưa nhận tiền. Đóng hoặc mở lại QR không kéo dài thời hạn." : Number(invoice?.paid) > 0 ? "Hóa đơn đã nhận một phần tiền, không tự hủy khi QR hết hạn." : "Hóa đơn gia hạn được giữ khi QR hết hạn. Chọn tạo QR mới để tiếp tục thanh toán."}</p>}
+    <div className="button-row"><button className="button secondary" onClick={close}>Đóng</button>{expired && !closed && !request && <button className="button" disabled={busy} onClick={renew}>{busy ? "Đang tạo…" : "Tạo QR mới"}</button>}</div>
+  </div></div>;
+}
+function BillingChangeDialog({ quote, busy, close, confirm }: { quote: any; busy: boolean; close: () => void; confirm: () => void }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busyRef.current) closeRef.current();
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || []);
+      const first = buttons[0], last = buttons.at(-1);
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.removeEventListener("keydown", keydown); previous?.focus(); };
+  }, []);
+  const exceeded = Object.keys(billingLimitMeta).filter(key => Number(quote.usage[key] || 0) > Number(quote.limits[key] || 0));
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="billing-change-title"><div ref={dialog} className="modal-card billing-change-dialog" aria-busy={busy}>
+    <button className="modal-close" disabled={busy} onClick={close} aria-label="Đóng xem trước">×</button>
+    <span className="eyebrow">XEM TRƯỚC GÓI DỊCH VỤ</span><h2 id="billing-change-title">{quote.plan_name}</h2>
+    <dl className="billing-change-summary"><div><dt>Gói đang dùng</dt><dd>{quote.current_plan}</dd></div><div><dt>Gói đã chọn</dt><dd>{quote.plan_name}</dd></div><div><dt>Bắt đầu áp dụng</dt><dd>{billingTime(quote.starts_at)}</dd></div><div><dt>Kết thúc kỳ mới</dt><dd>{billingTime(quote.ends_at)}</dd></div><div><dt>Giá kỳ mới</dt><dd>{money(quote.amount)}</dd></div>{quote.paid > 0 && <div><dt>Đã thanh toán</dt><dd>{money(quote.paid)}</dd></div>}<div><dt>Cần thanh toán</dt><dd>{money(quote.amount_due)}</dd></div></dl>
+    {quote.retained.length > 0 && <p className="notice">Giữ nguyên các kỳ đã trả tiền{quote.retained.map((i: any) => ` · ${i.plan_name} (INV-${i.id})`)}. Gói khác sẽ bắt đầu sau các kỳ này.</p>}
+    {quote.trial && <p className="notice">Dùng thử {quote.trial_days} ngày, miễn phí. Giá tháng sau thử: {money(quote.monthly_price)}. Lượt thử dùng chung trên mọi cửa hàng của tài khoản và không được cấp lại khi đổi gói. Không tự trích tiền; thanh toán đủ mới cấp kỳ trả phí.</p>}
+    {quote.trial_ends_at && <p className="small">Giữ nguyên ngày dùng thử đến {billingTime(quote.trial_ends_at)}. Đổi gói không cấp thêm ngày thử.</p>}
+    {quote.purpose === "plan_change" && quote.paid === 0 && quote.amount_due > 0 && <p className="notice">Bạn có 10 phút thanh toán từ khi xác nhận. Nếu chưa nhận tiền, yêu cầu đổi gói tự hủy và lựa chọn trước đó được giữ lại.</p>}
+    <div className="billing-plan-limits">{Object.keys(billingLimitMeta).map(key => <div key={key}><span>{billingLimitMeta[key].label}</span><strong>{Number(quote.limits[key] || 0).toLocaleString("vi-VN")} {billingLimitMeta[key].unit}</strong></div>)}</div>
+    {exceeded.length > 0 && <div className="notice" role="alert"><strong>Đang vượt hạn mức gói đã chọn</strong>{exceeded.map(key => <p key={key}>{billingLimitMeta[key].label}: {Number(quote.usage[key]).toLocaleString("vi-VN")} / {Number(quote.limits[key]).toLocaleString("vi-VN")} {billingLimitMeta[key].unit}.</p>)}<p>Dữ liệu hiện có được giữ lại. Khi gói có hiệu lực, bạn cần giảm mức sử dụng hoặc nâng gói để thêm dữ liệu vượt hạn mức.</p></div>}
+    <p className="small">{quote.trial ? "Lượt thử được giữ ngay khi xác nhận; chỉ bắt đầu theo lịch trên. Cấu hình ngày thử thay đổi sau đó không sửa quyền lợi đã giữ. Hóa đơn chưa thu và lựa chọn miễn phí chưa bắt đầu được thay bằng lượt thử này." : quote.already_reserved ? "Kỳ này đã thanh toán. Bạn có thể xem lịch áp dụng hoặc chọn gói khác cho kỳ chưa thanh toán tiếp theo." : quote.amount_due > 0 ? "Xác nhận để tạo mã QR. Gói mới chỉ được cấp khi nhận đủ tiền; chưa thanh toán không làm mất quyền sử dụng hiện tại. Nếu trả sau ngày dự kiến, kỳ mới bắt đầu khi nhận đủ tiền." : "Kỳ miễn phí được xác nhận theo lịch trên. Bạn vẫn có thể thay đổi trước ngày bắt đầu."}</p>
+    <div className="button-row"><button className="button secondary" disabled={busy} onClick={close}>Quay lại</button><button className="button" disabled={busy} onClick={confirm}>{busy ? "Đang xử lý…" : quote.trial ? "Xác nhận dùng thử" : quote.already_reserved ? "Xác nhận giữ gói" : quote.amount_due > 0 ? "Xác nhận & thanh toán" : "Xác nhận chọn gói"}</button></div>
+  </div></div>;
+}
 function Team() {
-  const { data, error, refresh } = useLoad("workspace/team"),
-    { user, toast } = useShop(),
-    [invite, setInvite] = useState("");
+  const { data, error, refresh } = useLoad("workspace/team");
   if (!data) return <Loading error={error} />;
-  return (
-    <div>
-      <div className="panel">
-        <h3>Nhân sự cửa hàng</h3>
-        <p className="small">
-          Vai trò chỉ áp dụng tại cửa hàng này. Hồ sơ đăng nhập thuộc tài khoản
-          cá nhân.
-        </p>
-        {data.members.map((m: any) => (
-          <div className="team-row" key={m.id}>
-            <div>
-              <strong>{m.name}</strong>
-              <small>
-                {m.email} · ID {m.id}
-              </small>
-            </div>
-            <span>{displayLabel("member", m.status)}</span>
-            {m.role === "owner" || user?.role !== "owner" ? (
-              <span>{displayLabel("role", m.role)}</span>
-            ) : (
-              <>
-                <select
-                  aria-label={"Vai trò của " + m.name}
-                  value={m.role}
-                  onChange={async (e) => {
-                    try {
-                      await api("workspace/team/" + m.id, "PATCH", {
-                        role: e.target.value,
-                        status: m.status,
-                      });
-                      await refresh();
-                    } catch (e) {
-                      toast((e as Error).message);
-                    }
-                  }}
-                >
-                  {["admin", "manager", "editor", "support"].map((r) => (
-                    <option key={r} value={r}>
-                      {displayLabel("role", r)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="text-button"
-                  onClick={async () => {
-                    try {
-                      await api("workspace/team/" + m.id, "PATCH", {
-                        role: m.role,
-                        status: m.status === "active" ? "revoked" : "active",
-                      });
-                      await refresh();
-                    } catch (e) {
-                      toast((e as Error).message);
-                    }
-                  }}
-                >
-                  {m.status === "active" ? "Thu hồi" : "Kích hoạt"}
-                </button>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-      {user?.role === "owner" && (
-        <form
-          className="panel"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const r = await api(
-                "workspace/team/invite",
-                "POST",
-                Object.fromEntries(new FormData(e.currentTarget)),
-              );
-              setInvite(window.location.origin + r.url);
-              await refresh();
-            } catch (e) {
-              toast((e as Error).message);
-            }
-          }}
-        >
-          <h3>Mời nhân sự</h3>
-          <label className="field">
-            Email
-            <input type="email" name="email" required />
-          </label>
-          <label className="field">
-            Vai trò
-            <select name="role">
-              {["admin", "manager", "editor", "support"].map((r) => (
-                <option key={r} value={r}>
-                  {displayLabel("role", r)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="button">Tạo lời mời</button>
-          {invite && (
-            <p className="notice">
-              Gửi liên kết này đến đúng người được mời:{" "}
-              <a href={invite}>{invite}</a>
-            </p>
-          )}
-        </form>
-      )}
-      <div className="panel">
-        <h3>Lời mời</h3>
-        {data.invitations.map((i: any) => (
-          <p key={i.id}>
-            {i.email} · {displayLabel("role", i.role)} ·{" "}
-            {displayLabel(
-              "invitation",
-              i.status === "pending" && Date.parse(i.expires_at) < Date.now()
-                ? "expired"
-                : i.status,
-            )}{" "}
-            · hết hạn {i.expires_at}
-          </p>
-        ))}
-      </div>
-    </div>
-  );
+  return <StoreTeam data={data} error={error} refresh={refresh} />;
 }
 
 function Automations() {
@@ -2089,8 +1995,7 @@ function Automations() {
                 ngày · {r.active ? "Đang bật" : "Tạm dừng"}
               </small>
             </div>
-            <button
-              className="text-button"
+            <TableActions><TableAction icon={r.active ? Pause : Play}
               onClick={async () => {
                 try {
                   await api("workspace/automations", "PATCH", {
@@ -2104,7 +2009,7 @@ function Automations() {
               }}
             >
               {r.active ? "Tạm dừng" : "Bật quy tắc"}
-            </button>
+            </TableAction></TableActions>
           </div>
         ))}
       </div>
@@ -2136,11 +2041,11 @@ function Automations() {
         </label>
         <label className="field">
           Khi nào
-          <select name="trigger_name">
+          <Select name="trigger_name">
             <option value="aftercare">Sau khi giao hoa</option>
             <option value="birthday">Đúng ngày sinh nhật</option>
             <option value="winback">Lâu chưa quay lại</option>
-          </select>
+          </Select>
         </label>
         <label className="field">
           Sau / cách lần mua cuối (ngày)
@@ -2155,13 +2060,13 @@ function Automations() {
         </label>
         <label className="field">
           Template
-          <select name="template_id">
+          <Select name="template_id">
             {data.templates.map((t: any) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="field">
           Nội dung chương trình

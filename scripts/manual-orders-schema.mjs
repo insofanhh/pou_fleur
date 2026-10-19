@@ -42,6 +42,7 @@ export async function migrateManualOrders(c) {
   for (const [table, name, columns] of [
     ["orders", "customer_orders", "store_id,customer_id"],
     ["customers", "customer_phone", "store_id,phone_normalized"],
+    ["order_payments", "payment_order_ledger", "store_id,order_id,id"],
   ]) {
     const [rows] = await c.query(
       `SHOW INDEX FROM ${table} WHERE Key_name='${name}'`,

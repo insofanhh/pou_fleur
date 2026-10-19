@@ -114,15 +114,17 @@ async function main() {
       "SELECT * FROM subscriptions WHERE store_id=?",
       [o.store_id],
     );
+    const [storeBeforeBilling] = await query<any[]>("SELECT status,billing_suspended,suspension_reason FROM stores WHERE id=?", [o.store_id]);
+    try {
     await mutate(
-      "UPDATE subscriptions SET status='active',cancel_at_period_end=0 WHERE store_id=?",
+      "UPDATE subscriptions SET status='active',cancel_at_period_end=0,access_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND) WHERE store_id=?",
       [o.store_id],
     );
     await mutate(
       "INSERT INTO invoices(store_id,period_key,plan_name,amount,due_date) VALUES(?,'qa-overdue','Fixture',1000,DATE_SUB(CURDATE(),INTERVAL 10 DAY)) ON DUPLICATE KEY UPDATE status='open',paid=0",
       [o.store_id],
     );
-    await advanceBilling();
+    await advanceBilling(o.store_id);
     assert(
       (
         await query<any[]>(
@@ -131,15 +133,18 @@ async function main() {
         )
       )[0].status === "restricted",
     );
-    console.log("PASS overdue billing restricts new orders after grace period");
+    console.log("PASS overdue billing freezes unpaid store without grace period");
+    } finally {
     await mutate("DELETE FROM invoices WHERE store_id=? AND period_key=?", [
       o.store_id,
       "qa-overdue",
     ]);
     await mutate(
-      "UPDATE subscriptions SET status=?,cancel_at_period_end=? WHERE store_id=?",
-      [sub.status, sub.cancel_at_period_end, o.store_id],
+      "UPDATE subscriptions SET status=?,cancel_at_period_end=?,access_ends_at=? WHERE store_id=?",
+      [sub.status, sub.cancel_at_period_end, sub.access_ends_at, o.store_id],
     );
+    await mutate("UPDATE stores SET status=?,billing_suspended=?,suspension_reason=? WHERE id=?", [storeBeforeBilling.status, storeBeforeBilling.billing_suspended, storeBeforeBilling.suspension_reason, o.store_id]);
+    }
   } finally {
     await pool.end();
   }

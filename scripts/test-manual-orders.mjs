@@ -256,11 +256,8 @@ try {
     mails.n === 0 && details.email_skip_reason,
     "Missing email is skipped with visible reason",
   );
-  const crm = await owner("admin/crm", "GET", undefined, sid);
-  check(
-    crm.customers.find((c) => c.id === details.customer_id)?.order_count === 1,
-    "CRM order counts use customer ID",
-  );
+  const crm=await owner("admin/crm", "GET", undefined, sid);
+  check(crm.customers.some(c=>c.id===details.customer_id && c.order_count===1), "Manual order links customer in store CRM");
   const board = await owner(
     "workspace/order-list?source=manual",
     "GET",

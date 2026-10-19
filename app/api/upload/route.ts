@@ -115,6 +115,9 @@ async function upload(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const s = await requestStore(req);
+    const { refreshBillingAccess } = await import("@/lib/billing");
+    const access = await refreshBillingAccess(s.id);
+    if (access.status !== "approved") return NextResponse.json({ error: "Cửa hàng chưa thể vận hành, không thể tải thêm ảnh." }, { status: 403 });
     return await withStore(s.id, () => upload(req));
   } catch {
     return NextResponse.json(

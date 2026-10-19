@@ -1,3 +1,4 @@
+import { chooseSelect } from "./ui-controls.mjs";
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
@@ -97,9 +98,10 @@ try {
   await dialog.getByRole("button", { name: "Xác nhận xóa" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row).toHaveCount(0);
-  await page
-    .getByRole("combobox", { name: "Trạng thái tài khoản" })
-    .selectOption("deleted");
+  await chooseSelect(
+    page.getByRole("combobox", { name: "Trạng thái tài khoản" }),
+    "deleted",
+  );
   await expect(row.locator(".tag")).toHaveText("Đã xóa");
   await row.getByRole("button", { name: "Khôi phục", exact: true }).click();
   await dialog
@@ -109,9 +111,10 @@ try {
     .getByRole("button", { name: "Khôi phục tài khoản", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
-  await page
-    .getByRole("combobox", { name: "Trạng thái tài khoản" })
-    .selectOption("current");
+  await chooseSelect(
+    page.getByRole("combobox", { name: "Trạng thái tài khoản" }),
+    "current",
+  );
   await expect(row.locator(".tag")).toHaveText("Đã khóa");
   await row.getByRole("button", { name: name + " mới", exact: true }).click();
   await expect(

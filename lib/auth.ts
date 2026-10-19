@@ -143,9 +143,9 @@ export const permissions: Record<string, string[]> = {
     "events",
     "posts",
     "users",
-    "crm",
     "inquiries",
     "audit",
+    "crm",
     "emails",
     "email_templates",
   ],
@@ -156,13 +156,13 @@ export const permissions: Record<string, string[]> = {
     "orders",
     "promotions",
     "events",
-    "crm",
     "inquiries",
+    "crm",
     "emails",
     "email_templates",
   ],
   editor: ["posts", "events"],
-  support: ["orders", "crm", "inquiries", "emails"],
+  support: ["orders", "inquiries", "crm", "emails"],
 };
 permissions.owner = permissions.admin;
 export async function requirePermission(area: string) {

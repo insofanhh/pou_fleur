@@ -1,4 +1,6 @@
 "use client";
+import { hanoiDateKey } from "@/lib/date-time";
+import Select from "./ui-select";
 import Link, { useScopedRouter, storeRef } from "./routing";
 import FlowerImage from "./flower-image";
 import ProductGallery from "./product-gallery";
@@ -112,7 +114,7 @@ export function Shop({ data }: { data: Catalog }) {
           />
         </label>
         <div className="filters">
-          <select
+          <Select
             aria-label="Dịp tặng hoa"
             value={occasion}
             onChange={(e) => setOccasion(e.target.value)}
@@ -121,18 +123,18 @@ export function Shop({ data }: { data: Catalog }) {
             <option value="sinh-nhat">Sinh nhật</option>
             <option value="ky-niem">Kỷ niệm</option>
             <option value="su-kien">Sự kiện</option>
-          </select>
-          <select
+          </Select>
+          <Select
             aria-label="Khoảng giá"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
           >
             <option value="">Mọi mức giá</option>
-            <option value="low">Dưới 600.000 ₫</option>
-            <option value="mid">600.000–1.000.000 ₫</option>
-            <option value="high">Trên 1.000.000 ₫</option>
-          </select>
-          <select
+            <option value="low">Dưới 600.000 VNĐ</option>
+            <option value="mid">600.000–1.000.000 VNĐ</option>
+            <option value="high">Trên 1.000.000 VNĐ</option>
+          </Select>
+          <Select
             aria-label="Sắp xếp"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
@@ -141,7 +143,7 @@ export function Shop({ data }: { data: Catalog }) {
             <option value="new">Mới nhất</option>
             <option value="price-up">Giá tăng dần</option>
             <option value="price-down">Giá giảm dần</option>
-          </select>
+          </Select>
         </div>
       </div>
       <div className="category-pills">
@@ -311,8 +313,8 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
           <details>
             <summary>Giao hàng & cam kết</summary>
             <p>
-              Giao hàng trong khu vực TP. Hà Nội, phí 35.000 ₫; miễn phí từ
-              1.000.000 ₫. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
+              Giao hàng trong khu vực TP. Hà Nội, phí 35.000 VNĐ; miễn phí từ
+              1.000.000 VNĐ. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
               hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleurious hỗ trợ.
             </p>
           </details>
@@ -537,7 +539,7 @@ export function Cart({ data }: { data: Catalog }) {
           <aside className="order-summary">
             <h3>Tóm tắt đơn hàng</h3>
             <p className="small">
-              Ưu đãi chào bạn mới: HELLOFLEUR giảm 10% cho đơn từ 400.000 ₫.
+              Ưu đãi chào bạn mới: HELLOFLEUR giảm 10% cho đơn từ 400.000 VNĐ.
             </p>
             <form
               className="coupon"
@@ -568,7 +570,7 @@ export function Cart({ data }: { data: Catalog }) {
               Tiến hành đặt hoa <ArrowRight size={18} />
             </Link>
             <div className="secure-note">
-              <Truck size={16} /> Giao miễn phí từ 1.000.000 ₫
+              <Truck size={16} /> Giao miễn phí từ 1.000.000 VNĐ
             </div>
           </aside>
         </div>
@@ -605,12 +607,7 @@ export function Checkout({ data }: { data: Catalog }) {
   const customerPhone = buyerPhone ?? user?.phone ?? "";
   const receivingSelf = deliveryMode === "self";
   const key = useRef("");
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = hanoiDateKey();
   useEffect(() => {
     if (!key.current) key.current = crypto.randomUUID();
     if (cart.length)
@@ -834,15 +831,13 @@ export function Checkout({ data }: { data: Catalog }) {
                   name="deliveryDate"
                   type="date"
                   min={today}
-                  max={new Date(Date.now() + 89 * 86400000)
-                    .toISOString()
-                    .slice(0, 10)}
+                  max={hanoiDateKey(Date.now() + 89 * 86400000)}
                   defaultValue={today}
                   required
                 />
                 <label className="field">
                   Khung giờ
-                  <select name="deliverySlot">
+                  <Select name="deliverySlot">
                     {(
                       data.store?.settings?.slots || [
                         "09:00–12:00",
@@ -853,7 +848,7 @@ export function Checkout({ data }: { data: Catalog }) {
                     ).map((slot: string) => (
                       <option key={slot}>{slot}</option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
             </div>
