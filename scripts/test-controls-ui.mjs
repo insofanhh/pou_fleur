@@ -169,7 +169,7 @@ for (const browserType of process.argv.includes("--webkit")
                 const r = el.getBoundingClientRect(),
                   s = getComputedStyle(el),
                   height = width <= 700 ? 44 : 40;
-                const expected = el.closest(".search-field,.location-search")
+                const expected = el.closest(".search-field,.location-search,.date-control")
                   ? height - 2
                   : height;
                 return Math.abs(r.height - expected) > 1 ||

@@ -1,4 +1,5 @@
 "use client";
+import DateInput from "./date-input";
 import { FileText, RotateCw, Search } from "lucide-react";
 import Link from "./routing";
 import { statusNames } from "./pages";
@@ -90,7 +91,7 @@ export default function BoardToolbar({
       </label>
       <label className="board-filter-date">
         <span className="board-filter-label">Ngày giao</span>
-        <input
+        <DateInput
           type="date"
           value={date}
           onChange={(event) => onDate(event.target.value)}

@@ -1,8 +1,10 @@
 "use client";
+import DateInput from "./date-input";
 import { hanoiDateKey, formatDateTime, formatDate, parseDateTime } from "@/lib/date-time";
 import { APP_TIME_ZONE_LABEL } from "@/lib/regional";
 import Select from "./ui-select";
 import StoreTeam from "./store-team";
+import StoreAnalyticsReport from "./store-analytics";
 import { Eye, Trash2, Pause, Play, QrCode } from "lucide-react";
 import { TableAction, TableActions } from "./table-actions";
 import { Fragment, useEffect, useState, useRef, useCallback } from "react";
@@ -46,7 +48,7 @@ export default function WorkspaceView({ area }: { area: string }) {
   if (area === "orders") return <OrderBoard table />;
   if (area === "calendar") return <Calendar />;
   if (area === "automations") return <Automations />;
-  if (area === "analytics") return <Analytics />;
+  if (area === "analytics") return <StoreAnalyticsReport />;
   if (area === "settings") return <StoreSettings />;
   if (area === "theme") return <ThemeEditor />;
   if (area === "billing") return <BillingCards />;
@@ -233,7 +235,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <input
+        <DateInput
           aria-label="Ngày giao"
           type="date"
           value={date}
@@ -952,7 +954,7 @@ function OrderPanel({
             >
               <label className="field">
                 Ngày mới
-                <input type="date" name="date" required />
+                <DateInput type="date" name="date" required />
               </label>
               <label className="field">
                 Khung giờ
@@ -1047,7 +1049,7 @@ function Calendar() {
           Tạo đơn ngày này
         </Link>
         {view === "week" ? (
-          <input
+          <DateInput
             type="date"
             aria-label="Tuần của ngày"
             value={selected}
@@ -1059,7 +1061,7 @@ function Calendar() {
             }}
           />
         ) : (
-          <input
+          <DateInput
             aria-label="Tháng"
             type="month"
             value={month}
@@ -1280,140 +1282,6 @@ function Calendar() {
         />
       )}
       {confirmation}
-    </div>
-  );
-}
-function Analytics() {
-  const [from, setFrom] = useState(
-      hanoiDateKey(Date.now() - 30 * 86400000),
-    ),
-    [to, setTo] = useState(hanoiDateKey());
-  const { data, error } = useLoad(
-    "workspace/analytics?from=" + from + "&to=" + to,
-  );
-  return (
-    <div>
-      <div className="board-toolbar">
-        <label>
-          Từ{" "}
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label>
-          Đến{" "}
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-      </div>
-      {!data ? (
-        <Loading error={error} />
-      ) : (
-        <>
-          <div className="stat-grid">
-            {[
-              [
-                "Doanh thu đơn đã giao",
-                money(
-                  data.daily.reduce(
-                    (n: number, d: any) => n + Number(d.revenue),
-                    0,
-                  ),
-                ),
-              ],
-              [
-                "Tiền đã thu",
-                money(
-                  data.daily.reduce(
-                    (n: number, d: any) => n + Number(d.collected),
-                    0,
-                  ),
-                ),
-              ],
-              [
-                "Đơn tạo trong kỳ",
-                data.daily.reduce(
-                  (n: number, d: any) => n + Number(d.orders_count),
-                  0,
-                ),
-              ],
-              [
-                "Đơn hủy",
-                data.daily.reduce(
-                  (n: number, d: any) => n + Number(d.cancellations),
-                  0,
-                ),
-              ],
-            ].map(([k, v]) => (
-              <div className="stat-card" key={k}>
-                <small>{k}</small>
-                <h2>{v}</h2>
-              </div>
-            ))}
-          </div>
-          <div className="panel">
-            <h3>Nguồn đơn hàng</h3>
-            {data.sources?.map((s: any) => (
-              <p key={s.creation_source + ":" + s.sales_channel}>
-                <OrderChannelTag order={s} />
-                : {s.orders_count} đơn · {money(Number(s.revenue))}
-              </p>
-            ))}
-          </div>
-          <div className="panel">
-            <h3>Doanh thu theo ngày tạo đơn</h3>
-            <div className="analytics-chart">
-              {data.daily.map((d: any) => (
-                <div key={d.day}>
-                  <span>{d.day}</span>
-                  <div
-                    style={{
-                      width:
-                        Math.max(
-                          1,
-                          (100 * d.revenue) /
-                            Math.max(
-                              1,
-                              ...data.daily.map((x: any) => x.revenue),
-                            ),
-                        ) + "%",
-                    }}
-                  />
-                  <strong>{money(d.revenue)}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="dashboard-grid">
-            <div className="panel">
-              <h3>Phân nhóm khách hàng</h3>
-              {data.segments.map((s: any) => (
-                <p key={s.segment}>
-                  {displayLabel("segment", s.segment)}:{" "}
-                  <strong>{s.count}</strong>
-                </p>
-              ))}
-            </div>
-            <div className="panel">
-              <h3>Tương tác cửa hàng</h3>
-              {data.funnel.map((s: any) => (
-                <p key={s.name}>
-                  {displayLabel("interaction", s.name)}:{" "}
-                  <strong>{s.count}</strong>
-                </p>
-              ))}
-              <p className="small">
-                Số sự kiện, không phải số người dùng duy nhất.
-              </p>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

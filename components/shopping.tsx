@@ -1,4 +1,5 @@
 "use client";
+import DateInput from "./date-input";
 import { hanoiDateKey } from "@/lib/date-time";
 import Select from "./ui-select";
 import Link, { useScopedRouter, storeRef } from "./routing";
@@ -956,7 +957,11 @@ export function Field({
   return (
     <label className="field">
       {label}
-      <input {...props} />
+      {["date", "month", "time", "datetime-local"].includes(props.type || "") ? (
+        <DateInput {...props} type={props.type as "date" | "month" | "time" | "datetime-local"} />
+      ) : (
+        <input {...props} />
+      )}
     </label>
   );
 }

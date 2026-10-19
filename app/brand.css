@@ -1,29 +1,15 @@
-/* One mark for storefront, workspace, platform and installed app. */
-.logo .brand-logo,
-.brand-logo {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.24em;
-  margin: 0;
-  vertical-align: middle;
-  font-size: 0.78em;
-  font-weight: 650;
-  line-height: 1;
-  letter-spacing: -0.065em;
-  white-space: nowrap;
-}
-.brand-logo .brand-mark {
-  display: block;
-  width: 1.18em;
-  height: 1.18em;
-  flex-shrink: 0;
-}
-.brand-wordmark {
+/* Website wordmarks retain the original type and registered mark. */
+.dashboard-wordmark {
   font: inherit;
   letter-spacing: inherit;
+  white-space: nowrap;
 }
-.logo:has(.brand-logo) {
-  display: inline-flex;
+.dashboard-brand-mark {
+  display: none;
+  flex-shrink: 0;
+}
+.admin-sidebar > .dashboard-logo {
+  display: flex;
   align-items: center;
-  max-width: 100%;
+  flex-shrink: 0;
 }

@@ -1,5 +1,7 @@
 "use client";
-import Brand from "@/components/brand";
+import DateInput from "./date-input";
+import { DashboardBrand } from "@/components/brand";
+import { useDashboardSidebar, SidebarControls, SidebarMobileClose, SidebarBackdrop } from "./dashboard-sidebar";
 
 import { formatDate, formatDateTime, parseDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
@@ -13,7 +15,6 @@ import PlatformUsers from "./platform-users";
 import EmailWorkspace from "./email-admin";
 import PlatformDialog from "./platform-dialog";
 import {
-  Menu,
   Store,
   BarChart3,
   Receipt,
@@ -86,11 +87,12 @@ export default function Platform({
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState(""),
     [detail, setDetail] = useState<any>(null),
-    [mobile, setMobile] = useState(false),
     [sepay, setSepay] = useState<any>(null),
     [sepayBusy, setSepayBusy] = useState(false),
     [approvalBusy, setApprovalBusy] = useState(false),
     [approvalRequired, setApprovalRequired] = useState(false);
+  const sidebar = useDashboardSidebar();
+  const { mobile, setMobile } = sidebar;
   const data = loaded?.area === area ? loaded.data : null;
   useEffect(() => {
     if (area === "config" && data?.storeApprovalRequired !== undefined)
@@ -198,13 +200,15 @@ export default function Platform({
     ["config", "Cấu hình", Settings],
   ] as const;
   return (
-    <div className="admin-shell platform-shell">
-      <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
-        <Link className="logo" href="/">
-          <Brand />
+    <div className={"admin-shell platform-shell" + (sidebar.collapsed ? " sidebar-collapsed" : "") + (sidebar.motion ? " sidebar-animate" : "")}>
+      <SidebarBackdrop open={mobile} close={() => setMobile(false)} />
+      <aside id="dashboard-sidebar" aria-label="Menu platform" inert={sidebar.narrow && !mobile} className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
+        <SidebarMobileClose close={() => setMobile(false)} />
+        <Link className="logo dashboard-logo" href="/" aria-label="Fleurious">
+          <DashboardBrand />
         </Link>
         <div className="workspace-label">PLATFORM CONSOLE</div>
-        <nav>
+        <nav aria-label="Điều hướng platform">
           {nav.map(([k, t, I]) => (
             <Link
               className={area === k ? "active" : ""}
@@ -212,11 +216,13 @@ export default function Platform({
               scroll={false}
               prefetch={true}
               aria-current={area === k ? "page" : undefined}
+              aria-label={t}
+              title={sidebar.collapsed ? t : undefined}
               key={k}
               onClick={() => setMobile(false)}
             >
               <I size={18} />
-              {t}
+              <span className="sidebar-nav-label">{t}</span>
             </Link>
           ))}
         </nav>
@@ -243,13 +249,7 @@ export default function Platform({
       </aside>
       <div className="admin-main">
         <header className="admin-topbar">
-          <button
-            className="icon-button admin-menu"
-            aria-label="Mở menu"
-            onClick={() => setMobile(!mobile)}
-          >
-            <Menu />
-          </button>
+          <SidebarControls state={sidebar} />
           <strong>Fleurious Platform</strong>
           <Link href="/">
             Xem marketplace <ArrowUpRight size={17} />
@@ -856,7 +856,7 @@ export default function Platform({
             </label>
             <label className="field">
               Cuối kỳ
-              <input
+              <DateInput
                 type="date"
                 name="period_end"
                 defaultValue={detail.subscription?.period_end || ""}
@@ -909,7 +909,7 @@ export default function Platform({
               </label>
               <label className="field">
                 Hạn
-                <input name="due_date" type="date" />
+                <DateInput name="due_date" type="date" />
               </label>
               <button className="button secondary">Thêm công việc</button>
             </form>

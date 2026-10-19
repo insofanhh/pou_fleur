@@ -113,6 +113,93 @@ body input::-webkit-calendar-picker-indicator {
   padding: 0;
   flex: 0 0 auto;
 }
+/* The visible value is independent of the OS locale/inner shadow-tree layout.
+   Keep the real input tappable for the native iOS/Android date picker. */
+body .date-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: #fff;
+  color: #1d1d1f;
+  font-size: var(--control-font-size);
+  font-weight: 400;
+  line-height: normal;
+  vertical-align: middle;
+  text-align: left;
+  box-shadow: 0 1px 2px #00000003;
+}
+.date-control > .date-control-value {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.date-control > svg { flex-shrink: 0; color: #777; pointer-events: none; }
+body .date-control > .date-control-clear {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  align-self: stretch;
+  width: 20px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+}
+.date-control-clear:focus-visible { outline: 2px solid #333; outline-offset: 1px; }
+.date-control:has(input:disabled) > .date-control-clear { pointer-events: none; }
+.date-control[data-empty="true"] > .date-control-value { color: #8b8b90; }
+/* Specificity overrides shared native-control, toolbar and form rules. */
+:root body .date-control > input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  box-sizing: border-box;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0;
+  cursor: pointer;
+  font-size: var(--control-font-size);
+}
+.date-control:focus-within { outline: 2px solid #1d1d1f; outline-offset: 3px; }
+.date-control:has(input:disabled), .date-control:has(input:read-only) { background: #f5f5f7; }
+.date-control:has(input:disabled) { color: #929297; }
+.date-control:has(input:disabled) > input { cursor: not-allowed; }
+.date-control:has(input:user-invalid), .date-control:has(input[aria-invalid="true"]) { border-color: #b42318; }
+.board-toolbar > .date-control { flex: 0 1 185px; }
+@media (max-width: 700px) {
+  body .date-control { gap: 6px; padding-inline: 10px; }
+  .board-toolbar > .date-control { flex: 1 1 185px; }
+}
 .ui-select {
   position: relative;
   display: inline-grid;

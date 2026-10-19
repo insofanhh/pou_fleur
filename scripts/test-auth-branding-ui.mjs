@@ -92,11 +92,8 @@ for (const engine of [chromium, webkit]) {
           ),
           "No horizontal overflow",
         );
-        await expect(page.locator("header .brand-logo")).toBeVisible();
-        assert(
-          await page.locator("header .brand-mark").evaluate(el => el.getBoundingClientRect().width >= 24),
-          "Header logo stays legible on mobile",
-        );
+        await expect(page.locator("header .logo")).toContainText("fleurious");
+        await expect(page.locator("header .logo svg, header .logo img")).toHaveCount(0);
         if (path === "/login") {
           const google = page.locator(".google-mark");
           if (await google.count()) {

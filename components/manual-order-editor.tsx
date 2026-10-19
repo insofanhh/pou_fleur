@@ -1,4 +1,5 @@
 "use client";
+import DateInput from "./date-input";
 import { hanoiDateTimeInput, hanoiInputToISO, parseDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
 import {
@@ -447,9 +448,10 @@ export default function ManualOrderEditor() {
     setForm({ ...empty, assignedTo: options?.currentUserId || null, deliverySlot: options?.settings?.slots?.[0] || "" });
     setQuote(null); setPriceEstimate(null); setDirty(false); key.current = ""; leaving.current = false;
   }
-  const textField = (name: string, label: string, attrs: any = {}) => (
-    <Field label={label}>
-      <input
+  const textField = (name: string, label: string, attrs: any = {}) => {
+    const Control = attrs.type === "date" ? DateInput : "input";
+    return <Field label={label}>
+      <Control
         name={name}
         value={form[name] ?? ""}
         onChange={(e) =>
@@ -464,8 +466,8 @@ export default function ManualOrderEditor() {
         }
         {...attrs}
       />
-    </Field>
-  );
+    </Field>;
+  };
   const block = (title: string, children: ReactNode) => (
     <section className="panel manual-section">
       <h2>{title}</h2>
@@ -1147,7 +1149,7 @@ export default function ManualOrderEditor() {
                               },
                             )}
                             <Field label="Thời điểm nhận tiền · Hà Nội (bỏ trống: hiện tại)">
-                              <input
+                              <DateInput
                                 type="datetime-local"
                                 value={
                                   form.receivedAt

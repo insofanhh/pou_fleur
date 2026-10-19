@@ -1,4 +1,5 @@
 "use client";
+import DateInput from "./date-input";
 import Select from "./ui-select";
 import { useEffect, useRef, useState } from "react";
 import { api, useShop } from "./context";
@@ -164,7 +165,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
           <div className="order-form-grid">
             <label className="field">
               Ngày giao khi khôi phục
-              <input
+              <DateInput
                 type="date"
                 name="date"
                 defaultValue={order.delivery_date}

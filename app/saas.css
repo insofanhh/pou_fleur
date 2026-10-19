@@ -1135,6 +1135,8 @@
   padding: 8px;
 }
 .store-workspace-label {
+  margin-top: 8px;
+  margin-bottom: 18px;
   letter-spacing: 0.2px;
   line-height: 1.5;
   overflow-wrap: anywhere;

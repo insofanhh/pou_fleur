@@ -1,4 +1,5 @@
 import { emailAllowance } from "./email-policy";
+import { analyticsPeriod, loadStoreAnalytics } from "./store-analytics";
 import { APP_TIME_ZONE } from "./regional";
 import { hanoiDateKey, parseDateTime } from "./date-time";
 import { goongSearchLocation } from "./goong-config";
@@ -663,23 +664,9 @@ export async function saasAPI(
       to = day.parse(
         url.searchParams.get("to") || hanoiDateKey(),
       );
-    return {
-      sources: await query(
-        "SELECT creation_source,sales_channel,COUNT(*) orders_count,SUM(CASE WHEN status='delivered' THEN total ELSE 0 END) revenue FROM orders WHERE created_at>=? AND created_at<DATE_ADD(?,INTERVAL 1 DAY) GROUP BY creation_source,sales_channel",
-        [from, to],
-      ),
-      daily: await query(
-        "SELECT DATE(created_at) day,COUNT(*) orders_count,SUM(CASE WHEN status='delivered' THEN total ELSE 0 END) revenue,SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) cancellations,SUM((SELECT COALESCE(SUM(IF(op.kind='collect',op.amount,-op.amount)),0) FROM order_payments op WHERE op.order_id=orders.id)) collected FROM orders WHERE created_at>=? AND created_at<DATE_ADD(?,INTERVAL 1 DAY) GROUP BY DATE(created_at)",
-        [from, to],
-      ),
-      segments: await query(
-        "SELECT segment,COUNT(*) count FROM customers GROUP BY segment",
-      ),
-      funnel: await query(
-        "SELECT name,COUNT(*) count FROM analytics_events WHERE store_id=? AND created_at>=? AND created_at<DATE_ADD(?,INTERVAL 1 DAY) GROUP BY name",
-        [tenantId(), from, to],
-      ),
-    };
+    try { analyticsPeriod(from, to); }
+    catch (e) { throw new HttpError(400, (e as Error).message); }
+    return loadStoreAnalytics(from, to, tenantId(), query);
   }
   if (key === "workspace/calendar" && method === "GET") {
     await requirePermission("orders");
