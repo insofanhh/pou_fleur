@@ -1,4 +1,6 @@
 "use client";
+import Brand from "@/components/brand";
+
 import { hanoiDateKey } from "@/lib/date-time";
 import Link, { useLocalPath } from "./routing";
 import { usePathname } from "next/navigation";
@@ -94,8 +96,7 @@ export default function StoreShell({ children }: { children: ReactNode }) {
       )}
       <header className="header">
         <Link className="logo" href="/" onClick={navigate}>
-          {store?.name || "fleurious"}
-          <span>®</span>
+          {store?.name ? <>{store.name}<span>®</span></> : <Brand />}
         </Link>
         <nav
           id="store-navigation"
@@ -153,7 +154,7 @@ export default function StoreShell({ children }: { children: ReactNode }) {
           <div className="market-footer-main">
             <div className="market-footer-brand">
               <Link className="logo" href="/">
-                fleurious<span>®</span>
+                <Brand />
               </Link>
               <p>Kết nối những tiệm hoa và những điều đẹp đẽ.</p>
             </div>

@@ -1,4 +1,6 @@
 "use client";
+import Brand from "@/components/brand";
+
 import { formatDate, formatDateTime, parseDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
 import { TableAction, TableActions } from "./table-actions";
@@ -199,7 +201,7 @@ export default function Platform({
     <div className="admin-shell platform-shell">
       <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <Link className="logo" href="/">
-          fleurious<span>®</span>
+          <Brand />
         </Link>
         <div className="workspace-label">PLATFORM CONSOLE</div>
         <nav>

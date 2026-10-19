@@ -7,6 +7,7 @@ import { Search, Plus, Ghost, Pencil, Trash2, RotateCcw } from "lucide-react";
 import { api, useShop } from "./context";
 import { displayLabel, auditAction } from "@/lib/display-labels";
 import PlatformDialog from "./platform-dialog";
+import PasswordField from "./password-field";
 
 type Account = {
   id: number;
@@ -388,19 +389,19 @@ export default function PlatformUsers({ refreshKey }: { refreshKey: number }) {
                         defaultValue={account?.phone || ""}
                       />
                     </label>
-                    <label className="field">
-                      {dialog.mode === "create"
-                        ? "Mật khẩu ban đầu"
-                        : "Mật khẩu mới (để trống nếu giữ nguyên)"}
-                      <input
-                        name="password"
-                        type="password"
-                        minLength={12}
-                        maxLength={128}
-                        autoComplete="new-password"
-                        required={dialog.mode === "create"}
-                      />
-                    </label>
+                    <PasswordField
+                      label={
+                        dialog.mode === "create"
+                          ? "Mật khẩu ban đầu"
+                          : "Mật khẩu mới (để trống nếu giữ nguyên)"
+                      }
+                      name="password"
+                      type="password"
+                      minLength={12}
+                      maxLength={128}
+                      autoComplete="new-password"
+                      required={dialog.mode === "create"}
+                    />
                   </div>
                   <label className="field">
                     Địa chỉ

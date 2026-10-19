@@ -5,6 +5,7 @@ import "./saas.css";
 import "./controls.css";
 import "./table-actions.css";
 import "./store-team.css";
+import "./brand.css";
 import { Provider } from "@/components/context";
 import StoreShell from "@/components/store-shell";
 import SectionReveal from "@/components/section-reveal";

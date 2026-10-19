@@ -1,4 +1,6 @@
 "use client";
+import Brand from "@/components/brand";
+
 import { hanoiDateKey } from "@/lib/date-time";
 import Link from "./routing";
 import Image from "next/image";
@@ -155,7 +157,7 @@ export function Footer({ name = "Fleurious" }: { name?: string }) {
           <Link className="logo" href="/">
             {name === "Fleurious" ? (
               <>
-                fleurious<span>®</span>
+                <Brand />
               </>
             ) : (
               name

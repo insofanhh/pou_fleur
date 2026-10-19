@@ -132,7 +132,7 @@ export function Auth({
               encodeURIComponent(params.get("next") || "")
             }
           >
-            <span className="google-mark" aria-hidden="true">G</span>
+            <img className="google-mark" src="/brand/google-g.svg" width="20" height="20" alt="" aria-hidden="true" />
             {register ? "Đăng ký với Google" : "Đăng nhập với Google"}
           </a>
         )}

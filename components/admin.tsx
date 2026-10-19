@@ -1,4 +1,6 @@
 "use client";
+import Brand from "@/components/brand";
+
 import { hanoiDateKey, formatDate, formatDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
 import { TableAction, TableActions } from "./table-actions";
@@ -273,7 +275,7 @@ export default function Admin({ data }: { data: Catalog }) {
     return (
       <div className="admin-gate">
         <Link className="logo" href="/">
-          fleurious<span>®</span>
+          <Brand />
         </Link>
         <ShieldCheck size={48} />
         <h1>Fleurious Workspace.</h1>
@@ -336,7 +338,7 @@ export default function Admin({ data }: { data: Catalog }) {
     <div className="admin-shell">
       <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <Link href="/admin" className="logo">
-          fleurious<span>®</span>
+          <Brand />
         </Link>
         <div className="workspace-label store-workspace-label">
           {data.store?.name ? `${data.store.name}'s workspace` : "Workspace"}
