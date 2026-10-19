@@ -190,6 +190,58 @@ function endOf(sub: any): string | null {
       : null)
   );
 }
+// Catalog IDs are the service tiers (Khởi đầu, Studio, Atelier); editable
+// prices do not change which tier is an upgrade.
+const isUpgrade = (planId: number, sub: any) => Number(planId) > Number(sub.plan_id);
+
+async function upgradeWindow(c: PoolConnection, sid: number, sub: any, time: string, invoiceId = 0) {
+  const [future]: any = await c.execute(
+    "SELECT * FROM invoices WHERE store_id=? AND id<>? AND status='paid' AND amount>0 AND applied_at IS NOT NULL AND activated_at IS NULL AND effective_end_at>? ORDER BY effective_end_at FOR UPDATE",
+    [sid, invoiceId, time],
+  );
+  // Keep all purchased time. The remainder of a paid period receives the
+  // higher tier at no extra charge, followed by the newly purchased month.
+  // Free/trial days are not converted into additional paid service.
+  const intervals = future.map((i: any) => [Math.max(instant(time), instant(i.effective_start_at)), instant(i.effective_end_at)]);
+  if (!sub.trial_ends_at && Number(sub.monthly_price) > 0 && endOf(sub)) intervals.push([instant(time), instant(endOf(sub)!)]);
+  intervals.sort((a: number[], b: number[]) => a[0] - b[0]);
+  let purchasedMs = 0, cursor = instant(time);
+  for (const [start, end] of intervals) {
+    purchasedMs += Math.max(0, end - Math.max(start, cursor));
+    cursor = Math.max(cursor, end);
+  }
+  const retainedUntil = sqlStamp(new Date(instant(time) + purchasedMs));
+  return { start: time, end: nextBillingInstant(retainedUntil), retainedUntil, future };
+}
+
+async function promoteUpgrade(c: PoolConnection, sid: number, sub: any, i: any, time: string) {
+  const window = await upgradeWindow(c, sid, sub, time, i.id);
+  await c.execute("UPDATE invoices SET effective_start_at=?,effective_end_at=? WHERE store_id=? AND id=?", [window.start, window.end, sid, i.id]);
+  for (const prior of window.future) {
+    await c.execute("UPDATE invoices SET activated_at=UTC_TIMESTAMP() WHERE store_id=? AND id=?", [sid, prior.id]);
+    await cancelReminders(c, sid, prior.id, "UPGRADED");
+  }
+  // A voluntarily ended trial remains consumed; it can never start again.
+  if (sub.trial_ends_at) {
+    await c.execute("UPDATE account_trial_claims SET ends_at=LEAST(ends_at,?) WHERE store_id=? AND activated_at IS NOT NULL AND ends_at>?", [time, sid, time]);
+    await c.execute("UPDATE trial_claims SET ends_at=LEAST(ends_at,?) WHERE store_id=?", [time, sid]);
+  }
+  // Preserve a discovery trial already reserved for later, without allowing it
+  // to replace newly purchased access at its old scheduled date.
+  const [trials]: any = await c.execute("SELECT * FROM account_trial_claims WHERE store_id=? AND activated_at IS NULL AND starts_at IS NOT NULL AND ends_at>? ORDER BY starts_at FOR UPDATE", [sid, time]);
+  let boundary = window.end;
+  for (const claim of trials) {
+    if (claim.starts_at < boundary) {
+      const trialEnd = sqlStamp(new Date(instant(boundary) + instant(claim.ends_at) - instant(claim.starts_at)));
+      await c.execute("UPDATE account_trial_claims SET starts_at=?,ends_at=? WHERE user_id=? AND bucket=?", [boundary, trialEnd, claim.user_id, claim.bucket]);
+      const plan = await versionPlan(c, claim.plan_version_id);
+      await mail(c, { id: `trial-rescheduled-${i.id}-${claim.bucket}`, store_id: sid, plan_name: plan.name, amount: 0, paid: 0, trial_days: claim.trial_days, period_start: boundary, period_end: trialEnd }, "subscription_trial_reserved");
+      boundary = trialEnd;
+    } else boundary = claim.ends_at;
+  }
+  await notice(c, sid, `billing:upgrade:${i.id}`, "Đã nâng gói dịch vụ", `Gói ${i.plan_name} có hiệu lực ngay. Kỳ sử dụng: ${formatBillingTime(window.start)} → ${formatBillingTime(window.end)}. Thời gian đã trả phí còn lại được bảo toàn.`);
+  return window;
+}
 async function versionPlan(c: PoolConnection, versionId: number) {
   let [rows]: any = await c.execute(
     "SELECT *,plan_id FROM plan_versions WHERE id=?",
@@ -589,17 +641,25 @@ async function activatePaidCoverage(
   time: string,
 ) {
   const sub = await subscription(c, sid);
+  // Bring forward paid upgrades made under the old end-of-period policy.
+  // Prefer the highest purchased tier so lower prepaid tiers cannot replace it.
+  const [upgrades]: any = await c.execute(
+    "SELECT i.* FROM invoices i JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.purpose='plan_change' AND i.applied_at IS NOT NULL AND i.activated_at IS NULL AND i.effective_start_at>? AND v.plan_id>? ORDER BY v.plan_id DESC,i.effective_end_at DESC LIMIT 1 FOR UPDATE",
+    [sid, time, sub.plan_id],
+  );
+  if (upgrades[0]) {
+    const [receipts]: any = await c.execute("SELECT MAX(received_at) received_at FROM billing_payments WHERE invoice_id=?", [upgrades[0].id]);
+    await promoteUpgrade(c, sid, sub, upgrades[0], receipts[0]?.received_at || time);
+  }
   const [periods]: any = await c.execute(
     "SELECT * FROM invoices WHERE store_id=? AND status='paid' AND applied_at IS NOT NULL AND activated_at IS NULL AND effective_start_at<=? AND effective_end_at>? ORDER BY effective_end_at DESC LIMIT 1 FOR UPDATE",
     [sid, time, time],
   );
   const i = periods[0];
   if (!i) return;
+  const plan = i.plan_version_id ? await versionPlan(c, i.plan_version_id) : null;
   // Never downgrade an already longer entitlement when a delayed webhook arrives.
-  if (!endOf(sub) || i.effective_end_at >= endOf(sub)!) {
-    const plan = i.plan_version_id
-      ? await versionPlan(c, i.plan_version_id)
-      : null;
+  if (!endOf(sub) || i.effective_end_at >= endOf(sub)! || (plan && isUpgrade(plan.plan_id, sub))) {
     const local = new Date(instant(i.effective_start_at) + 7 * 3600000);
     const anchor =
       endOf(sub) === i.effective_start_at &&
@@ -828,13 +888,19 @@ async function applyPaidInvoice(
   if (start < time) start = time;
   const keptAnniversary =
     start === (i.starts_at || stamp(i.period_start || time));
-  const end =
+  let end =
     keptAnniversary && i.ends_at
       ? i.ends_at
       : nextBillingInstant(
           start,
           keptAnniversary ? sub.billing_anchor_day || undefined : undefined,
         );
+  const target = i.plan_version_id ? await versionPlan(c, i.plan_version_id) : null;
+  if (target && isUpgrade(target.plan_id, sub)) {
+    const window = await promoteUpgrade(c, i.store_id, sub, i, time);
+    start = window.start;
+    end = window.end;
+  }
   await c.execute(
     "UPDATE invoices SET effective_start_at=?,effective_end_at=?,applied_at=UTC_TIMESTAMP() WHERE id=? AND applied_at IS NULL",
     [start, end, i.id],
@@ -945,6 +1011,7 @@ export async function prepareSubscriptionInvoice(
   return withSystem(async () => {
     await expirePendingPlanChanges(c, sid);
     await activateAccountTrial(c, sid, await clock(c));
+    await activatePaidCoverage(c, sid, await clock(c));
     const sub = await subscription(c, sid),
       time = await clock(c);
     const [futureTrials]: any = await c.execute(
@@ -996,7 +1063,7 @@ export async function prepareSubscriptionInvoice(
       if (cancelled[0]) return cancelled[0];
     }
     const [scheduled]: any = await c.execute(
-      "SELECT * FROM invoices WHERE store_id=? AND status='paid' AND effective_start_at>? ORDER BY effective_start_at FOR UPDATE",
+      "SELECT * FROM invoices WHERE store_id=? AND status='paid' AND activated_at IS NULL AND effective_start_at>? ORDER BY effective_start_at FOR UPDATE",
       [sid, time],
     );
     for (const i of scheduled)
@@ -1041,13 +1108,16 @@ export async function prepareSubscriptionInvoice(
         ? await versionPlan(c, sub.registration_plan_version_id)
         : plans[0];
     const expiry = endOf(sub);
-    // All package changes take effect after current access, including trials.
+    // Renewals and downgrades wait for committed access. Paid upgrades start
+    // on receipt and preserve purchased time, without extending a free trial.
     const [trials]: any = await c.execute(
       "SELECT * FROM account_trial_claims WHERE store_id=? AND activated_at IS NULL AND ends_at>? ORDER BY ends_at DESC LIMIT 1",
       [sid, time],
     );
     const upcomingTrial = trials[0];
-    const start = [
+    const upgrade = allowPlanChange && isUpgrade(planId, sub);
+    const upgradeDates = upgrade ? await upgradeWindow(c, sid, sub, time) : null;
+    const start = upgradeDates?.start || [
       time,
       expiry || time,
       lastPaid?.effective_end_at || time,
@@ -1056,10 +1126,10 @@ export async function prepareSubscriptionInvoice(
       .sort()
       .at(-1)!;
     const invoicePlan =
-      upcomingTrial && Number(upcomingTrial.plan_id) === Number(planId)
+      !upgrade && upcomingTrial && Number(upcomingTrial.plan_id) === Number(planId)
         ? await versionPlan(c, upcomingTrial.plan_version_id)
         : plan;
-    const end = nextBillingInstant(
+    const end = upgradeDates?.end || nextBillingInstant(
       start,
       samePlan ? sub.billing_anchor_day || undefined : undefined,
     );
@@ -1070,11 +1140,11 @@ export async function prepareSubscriptionInvoice(
       start,
       end,
       start,
-      `cycle:${start}`,
+      upgrade ? `upgrade:${planId}:${start}` : `cycle:${start}`,
     );
     if (
       !samePlan &&
-      !(upcomingTrial && Number(upcomingTrial.plan_id) === Number(planId)) &&
+      (upgrade || !(upcomingTrial && Number(upcomingTrial.plan_id) === Number(planId))) &&
       i.status === "open"
     ) {
       await c.execute(
@@ -1252,7 +1322,7 @@ export async function previewSubscriptionChange(
       [sid, sid, sid],
     );
     const [retained]: any = await c.execute(
-      "SELECT id,plan_name,effective_start_at,effective_end_at FROM invoices WHERE store_id=? AND status='paid' AND amount>0 AND effective_start_at>UTC_TIMESTAMP() ORDER BY effective_start_at",
+      "SELECT id,plan_name,effective_start_at,effective_end_at FROM invoices WHERE store_id=? AND status='paid' AND activated_at IS NULL AND amount>0 AND effective_start_at>UTC_TIMESTAMP() ORDER BY effective_start_at",
       [sid],
     );
     return {
@@ -1269,6 +1339,7 @@ export async function previewSubscriptionChange(
       starts_at: i.effective_start_at || i.starts_at,
       ends_at: i.effective_end_at || i.ends_at,
       current_plan: sub.name,
+      change_type: isUpgrade(planId, sub) ? "upgrade" : Number(planId) === Number(sub.plan_id) ? "renewal" : "downgrade",
       trial_ends_at: sub.trial_ends_at,
       usage: { ...usage[0], email_sends: (await emailAllowance(c,sid)).used },
       retained,

@@ -507,8 +507,8 @@ export async function saasAPI(
         "SELECT i.*,v.plan_id,EXISTS(SELECT 1 FROM payment_intents pi WHERE pi.store_id=i.store_id AND pi.invoice_id=i.id) payment_started FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? ORDER BY i.id DESC",
         [tenantId()],
       ),
-      scheduled: (await query<any[]>("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at LIMIT 1",[tenantId()]))[0] || null,
-      reservations: await query("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at",[tenantId()]),
+      scheduled: (await query<any[]>("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.activated_at IS NULL AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at LIMIT 1",[tenantId()]))[0] || null,
+      reservations: await query("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.activated_at IS NULL AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at",[tenantId()]),
       pending_plan: (await query<any[]>("SELECT i.*,v.plan_id,EXISTS(SELECT 1 FROM payment_intents pi WHERE pi.store_id=i.store_id AND pi.invoice_id=i.id) payment_started FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='open' ORDER BY i.due_date,i.id LIMIT 1",[tenantId()]))[0] || null,
       plans: await query("SELECT id,name,monthly_price,limits,active,trial_days FROM plans WHERE active=1"),
       store: publicStore(await storeBy(tenantId())),
@@ -528,7 +528,7 @@ export async function saasAPI(
       await c.beginTransaction();
       await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [sid]);
       if (cancel) {
-        const [paidFuture]: any = await c.execute("SELECT id FROM invoices WHERE store_id=? AND status='paid' AND amount>0 AND effective_start_at>UTC_TIMESTAMP() LIMIT 1",[sid]);
+        const [paidFuture]: any = await c.execute("SELECT id FROM invoices WHERE store_id=? AND status='paid' AND activated_at IS NULL AND amount>0 AND effective_start_at>UTC_TIMESTAMP() LIMIT 1",[sid]);
         if (paidFuture.length) throw new HttpError(409,"Kỳ tiếp theo đã thanh toán. Vui lòng liên hệ platform để xử lý trước khi ngừng gia hạn.");
         const [future]: any = await c.execute("SELECT i.id,i.paid FROM invoices i JOIN subscriptions sub ON sub.store_id=i.store_id WHERE i.store_id=? AND (i.status='open' OR (i.status='paid' AND i.amount=0 AND i.activated_at IS NULL)) AND (COALESCE(i.starts_at,i.period_start)>=COALESCE(sub.access_ends_at,sub.trial_ends_at,sub.current_period_end,sub.period_end) OR sub.status='awaiting_payment') FOR UPDATE", [sid]);
         if (future.some((i: any) => Number(i.paid) > 0)) throw new HttpError(409, "Hóa đơn kỳ tiếp theo đã thu một phần. Vui lòng liên hệ platform xử lý trước khi ngừng gia hạn.");
