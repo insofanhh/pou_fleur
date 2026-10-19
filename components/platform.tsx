@@ -400,16 +400,37 @@ export default function Platform({
                           <td>{s.customers}</td>
                           <td>{s.last_order || "—"}</td>
                           <td>
-                            <button
-                              className="button secondary platform-store-ghost"
-                              aria-label={"Ghost cửa hàng " + s.name}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openStoreGhost(s);
-                              }}
-                            >
-                              <Ghost size={16} aria-hidden="true" /> Ghost
-                            </button>
+                            <div className="platform-store-actions">
+                              {s.status === "pending" && (
+                                <button
+                                  className="button platform-store-approve"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void action(
+                                      "stores/" + s.id + "/status",
+                                      "PATCH",
+                                      {
+                                        status: "approved",
+                                        reason: "Được duyệt bởi admin platform.",
+                                        version: s.version,
+                                      },
+                                    );
+                                  }}
+                                >
+                                  Duyệt
+                                </button>
+                              )}
+                              <button
+                                className="button secondary platform-store-ghost"
+                                aria-label={"Ghost cửa hàng " + s.name}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openStoreGhost(s);
+                                }}
+                              >
+                                <Ghost size={16} aria-hidden="true" /> Ghost
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

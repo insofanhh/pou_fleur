@@ -958,7 +958,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       };
     if (key === "stores" && method === "GET")
       return query(
-        "SELECT s.id,s.slug,s.name,s.owner_id,s.status,s.address,s.phone,s.created_at,u.email owner_email,sub.status subscription_status,p.name plan,(SELECT COUNT(*) FROM orders o WHERE o.store_id=s.id) orders_count,(SELECT COALESCE(SUM(total),0) FROM orders o WHERE o.store_id=s.id AND status='delivered') gmv,(SELECT COUNT(*) FROM customers c WHERE c.store_id=s.id) customers,(SELECT MAX(created_at) FROM orders o WHERE o.store_id=s.id) last_order FROM stores s JOIN users u ON u.id=s.owner_id LEFT JOIN subscriptions sub ON sub.store_id=s.id LEFT JOIN plans p ON p.id=sub.plan_id ORDER BY s.id DESC",
+        "SELECT s.id,s.slug,s.name,s.owner_id,s.status,s.version,s.address,s.phone,s.created_at,u.email owner_email,sub.status subscription_status,p.name plan,(SELECT COUNT(*) FROM orders o WHERE o.store_id=s.id) orders_count,(SELECT COALESCE(SUM(total),0) FROM orders o WHERE o.store_id=s.id AND status='delivered') gmv,(SELECT COUNT(*) FROM customers c WHERE c.store_id=s.id) customers,(SELECT MAX(created_at) FROM orders o WHERE o.store_id=s.id) last_order FROM stores s JOIN users u ON u.id=s.owner_id LEFT JOIN subscriptions sub ON sub.store_id=s.id LEFT JOIN plans p ON p.id=sub.plan_id ORDER BY s.id DESC",
       );
     if (path[0] === "stores" && path[1]) {
       const sid = id.parse(path[1]);

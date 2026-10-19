@@ -1093,6 +1093,16 @@
   padding: 10px 14px;
   white-space: nowrap;
 }
+.platform-store-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.platform-store-approve {
+  padding: 10px 14px;
+  white-space: nowrap;
+}
 .platform-user-dialog {
   width: 720px;
   margin: auto;
