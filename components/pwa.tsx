@@ -107,7 +107,13 @@ export function Inbox() {
       marketing: false,
       push: false,
     }),
-    [store, setStore] = useState("1");
+    [store, setStore] = useState("");
+  const storeIds = [
+    ...new Set([
+      ...items.map((i) => i.store_id).filter(Boolean),
+      ...(user?.memberships || []).map((m) => m.store_id),
+    ]),
+  ].filter((id) => Number(id) !== 1);
   async function load() {
     try {
       setItems(await api("inbox"));
@@ -126,7 +132,7 @@ export function Inbox() {
     return () => clearInterval(timer);
   }, [user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !store) return;
     fetch("/api/notification-preferences", {
       headers: { "x-fleur-store": store },
     })
@@ -134,6 +140,11 @@ export function Inbox() {
       .then(setPreferences)
       .catch(() => {});
   }, [user, store]);
+  useEffect(() => {
+    if (storeIds.length && !storeIds.includes(Number(store)))
+      setStore(String(storeIds[0]));
+    else if (!storeIds.length && store) setStore("");
+  }, [storeIds.join(","), store]);
   async function savePreferences(push: boolean, marketing: boolean) {
     const r = await fetch("/api/notification-preferences", {
       method: "PATCH",
@@ -179,13 +190,6 @@ export function Inbox() {
         </Link>
       </main>
     );
-  const storeIds = [
-    ...new Set([
-      1,
-      ...items.map((i) => i.store_id).filter(Boolean),
-      ...(user.memberships || []).map((m) => m.store_id),
-    ]),
-  ];
   return (
     <main className="page narrow">
       <span className="eyebrow">STAY IN THE LOOP</span>
@@ -199,7 +203,11 @@ export function Inbox() {
         <h3>Cài đặt nhận tin theo cửa hàng</h3>
         <label className="field">
           Cửa hàng
-          <select value={store} onChange={(e) => setStore(e.target.value)}>
+          <select
+            value={store}
+            disabled={!storeIds.length}
+            onChange={(e) => setStore(e.target.value)}
+          >
             {storeIds.map((id) => (
               <option value={id} key={id}>
                 {user.memberships?.find((m) => m.store_id === id)?.name ||
@@ -211,6 +219,7 @@ export function Inbox() {
         <label className="check-field">
           <input
             type="checkbox"
+            disabled={!store}
             checked={!!preferences.marketing}
             onChange={async (e) => {
               try {
@@ -225,6 +234,7 @@ export function Inbox() {
         <div className="button-row">
           <button
             className="button secondary"
+            disabled={!store}
             onClick={() => void enablePush()}
           >
             Bật thông báo đẩy
@@ -232,6 +242,7 @@ export function Inbox() {
           {!!preferences.push && (
             <button
               className="text-button"
+              disabled={!store}
               onClick={() =>
                 void savePreferences(false, !!preferences.marketing)
               }
