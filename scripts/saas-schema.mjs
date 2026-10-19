@@ -1,4 +1,5 @@
 import { migratePlatformEmail } from "./platform-email-schema.mjs";
+import { migrateStoreRegistration } from "./store-registration-schema.mjs";
 import { migrateProductTaxonomy } from "./product-taxonomy-schema.mjs";
 import defaults from "../lib/email-defaults.json" with { type: "json" };
 import { migrateManualOrders } from "./manual-orders-schema.mjs";
@@ -82,6 +83,7 @@ export async function migrateSaaS(c) {
     "INSERT IGNORE INTO stores(id,slug,name,owner_id,status,description,settings,theme) VALUES(1,'fleur','Fleur',?,'approved','Floral studio',?,?)",
     [owner.id, settings, theme],
   );
+  await migrateStoreRegistration(c);
   for (const table of tenantTables) {
     const [columns] = await c.query(
       `SHOW COLUMNS FROM ${table} LIKE 'store_id'`,

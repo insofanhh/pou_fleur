@@ -9,6 +9,7 @@ import { chromium, expect } from "@playwright/test";
 import { testOrderPaymentStatus } from "./test-order-payment-status.mjs";
 import { testProductTaxonomy } from "./test-product-taxonomy.mjs";
 import { testGlobalAccount } from "./test-global-account.mjs";
+import { testStoreRegistration } from "./test-store-registration.mjs";
 
 // A disposable full-schema database; never writes fixtures into the user's DB.
 assert(
@@ -95,27 +96,29 @@ function client() {
     },
   };
 }
-async function register(email) {
+let accountSequence = 1000000;
+async function register(email, phone = "090" + String(++accountSequence)) {
   const c = client();
+  c.phone = phone;
   await c.call("auth/register", "POST", {
     name: "Chủ tiệm QA",
     email,
     password,
-    phone: "0901234567",
+    phone,
   });
   return c;
 }
-async function createStore(c, slug, planId = 1) {
+async function createStore(c, slug, planId = 1, { phone = c.phone, status = 200 } = {}) {
   const plans = await c.call("billing/plans"),
     p = plans.find((p) => p.id === planId);
   return c.call("stores", "POST", {
     name: "Tiệm " + slug,
     slug,
     address: "12 Nguyễn Huệ, Thành phố Hồ Chí Minh",
-    phone: "0901234567",
+    phone,
     plan_id: planId,
     offer_version_id: p.offer_version_id,
-  });
+  }, status);
 }
 const one = async (sql, args = []) => (await db.execute(sql, args))[0][0];
 try {
@@ -576,7 +579,7 @@ try {
   await page
     .getByLabel("Địa chỉ cửa hàng", { exact: true })
     .fill("12 Nguyễn Huệ, Hồ Chí Minh");
-  await page.getByLabel("Điện thoại", { exact: true }).fill("0901234567");
+  await page.getByLabel("Điện thoại", { exact: true }).fill(fresh.phone);
   let release;
   const paused = new Promise((r) => (release = r));
   let submissions = 0;
@@ -861,6 +864,7 @@ try {
   await testProductTaxonomy({ owner, first, second, db, one, check, pageFor, origin });
   await testGlobalAccount({ db, one, check, client, pageFor, origin, owner, admin, buyer, first });
   check(errors.length === 0, "Order payment and taxonomy UI have no browser errors");
+  await testStoreRegistration({ register, createStore, client, one, db, check, origin });
   console.log(
     `All ${checks} onboarding/CRM/email checks passed. No external email sent.`,
   );
