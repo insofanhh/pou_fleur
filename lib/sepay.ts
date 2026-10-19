@@ -83,13 +83,24 @@ export function verifyWebhook(raw: string, headers: Headers, credentials?: Sepay
 }
 
 export function parseWebhook(body: any) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "Dữ liệu giao dịch SePay không hợp lệ.");
   const amount = Number(body.transferAmount ?? body.amount ?? body.amount_in ?? 0);
   const direction = String(body.transferType ?? body.type ?? "in").toLowerCase();
   const eventId = String(body.id ?? body.referenceCode ?? body.reference ?? "");
-  const content = String(body.content ?? body.description ?? body.code ?? "");
   if (!eventId || !Number.isFinite(amount) || amount <= 0 || !["in", "incoming", "credit"].includes(direction)) throw new HttpError(400, "Dữ liệu giao dịch SePay không hợp lệ.");
-  const match = content.match(/FLR-(?:ORD|SUB)-\d+-[A-Z0-9]+/i);
-  if (!match) throw new HttpError(400, "Không tìm thấy mã thanh toán Fleurious.");
+  // Banks can remove punctuation (FLRSUB3001201408E), while SePay may
+  // identify the code separately from the transfer content. Rebuild only our
+  // exact ID + six-hex nonce format; never guess an invoice from amount alone.
+  const codes = new Set<string>();
+  for (const field of [body.code, body.content, body.description]) {
+    if (typeof field !== "string") continue;
+    for (const match of field.matchAll(/\bFLR[\s._\-–—]*(ORD|SUB)[\s._\-–—]*(\d+)[\s._\-–—]*([A-F0-9]{6})\b/gi)) {
+      codes.add(`FLR-${match[1].toUpperCase()}-${match[2]}-${match[3].toUpperCase()}`);
+    }
+  }
+  if (!codes.size) throw new HttpError(400, "Không tìm thấy mã thanh toán Fleurious.");
+  if (codes.size > 1) throw new HttpError(400, "Giao dịch có nhiều mã thanh toán Fleurious. Cần đối soát thủ công.");
+  const code = [...codes][0];
   let receivedAt: string | undefined;
   if (body.transactionDate) {
     const value = String(body.transactionDate);
@@ -97,7 +108,7 @@ export function parseWebhook(body: any) {
     if (!Number.isFinite(date.getTime())) throw new HttpError(400,"Thời điểm giao dịch không hợp lệ.");
     receivedAt = date.toISOString().slice(0,19).replace('T',' ');
   }
-  return { eventId, receivedAt, amount: Math.round(amount), code: match[0].toUpperCase(), providerReference: String(body.referenceCode ?? body.transactionCode ?? eventId) };
+  return { eventId, receivedAt, amount: Math.round(amount), code, providerReference: String(body.referenceCode ?? body.transactionCode ?? eventId) };
 }
 
 export async function processWebhook(raw: string, body: any, headers: Headers) {
@@ -115,7 +126,7 @@ export async function processWebhook(raw: string, body: any, headers: Headers) {
   try {
     await c.beginTransaction();
     const [exists]: any = await c.execute("SELECT processed FROM sepay_webhook_events WHERE provider_event_id=? OR payload_hash=? FOR UPDATE", [parsed.eventId, hash]);
-    if (exists.length && exists[0].processed) { await c.commit(); return { ok: true, duplicate: true }; }
+    if (exists.length && exists[0].processed) { await c.commit(); return { success: true, ok: true, duplicate: true }; }
     if (!exists.length) await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash) VALUES(?,?)", [parsed.eventId, hash]);
     const [lookup]: any = await c.execute("SELECT store_id FROM payment_intents WHERE reference_code=?", [parsed.code]);
     if (lookup[0]) await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [lookup[0].store_id]);
@@ -127,7 +138,7 @@ export async function processWebhook(raw: string, body: any, headers: Headers) {
     if (!["pending", "paid"].includes(intent.status)) throw new HttpError(409, "Mã thanh toán đã bị hủy.");
     if (intent.status === "paid") {
       if (intent.kind === "subscription") throw new HttpError(409,"Mã này đã thanh toán. Giao dịch mới cần đối soát, không cộng thêm kỳ tự động.");
-      await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [parsed.eventId]); await c.commit(); return { ok: true, duplicate: true };
+      await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [parsed.eventId]); await c.commit(); return { success: true, ok: true, duplicate: true };
     }
     if (intent.kind === "order" && parseDateTime(intent.expires_at, "utc").getTime() < Date.now()) throw new HttpError(409, "Mã thanh toán đã hết hạn.");
     if (intent.kind === "order" && parsed.amount < intent.amount - intent.paid_amount) throw new HttpError(409, "Số tiền chuyển chưa đủ.");
@@ -144,6 +155,6 @@ export async function processWebhook(raw: string, body: any, headers: Headers) {
     }
     await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [parsed.eventId]);
     await c.commit();
-    return { ok: true, code: parsed.code };
+    return { success: true, ok: true, code: parsed.code };
   } catch (e) { await c.rollback(); try { await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash,error_message) VALUES(?,?,?) ON DUPLICATE KEY UPDATE error_message=VALUES(error_message)", [parsed.eventId,hash,String((e as Error).message).slice(0,500)]); } catch {} throw e; } finally { c.release(); }
 }
