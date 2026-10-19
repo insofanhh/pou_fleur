@@ -417,14 +417,16 @@ export default function Admin({ data }: { data: Catalog }) {
         </header>
         <main className="admin-content">
           {data.store?.status === "suspended" && area !== "billing" && (
-            <div className="panel" role="alert">
-              <h3>Cửa hàng đang tạm đóng băng</h3>
-              <p>
-                {data.store.suspension_reason ||
-                  "Vui lòng liên hệ admin platform để được hỗ trợ."}
-              </p>
+            <div className="panel store-suspension-notice" role="alert">
+              <div className="store-suspension-copy">
+                <h3>Cửa hàng đang tạm đóng băng</h3>
+                <p>
+                  {data.store.suspension_reason ||
+                    "Vui lòng liên hệ admin platform để được hỗ trợ."}
+                </p>
+              </div>
               {user.role === "owner" && (
-                <Link className="button" href="/admin/billing">
+                <Link className="button store-suspension-action" href="/admin/billing">
                   Xem gói & hóa đơn
                 </Link>
               )}

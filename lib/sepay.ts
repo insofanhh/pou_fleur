@@ -47,6 +47,19 @@ export async function platformBank(c?: any, includeDisabled = false): Promise<Ba
 }
 
 export async function createIntent(c: any, storeId: number, kind: "order" | "subscription", ownerId: number, amount: number, orderId: number | null, invoiceId: number | null, bank: BankConfig, validUntil?: string) {
+  if (kind === "subscription") {
+    // Serialize requests on the invoice, and reuse its immutable payment session.
+    const [invoices]: any = await withStore(storeId, () => c.execute("SELECT id,status FROM invoices WHERE store_id=? AND id=? FOR UPDATE", [storeId, invoiceId]));
+    if (invoices[0]?.status !== "open") throw new HttpError(409, "Hóa đơn không còn chờ thanh toán.");
+    const [existing]: any = await withStore(storeId, () => c.execute("SELECT * FROM payment_intents WHERE store_id=? AND invoice_id=? AND kind='subscription' ORDER BY id DESC LIMIT 1 FOR UPDATE", [storeId, invoiceId]));
+    if (existing[0]) {
+      const intent = existing[0];
+      if (intent.status !== "pending") throw new HttpError(409, "Yêu cầu thanh toán đã đóng.");
+      const qr = typeof intent.qr_payload === "string" ? JSON.parse(intent.qr_payload) : intent.qr_payload;
+      const savedBank = { ...bank, bank_code: qr.bankCode, account_number: qr.accountNumber, account_holder: qr.accountHolder };
+      return { id: intent.id, code: intent.reference_code, amount, expiresAt: intent.expires_at.replace(" ", "T") + "Z", qrUrl: vietQrUrl(savedBank, amount, intent.reference_code), bank: savedBank };
+    }
+  }
   const code = transferCode(kind, kind === "order" ? orderId! : invoiceId!);
   const payload = JSON.stringify({ bankCode: bank.bank_code, accountNumber: bank.account_number, accountHolder: bank.account_holder, amount, addInfo: code });
   const [r]: any = await withStore(storeId, () => c.execute("INSERT INTO payment_intents(order_id,invoice_id,kind,reference_code,amount,expires_at,qr_payload) VALUES(?,?,?,?,?,LEAST(DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE),COALESCE(?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))),?)", [orderId, invoiceId, kind, code, amount, validUntil || null, payload]));
