@@ -1478,38 +1478,124 @@ details p {
 }
 .account-layout {
   display: grid;
-  grid-template-columns: 235px 1fr;
-  gap: 65px;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 48px;
 }
 .account-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-self: start;
+  min-width: 0;
+  gap: 24px;
   border-right: 1px solid var(--line);
-  padding-right: 25px;
+  padding-right: 24px;
 }
-.account-nav > button,
-.account-nav > a {
+.account-nav-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+.account-nav-title {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #777;
+}
+.account-nav .account-nav-item {
   display: flex;
   align-items: center;
+  min-width: 0;
+  width: 100%;
   gap: 12px;
   text-align: left;
   border: 0;
   background: none;
-  padding: 13px 15px;
-  border-radius: 7px;
-  font-size: 14px;
-  color: #777;
+  padding: 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #555;
+}
+.account-nav-item > svg {
+  flex-shrink: 0;
+}
+.account-nav-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-nav .account-nav-item:hover {
+  background: #f3f3f3;
+  color: #111;
+}
+.account-nav-item:focus-visible {
+  outline: 2px solid #222;
+  outline-offset: 3px;
 }
 .account-nav .active {
   background: #f3f3f3;
   color: #222;
 }
-.account-nav > button:last-child {
-  margin-top: 30px;
+.account-management-nav {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8f8f8;
+}
+.account-management-heading {
+  padding: 3px 0 10px;
+}
+.account-management-heading .account-nav-title {
+  color: #222;
+  margin-bottom: 5px;
+}
+.account-management-heading p {
+  margin: 0;
+  padding: 0 12px;
+  color: #777;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.account-nav .account-workspace-link {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  gap: 10px;
+}
+.account-workspace-text {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+.account-workspace-text strong {
+  color: #222;
+  font-size: 13px;
+  font-weight: 600;
+}
+.account-workspace-text small {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.account-nav-arrow {
+  margin-left: auto;
   color: #888;
 }
+.account-nav .account-open-store {
+  font-size: 12px;
+  margin-top: 3px;
+}
+.account-nav .account-logout {
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding-top: 20px;
+  color: #777;
+}
 .account-content {
+  min-width: 0;
   max-width: 800px;
 }
 .account-content h2 {
@@ -2641,7 +2727,7 @@ td code {
     grid-column: auto;
   }
   .account-layout {
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: 240px minmax(0, 1fr);
     gap: 30px;
   }
   .auth-art {
@@ -2856,17 +2942,21 @@ td code {
   .account-nav {
     border: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    gap: 20px;
   }
-  .account-nav > button,
-  .account-nav > a {
+  .account-personal-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-personal-nav .account-nav-title {
+    grid-column: 1 / -1;
+  }
+  .account-nav .account-nav-item {
     font-size: 12px;
     padding: 12px;
   }
-  .account-nav > button:last-child {
-    margin-top: 0;
+  .account-nav .account-logout {
+    padding-top: 16px;
   }
   .account-content h2 {
     font-size: 26px;

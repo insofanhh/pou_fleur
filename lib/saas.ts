@@ -1,4 +1,5 @@
 import { emailAllowance } from "./email-policy";
+import { normalizeStorePhone, reserveStoreRegistration, storeRegistrationAvailability } from "./store-registration";
 import { analyticsPeriod, loadStoreAnalytics } from "./store-analytics";
 import { APP_TIME_ZONE } from "./regional";
 import { hanoiDateKey, parseDateTime } from "./date-time";
@@ -188,6 +189,14 @@ export async function saasAPI(
   }
   if (key === "stores/mine" && method === "GET")
     return (await signedIn()).memberships;
+  if (key === "stores/registration" && method === "GET") {
+    const u = await signedIn();
+    const c = await pool.getConnection();
+    try {
+      const { identities: _, ...availability } = await storeRegistrationAvailability(c, u.id);
+      return availability;
+    } finally { c.release(); }
+  }
   if (key === "stores" && method === "POST") {
     const u = await signedIn();
     await throttle("create-store:" + u.id, 5);
@@ -204,7 +213,7 @@ export async function saasAPI(
         address: z.string().min(10).max(500),
         lat: z.number().min(-90).max(90).nullable().optional(),
         lng: z.number().min(-180).max(180).nullable().optional(),
-        phone: z.string().min(9).max(30),
+        phone: z.string().trim().max(30).refine(value => !!normalizeStorePhone(value), "Số điện thoại không hợp lệ."),
         plan_id: id.default(1),
         offer_version_id: id.optional(),
       })
@@ -212,6 +221,7 @@ export async function saasAPI(
     const c = await pool.getConnection();
     try {
       await c.beginTransaction();
+      await reserveStoreRegistration(c, u.id, v.phone);
       const [r]: any = await c.execute(
         "INSERT INTO stores(slug,name,owner_id,status,address,lat,lng,phone,settings,theme) VALUES(?,?,?,?,?,?,?,?,?,?)",
         [
@@ -227,6 +237,7 @@ export async function saasAPI(
           JSON.stringify(defaultTheme),
         ],
       );
+      await c.execute("UPDATE store_registration_claims SET store_id=? WHERE user_id=? AND store_id IS NULL", [r.insertId, u.id]);
       await c.execute(
         "INSERT INTO store_memberships(store_id,user_id,role) VALUES(?,?,'owner')",
         [r.insertId, u.id],

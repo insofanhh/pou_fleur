@@ -22,6 +22,10 @@ import {
   MapPin,
   RotateCcw,
   Ban,
+  Store,
+  Plus,
+  ChevronRight,
+  LayoutDashboard,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
@@ -295,7 +299,9 @@ export function Account() {
         <p>Một góc nhỏ cho những điều bạn yêu.</p>
       </div>
       <div className="account-layout">
-        <aside className="account-nav">
+        <aside className="account-nav" aria-label="Menu tài khoản">
+          <nav className="account-nav-group account-personal-nav" aria-labelledby="account-personal-title">
+            <h2 id="account-personal-title" className="account-nav-title">Tài khoản cá nhân</h2>
           {[
             ["profile", "Thông tin cá nhân", UserRound],
             ["orders", "Đơn hàng của tôi", Package],
@@ -303,36 +309,57 @@ export function Account() {
           ].map(([key, label, Icon]: any) => (
             <button
               key={key}
-              className={tab === key ? "active" : ""}
+              type="button"
+              className={"account-nav-item" + (tab === key ? " active" : "")}
+              aria-current={tab === key ? "page" : undefined}
               onClick={() => {
                 setTab(key);
                 setError("");
               }}
             >
-              <Icon size={18} />
-              {label}
+              <Icon size={18} aria-hidden="true" />
+              <span>{label}</span>
             </button>
           ))}
-          <Link href="/start">Mở cửa hàng của bạn</Link>
+          <Link className="account-nav-item" href="/wishlist">
+            <Heart size={18} aria-hidden="true" />
+            <span>Hoa yêu thích</span>
+          </Link>
+          </nav>
+          <nav className="account-nav-group account-management-nav" aria-labelledby="account-management-title">
+            <div className="account-management-heading">
+              <h2 id="account-management-title" className="account-nav-title">Trang quản trị</h2>
+              <p>Truy cập không gian quản lý của bạn.</p>
+            </div>
           {user.platformRole === "platform_admin" && (
-            <Link href="/platform">Quản trị nền tảng</Link>
+            <Link className="account-nav-item account-workspace-link" href="/platform">
+              <LayoutDashboard size={19} aria-hidden="true" />
+              <span className="account-workspace-text"><strong>Quản trị nền tảng</strong><small>Fleurious Platform</small></span>
+              <ChevronRight className="account-nav-arrow" size={15} aria-hidden="true" />
+            </Link>
           )}
           {user.memberships?.map((m) => (
-            <Link key={m.store_id} href={"/workspace/" + m.store_id}>
-              {m.name} · {displayLabel("role", m.role)}
+            <Link className="account-nav-item account-workspace-link" key={m.store_id} href={"/workspace/" + m.store_id}>
+              <Store size={19} aria-hidden="true" />
+              <span className="account-workspace-text"><strong>{m.name}</strong><small>{displayLabel("role", m.role)}</small></span>
+              <ChevronRight className="account-nav-arrow" size={15} aria-hidden="true" />
             </Link>
           ))}
-          <Link href="/wishlist">
-            <Heart size={18} />
-            Hoa yêu thích
-          </Link>
-          {user.role !== "customer" && (
-            <Link href="/admin">
-              <ShieldCheck size={18} />
-              Fleurious Workspace
+          {user.role !== "customer" && !user.memberships?.length && (
+            <Link className="account-nav-item account-workspace-link" href="/admin">
+              <Store size={19} aria-hidden="true" />
+              <span className="account-workspace-text"><strong>Fleurious Workspace</strong><small>Quản lý cửa hàng</small></span>
+              <ChevronRight className="account-nav-arrow" size={15} aria-hidden="true" />
             </Link>
           )}
+          <Link className="account-nav-item account-open-store" href="/start">
+            <Plus size={18} aria-hidden="true" />
+            <span>Mở cửa hàng của bạn</span>
+          </Link>
+          </nav>
           <button
+            type="button"
+            className="account-nav-item account-logout"
             onClick={async () => {
               try {
                 await api("auth/logout", "POST", {});
@@ -343,8 +370,8 @@ export function Account() {
               }
             }}
           >
-            <LogOut size={18} />
-            Đăng xuất
+            <LogOut size={18} aria-hidden="true" />
+            <span>Đăng xuất</span>
           </button>
         </aside>
         <section className="account-content">

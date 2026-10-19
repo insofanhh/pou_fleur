@@ -34,6 +34,7 @@ export function isGlobalAPI(parts: string[], method: string): boolean {
     "billing/plans": ["GET"],
     stores: ["GET", "POST"],
     "stores/mine": ["GET"],
+    "stores/registration": ["GET"],
     "stores/cart-info": ["GET"],
     "invitations/accept": ["POST"],
     inbox: ["GET"],

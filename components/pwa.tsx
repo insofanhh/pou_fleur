@@ -11,6 +11,11 @@ import {
   UserRound,
   Bell,
   ShoppingBag,
+  ClipboardList,
+  CalendarDays,
+  UsersRound,
+  Newspaper,
+  PartyPopper,
 } from "lucide-react";
 import { api, useShop } from "./context";
 export default function AppNavigation() {
@@ -24,34 +29,43 @@ export default function AppNavigation() {
   }, []);
   if (path.startsWith("/workspace") || path.startsWith("/admin")) {
     const sid = path.match(/^\/workspace\/(\d+)/)?.[1] || "1";
+    const workspacePath = path.match(/^\/workspace\/[^/]+/)?.[0] || "/admin";
     const role = user?.memberships?.find(
       (m) => m.store_id === Number(sid),
     )?.role;
     const links =
       role === "editor"
         ? [
-            ["posts", "Tin tức"],
-            ["events", "Sự kiện"],
-          ]
+            ["posts", "Tin tức", Newspaper],
+            ["events", "Sự kiện", PartyPopper],
+          ] as const
         : [
-            ["overview", "Tổng quan"],
-            ["board", "Đơn hàng"],
-            ["calendar", "Lịch"],
-          ];
+            ["overview", "Tổng quan", House],
+            ["orders", "Đơn hàng", ClipboardList],
+            ["calendar", "Lịch", CalendarDays],
+            ["crm", "CRM", UsersRound],
+          ] as const;
     return (
       <nav className="app-bottom-nav" aria-label="Điều hướng quản lý store">
         {links
           .filter(([k]) => k !== "overview" || role !== "support")
-          .map(([k, t]) => (
-            <Link key={k} href={"/workspace/" + sid + "/" + k} scroll={false}>
-              {k === "calendar" ? <Bell size={20} /> : <Store size={20} />}
-              <span>{t}</span>
-            </Link>
-          ))}
-        <Link href="/inbox">
-          <Bell size={20} />
-          <span>Thông báo</span>
-        </Link>
+          .map(([k, t, Icon]) => {
+            const href = workspacePath + "/" + k;
+            const active = path === href || path.startsWith(href + "/");
+            return (
+              <Link
+                key={k}
+                href={href}
+                scroll={false}
+                className={active ? "active" : ""}
+                aria-current={active ? "page" : undefined}
+                title={k === "crm" ? "Khách hàng & CRM" : t}
+              >
+                <Icon size={20} />
+                <span>{t}</span>
+              </Link>
+            );
+          })}
         <Link href="/account">
           <UserRound size={20} />
           <span>Tài khoản</span>

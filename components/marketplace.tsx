@@ -16,6 +16,7 @@ import FlowerImage from "./flower-image";
 import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
 import { money } from "./home";
 import { HANOI_LOCATION } from "@/lib/regional";
+import { productSlug } from "@/lib/product-images";
 export default function Marketplace() {
   const [stores, setStores] = useState<any[]>([]),
     [error, setError] = useState(""),
@@ -390,19 +391,64 @@ export function StartStore() {
     searchParams = useSearchParams(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
+    [storeName, setStoreName] = useState(""),
+    [customSlug, setCustomSlug] = useState<string | null>(null),
     [address, setAddress] = useState(""),
     [location, setLocation] = useState<DeliveryLocation | null>(null),
     [plans, setPlans] = useState<any[]>([]),
-    [planId, setPlanId] = useState(1);
+    [planId, setPlanId] = useState(1),
+    [registration, setRegistration] = useState<{
+      userId: number; eligible: boolean; message: string;
+      store: { id: number; name: string; status: string } | null;
+    } | null>(null),
+    [registrationError, setRegistrationError] = useState("");
+  const registrationRequest = useRef(0);
+  async function checkRegistration() {
+    if (!user) return;
+    const request = ++registrationRequest.current;
+    const userId = user.id;
+    setRegistrationError("");
+    try {
+      const result = await api("stores/registration");
+      if (request === registrationRequest.current) setRegistration({ ...result, userId });
+    } catch {
+      if (request === registrationRequest.current)
+        setRegistrationError("Chưa thể kiểm tra quyền mở cửa hàng. Vui lòng thử lại.");
+    }
+  }
   async function loadPlans() {
     try { setPlans(await api("billing/plans")); }
     catch { setError("Chưa tải được gói dịch vụ. Vui lòng tải lại trang trước khi đăng ký."); }
   }
   useEffect(() => { if (ready) void loadPlans(); }, [ready, user?.id]);
+  useEffect(() => {
+    if (ready && user) void checkRegistration();
+    return () => { registrationRequest.current++; };
+  }, [ready, user?.id]);
   const selectedPlan = plans.find(p => Number(p.id) === planId);
+  const nameSlug = productSlug(storeName);
+  const automaticSlug = (/^\d+$/.test(nameSlug) ? "store-" + nameSlug : nameSlug)
+    .slice(0, 80).replace(/-+$/g, "");
+  const storeSlug = customSlug ?? automaticSlug;
+  const checked = user && registration?.userId === user.id ? registration : null;
   if (searchParams.get("pending")) return <PendingStore />;
-  if (ready && user?.memberships?.some((membership) => membership.status === "pending"))
+  if (ready && checked?.store?.status === "pending")
     return <PendingStore />;
+  if (ready && checked && !checked.eligible)
+    return (
+      <main className="page">
+        <div className="empty pending-store-page" role="status">
+          <Flower2 aria-hidden="true" />
+          <h2>{checked.store ? "Bạn đã có cửa hàng." : "Thông tin đã được dùng để mở cửa hàng."}</h2>
+          <p>{checked.message}</p>
+          {checked.store ? (
+            <Link className="button" href={"/workspace/" + checked.store.id + "/overview"}>
+              Vào workspace <ArrowRight size={18} />
+            </Link>
+          ) : <Link className="button" href="/account">Kiểm tra tài khoản</Link>}
+        </div>
+      </main>
+    );
   return (
     <main className="page start-store-page">
       <span className="eyebrow">YOUR NEXT CHAPTER</span>
@@ -417,6 +463,11 @@ export function StartStore() {
         <Link className="button" href="/login?next=/start">
           Đăng nhập để bắt đầu
         </Link>
+      ) : !checked ? (
+        <div role="status">
+          <p>{registrationError || "Đang kiểm tra thông tin đăng ký…"}</p>
+          {registrationError && <button className="button" onClick={() => void checkRegistration()}>Thử lại</button>}
+        </div>
       ) : (
         <form
           className="start-store-layout"
@@ -444,7 +495,7 @@ export function StartStore() {
                   : "/workspace/" + d.id + (d.requiresPayment ? "/billing" : "/settings");
             } catch (e) {
               setError((e as Error).message);
-              await loadPlans();
+              await Promise.all([loadPlans(), checkRegistration()]);
             } finally {
               setBusy(false);
             }
@@ -457,11 +508,16 @@ export function StartStore() {
           <section className="panel start-store-form">
             <div className="section-heading"><div><span className="eyebrow">THÔNG TIN CỬA HÀNG</span><h2>Tạo workspace</h2><p className="small">Bạn có thể cập nhật giao diện, sản phẩm và thành viên sau khi mở cửa hàng.</p></div></div>
             <p className="start-store-selected-plan">Gói đang chọn: <strong>{selectedPlan?.name || "—"}</strong>{selectedPlan && <span> · {selectedPlan.registration_trial_available ? `0 VNĐ trong ${selectedPlan.trial_days} ngày dùng thử` : `${money(Number(selectedPlan.monthly_price))}/tháng`}</span>}</p>
-            <label className="field">Tên cửa hàng<input required name="name" maxLength={160} /></label>
-            <label className="field">Đường dẫn store<input required name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" minLength={3} placeholder="ten-tiem-hoa" /></label>
+            <label className="field">Tên cửa hàng<input required name="name" maxLength={160} value={storeName} onChange={(e) => setStoreName(e.target.value)} /></label>
+            <div className="field">
+              <label htmlFor="start-store-slug">Đường dẫn store</label>
+              <input id="start-store-slug" required name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" minLength={3} maxLength={80} placeholder="ten-tiem-hoa" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={storeSlug} onChange={(e) => setCustomSlug(e.target.value)} />
+              {customSlug !== null && <button type="button" className="text-link small" onClick={() => setCustomSlug(null)}>Tạo lại theo tên</button>}
+            </div>
             <DeliveryAddress value={address} onChange={setAddress} location={location} onLocation={setLocation} enabled label="Địa chỉ cửa hàng" className="" selectionHint="Đã chọn vị trí cửa hàng. Bạn vẫn có thể bổ sung số nhà hoặc hướng dẫn trong địa chỉ." />
-            <label className="field">Điện thoại<input required name="phone" minLength={9} /></label>
-            {error && <p className="error">{error}</p>}
+            <label className="field">Điện thoại<input required type="tel" name="phone" autoComplete="tel" defaultValue={user.phone || ""} minLength={9} maxLength={30} /></label>
+            <p className="small">Mỗi tài khoản, email và số điện thoại chỉ được dùng để mở một cửa hàng.</p>
+            {error && <p className="error" role="alert">{error}</p>}
             <button className="button" disabled={busy || !selectedPlan}>{busy && <span className="button-spinner" aria-hidden="true" />}{busy ? "Đang tạo cửa hàng…" : "Tạo cửa hàng"}</button>
           </section>
         </form>
