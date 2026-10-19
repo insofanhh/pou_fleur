@@ -9,6 +9,7 @@ import { currentUser } from "@/lib/auth";
 import { withStore } from "@/lib/tenant";
 import { activeBank } from "@/lib/sepay";
 import { notFound } from "next/navigation";
+import { globalPageTitle } from "@/lib/global-routes";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 const valid = [
@@ -58,6 +59,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug = [] } = await params;
   if (!slug.length) return { title: "Fleurious — Những tiệm hoa gần bạn" };
+  const globalTitle = globalPageTitle(slug);
+  if (globalTitle) return { title: globalTitle + " · Fleurious" };
   if (["platform", "start", "inbox", "join"].includes(slug[0]))
     return { title: "Fleurious · " + slug[0] };
   const { store, parts } = await route(slug);
@@ -77,6 +80,14 @@ export default async function Page({
 }) {
   const { slug = [] } = await params;
   if (!slug.length) return <Marketplace />;
+  if (["account", "account/orders", "login", "register", "forgot-password", "reset-password"].includes(slug.join("/")))
+    return <Store data={{
+      products: [], categories: [], posts: [], events: [],
+      features: {
+        goong: !!process.env.GOONG_API_KEY,
+        google: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+      },
+    }} />;
   if (slug[0] === "cart" && slug.length === 1) return <MultiCart />;
   if (slug[0] === "start" && slug.length === 1) return <StartStore />;
   if (slug[0] === "start" && slug[1] === "pending" && slug.length === 2)

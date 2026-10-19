@@ -1,7 +1,8 @@
 import { enqueueAccountWelcome } from "@/lib/system-email";
 import { requestPasswordReset, processIdentityMail } from "@/lib/identity-mail";
 import { cookies } from "next/headers";
-import { withStore, withSystem, tenantId } from "@/lib/tenant";
+import { withStore, withSystem, tenantId, activeStoreId } from "@/lib/tenant";
+import { isGlobalAPI } from "@/lib/global-routes";
 import { requestStore } from "@/lib/stores";
 import { saasAPI } from "@/lib/saas";
 import { emit, processDomainEvents } from "@/lib/domain-events";
@@ -77,7 +78,7 @@ async function handle(
           const deadline=Date.now()+45000;
           await processIdentityMail();
           if (path[0] === 'platform' || key === 'stores') await processAllStoreEmails(deadline);
-          else await safelyProcessEmails();
+          else if (activeStoreId()) await safelyProcessEmails();
           await processDomainEvents();
         });
       return NextResponse.json(result, {
@@ -469,7 +470,8 @@ async function handle(
               ["campaigns", "retry"].includes(path[2])))))
     )
       after(async () => {
-        await safelyProcessEmails();
+        if (activeStoreId()) await safelyProcessEmails();
+        else await processAllStoreEmails();
         await processDomainEvents();
       });
     if (method !== "GET") {
@@ -515,6 +517,22 @@ async function scopedHandle(
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   try {
+    const { path } = await ctx.params;
+    if (isGlobalAPI(path, req.method)) {
+      // Identity remains usable without any store. A valid explicit store only
+      // adds the contextual staff role needed by workspace navigation.
+      if (path.join("/") === "auth/me" && req.headers.has("x-fleur-store")) {
+        let store;
+        try {
+          store = await requestStore(req);
+        } catch (e) {
+          if (!(e instanceof HttpError) || e.status !== 404) throw e;
+        }
+        if (store) return await withStore(store.id, () => handle(req, ctx));
+      }
+      // Do not use withSystem here: unexpected tenant queries must fail closed.
+      return await handle(req, ctx);
+    }
     const store = await requestStore(req);
     return await withStore(store.id, async () => {
       const { path } = await ctx.params;
