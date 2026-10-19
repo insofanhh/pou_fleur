@@ -1,6 +1,10 @@
 "use client";
-import Link from "next/link";
+import { formatDate } from "@/lib/date-time";
+import { orderLabels, displayLabel } from "@/lib/display-labels";
+import { loginDestination } from "@/lib/login-redirect";
+import Link, { useScopedRouter } from "./routing";
 import FlowerImage from "./flower-image";
+import { TableAction } from "./table-actions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -16,31 +20,29 @@ import {
   Mail,
   CalendarDays,
   MapPin,
+  RotateCcw,
+  Ban,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
 import { Breadcrumb, Empty, Field } from "./shopping";
 import { money, ProductCard } from "./home";
-export const statusNames: Record<string, string> = {
-  pending: "Chờ xác nhận",
-  confirmed: "Đã xác nhận",
-  preparing: "Đang chuẩn bị",
-  shipping: "Đang giao",
-  delivered: "Đã giao",
-  cancelled: "Đã huỷ",
-  unpaid: "Chưa thanh toán",
-  paid: "Đã thanh toán",
-  refunded: "Đã hoàn tiền",
-};
+export const statusNames = orderLabels;
 export function Status({ value }: { value: string }) {
   return (
     <span className={"status status-" + value}>
-      {statusNames[value] || value}
+      {statusNames[value] || "Chưa xác định"}
     </span>
   );
 }
-export function Auth({ mode }: { mode: string }) {
-  const router = useRouter(),
+export function Auth({
+  mode,
+  googleEnabled = false,
+}: {
+  mode: string;
+  googleEnabled?: boolean;
+}) {
+  const router = useScopedRouter(),
     params = useSearchParams();
   const { setUser } = useShop();
   const [error, setError] = useState(""),
@@ -52,6 +54,17 @@ export function Auth({ mode }: { mode: string }) {
     setError("");
     setSent(false);
   }, [mode]);
+  const googleError =
+    {
+      google_not_configured:
+        "Đăng nhập Google chưa được cấu hình. Hãy thêm GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET vào môi trường triển khai.",
+      provider_cancelled: "Bạn đã huỷ đăng nhập Google.",
+      link_required:
+        "Email đã tồn tại. Đăng nhập bằng mật khẩu rồi liên kết Google trong tài khoản.",
+      identity_conflict: "Tài khoản Google này đang liên kết với tài khoản khác.",
+      unverified: "Google chưa xác minh địa chỉ email này.",
+      expired: "Phiên đăng nhập Google đã hết hạn. Vui lòng thử lại.",
+    } as Record<string, string>;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -59,12 +72,7 @@ export function Auth({ mode }: { mode: string }) {
     const f = Object.fromEntries(new FormData(e.currentTarget));
     try {
       if (forgot) {
-        await api("contact", "POST", {
-          name: f.name,
-          email: f.email,
-          message:
-            "Yêu cầu khôi phục tài khoản. Vui lòng xác minh quyền sở hữu email trước khi cấp đường dẫn đặt lại mật khẩu.",
-        });
+        await api("auth/forgot-password", "POST", { email: f.email });
         setSent(true);
       } else {
         const d = await api(
@@ -74,13 +82,7 @@ export function Auth({ mode }: { mode: string }) {
         );
         setUser(d.user);
         const next = params.get("next");
-        router.push(
-          next && next.startsWith("/") && !next.startsWith("//")
-            ? next
-            : d.user.role === "customer"
-              ? "/account"
-              : "/admin",
-        );
+        router.push(loginDestination(d.user, next));
         router.refresh();
       }
     } catch (e) {
@@ -106,7 +108,7 @@ export function Auth({ mode }: { mode: string }) {
         </p>
       </div>
       <div className="auth-panel">
-        <span className="eyebrow">WELCOME TO FLEUR</span>
+        <span className="eyebrow">WELCOME TO FLEURIOUS</span>
         <h1>
           {forgot
             ? "Tìm lại tài khoản."
@@ -116,20 +118,39 @@ export function Auth({ mode }: { mode: string }) {
         </h1>
         <p>
           {forgot
-            ? "Đội ngũ Fleur sẽ tiếp nhận yêu cầu và xác minh email của bạn."
+            ? "Nhập email để nhận liên kết đặt lại mật khẩu."
             : register
               ? "Tạo tài khoản để lưu những điều bạn yêu."
               : "Đăng nhập để tiếp tục gửi những lời thương."}
         </p>
+        {!forgot && googleEnabled && (
+          <a
+            className="button secondary google-login"
+            aria-label={register ? "Đăng ký với Google" : "Đăng nhập với Google"}
+            href={
+              "/api/auth/google?next=" +
+              encodeURIComponent(params.get("next") || "")
+            }
+          >
+            <span className="google-mark" aria-hidden="true">G</span>
+            {register ? "Đăng ký với Google" : "Đăng nhập với Google"}
+          </a>
+        )}
+        {params.get("error") && (
+          <p className="error">
+            {googleError[params.get("error") || ""] ||
+              "Chưa thể đăng nhập Google. Kiểm tra cấu hình hoặc thử lại."}
+          </p>
+        )}
         {sent ? (
           <div className="notice">
             <Check />
-            Đã lưu yêu cầu. Cửa hàng sẽ kiểm tra và hỗ trợ khôi phục tài khoản
-            sau khi xác minh quyền sở hữu email.
+            Nếu email này thuộc một tài khoản, chúng tôi sẽ gửi liên kết đặt lại
+            mật khẩu có hiệu lực 30 phút.
           </div>
         ) : (
           <form onSubmit={submit}>
-            {(register || forgot) && (
+            {register && (
               <Field
                 label="Họ và tên"
                 name="name"
@@ -167,7 +188,7 @@ export function Auth({ mode }: { mode: string }) {
               <>
                 <label className="check-field">
                   <input type="checkbox" name="consent" />
-                  Nhận gợi ý và ưu đãi từ Fleur.
+                  Nhận gợi ý và ưu đãi từ Fleurious.
                 </label>
                 <label className="check-field">
                   <input type="checkbox" required />
@@ -197,7 +218,7 @@ export function Auth({ mode }: { mode: string }) {
           </form>
         )}
         <div className="auth-bottom">
-          {register ? "Đã là một phần của Fleur?" : "Chưa có tài khoản?"}{" "}
+          {register ? "Đã là một phần của Fleurious?" : "Chưa có tài khoản?"}{" "}
           <Link href={register ? "/login" : "/register"}>
             {register ? "Đăng nhập" : "Đăng ký ngay"}
           </Link>
@@ -212,7 +233,7 @@ export function Account() {
     [orders, setOrders] = useState<any[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const router = useRouter();
+  const router = useScopedRouter();
   useEffect(() => {
     if (user)
       api("orders")
@@ -265,7 +286,7 @@ export function Account() {
     <main className="page">
       <Breadcrumb title="Tài khoản" />
       <div className="page-heading">
-        <span className="eyebrow">YOUR FLEUR SPACE</span>
+        <span className="eyebrow">YOUR FLEURIOUS SPACE</span>
         <h1>Chào {user.name.split(" ").at(-1)}.</h1>
         <p>Một góc nhỏ cho những điều bạn yêu.</p>
       </div>
@@ -288,6 +309,15 @@ export function Account() {
               {label}
             </button>
           ))}
+          <Link href="/start">Mở cửa hàng của bạn</Link>
+          {user.platformRole === "platform_admin" && (
+            <Link href="/platform">Quản trị nền tảng</Link>
+          )}
+          {user.memberships?.map((m) => (
+            <Link key={m.store_id} href={"/workspace/" + m.store_id}>
+              {m.name} · {displayLabel("role", m.role)}
+            </Link>
+          ))}
           <Link href="/wishlist">
             <Heart size={18} />
             Hoa yêu thích
@@ -295,7 +325,7 @@ export function Account() {
           {user.role !== "customer" && (
             <Link href="/admin">
               <ShieldCheck size={18} />
-              Fleur Workspace
+              Fleurious Workspace
             </Link>
           )}
           <button
@@ -326,7 +356,10 @@ export function Account() {
                 orders.map((o) => (
                   <div className="order-card" key={o.id}>
                     <div className="flex-between">
-                      <strong>{o.reference}</strong>
+                      <strong>
+                        {o.reference} ·{" "}
+                        <Link href={"/s/" + o.store_slug}>{o.store_name}</Link>
+                      </strong>
                       <Status value={o.status} />
                     </div>
                     <p className="small">
@@ -350,9 +383,42 @@ export function Account() {
                       <span>
                         Tổng cộng <strong>{money(o.total)}</strong>
                       </span>
+                      {o.status === "delivered" && (
+                        <TableAction icon={RotateCcw}
+                          onClick={async () => {
+                            try {
+                              const d = await api(
+                                "orders/" + o.id + "/reorder",
+                                "POST",
+                                {},
+                              );
+                              const previous = JSON.parse(
+                                localStorage.getItem(
+                                  "fleur.cart." + d.store.slug,
+                                ) || "[]",
+                              );
+                              if (
+                                previous.length &&
+                                !confirm(
+                                  "Giỏ của cửa hàng này đang có hoa. Thay bằng các sản phẩm của đơn cũ?",
+                                )
+                              )
+                                return;
+                              localStorage.setItem(
+                                "fleur.cart." + d.store.slug,
+                                JSON.stringify(d.items),
+                              );
+                              router.push("/s/" + d.store.slug + "/cart");
+                            } catch (e) {
+                              setError((e as Error).message);
+                            }
+                          }}
+                        >
+                          Đặt lại
+                        </TableAction>
+                      )}
                       {["pending", "confirmed"].includes(o.status) && (
-                        <button
-                          className="text-button"
+                        <TableAction icon={Ban}
                           onClick={async () => {
                             if (
                               !confirm("Bạn muốn huỷ đơn " + o.reference + "?")
@@ -372,7 +438,7 @@ export function Account() {
                           }}
                         >
                           Huỷ đơn
-                        </button>
+                        </TableAction>
                       )}
                     </div>
                   </div>
@@ -470,7 +536,7 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
       <Breadcrumb title={post?.title || "Chuyện về hoa"} />
       {post ? (
         <article className="article">
-          <span className="eyebrow">THE FLEUR JOURNAL</span>
+          <span className="eyebrow">THE FLEURIOUS JOURNAL</span>
           <h1>{post.title}</h1>
           <p className="lead">{post.excerpt}</p>
           <FlowerImage
@@ -494,7 +560,7 @@ export function Journal({ data, slug }: { data: Catalog; slug?: string }) {
       ) : (
         <>
           <div className="page-heading">
-            <span className="eyebrow">THE FLEUR JOURNAL</span>
+            <span className="eyebrow">THE FLEURIOUS JOURNAL</span>
             <h1>Chậm một chút. Yêu nhiều hơn.</h1>
             <p>Chuyện về hoa, về những người thương, và những điều nhỏ bé.</p>
           </div>
@@ -540,7 +606,7 @@ export function Events({ data }: { data: Catalog }) {
             <div>
               <span className="eyebrow">
                 <CalendarDays size={16} />
-                {e.starts_at} — {e.ends_at}
+                {formatDate(e.starts_at)} — {formatDate(e.ends_at)}
               </span>
               <h2>{e.name}</h2>
               <p>{e.description}</p>
@@ -563,7 +629,7 @@ export function Contact() {
       <Breadcrumb title="Liên hệ" />
       <div className="page-heading">
         <span className="eyebrow">WE ARE HERE FOR YOU</span>
-        <h1>Kể Fleur nghe.</h1>
+        <h1>Kể Fleurious nghe.</h1>
         <p>Một bó hoa riêng, một sự kiện, hay một điều bạn cần hỗ trợ.</p>
       </div>
       <div className="contact-layout">
@@ -571,7 +637,7 @@ export function Contact() {
           <h2>Mọi lời nhắn đều được nâng niu.</h2>
           <p>
             Gửi yêu cầu tư vấn, chăm sóc hoa, hoặc hỗ trợ đơn hàng. Đội ngũ
-            Fleur sẽ tiếp nhận thông tin trong khu vực quản trị.
+            Fleurious sẽ tiếp nhận thông tin trong khu vực quản trị.
           </p>
           <div className="contact-feature">
             <MapPin />
@@ -588,7 +654,7 @@ export function Contact() {
         {sent ? (
           <div className="notice">
             <Check />
-            Fleur đã nhận lời nhắn của bạn. Yêu cầu đã được lưu để cửa hàng hỗ
+            Fleurious đã nhận lời nhắn của bạn. Yêu cầu đã được lưu để cửa hàng hỗ
             trợ.
           </div>
         ) : (
@@ -610,7 +676,7 @@ export function Contact() {
             <Field label="Tên của bạn" name="name" required minLength={2} />
             <Field label="Email" name="email" type="email" required />
             <label className="field">
-              Fleur có thể giúp gì cho bạn?
+              Fleurious có thể giúp gì cho bạn?
               <textarea
                 name="message"
                 required
@@ -807,10 +873,10 @@ const content: Record<
   { label: string; title: string; intro: string; sections: [string, string][] }
 > = {
   about: {
-    label: "THE FLEUR PHILOSOPHY",
+    label: "THE FLEURIOUS PHILOSOPHY",
     title: "Một chút hoa. Thật nhiều cảm xúc.",
     intro:
-      "Fleur bắt đầu từ một điều giản dị: hoa có thể khiến một ngày bình thường trở nên đáng nhớ.",
+      "Fleurious bắt đầu từ một điều giản dị: hoa có thể khiến một ngày bình thường trở nên đáng nhớ.",
     sections: [
       [
         "Đẹp từ những điều vừa đủ",
@@ -829,11 +895,11 @@ const content: Record<
   policies: {
     label: "ORDER WITH CONFIDENCE",
     title: "Giao hoa bằng sự tận tâm.",
-    intro: "Những thông tin bạn cần trước khi đặt hoa tại Fleur.",
+    intro: "Những thông tin bạn cần trước khi đặt hoa tại Fleurious.",
     sections: [
       [
         "Phạm vi & phí giao hàng",
-        "Giao trong khu vực TP. Hà Nội với phí 35.000 ₫. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 ₫ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
+        "Giao trong khu vực TP. Hà Nội với phí 35.000 VNĐ. Miễn phí giao hàng cho đơn có giá trị sản phẩm từ 1.000.000 VNĐ trước giảm giá. Chọn ngày và một trong bốn khung giờ tại bước đặt hàng.",
       ],
       [
         "Chuẩn bị & thay thế hoa",
@@ -853,7 +919,7 @@ const content: Record<
     label: "YOUR TRUST MATTERS",
     title: "Thông tin của bạn được trân trọng.",
     intro:
-      "Fleur sử dụng dữ liệu để thực hiện đơn hàng và chăm sóc khách hàng.",
+      "Fleurious sử dụng dữ liệu để thực hiện đơn hàng và chăm sóc khách hàng.",
     sections: [
       [
         "Thông tin được lưu",
@@ -875,7 +941,7 @@ const content: Record<
   },
   faq: {
     label: "A FEW LITTLE ANSWERS",
-    title: "Bạn hỏi, Fleur trả lời.",
+    title: "Bạn hỏi, Fleurious trả lời.",
     intro: "Một vài điều nhỏ trước khi bạn chọn hoa.",
     sections: [
       [
@@ -895,7 +961,7 @@ const content: Record<
         "Nhập mã ở giỏ hàng. Hệ thống kiểm tra thời hạn, số lượt dùng và giá trị đơn tối thiểu. Mỗi đơn áp dụng một mã.",
       ],
       [
-        "Fleur nhận hoa sự kiện hay hoa đặt riêng không?",
+        "Fleurious nhận hoa sự kiện hay hoa đặt riêng không?",
         "Có thể gửi yêu cầu qua trang liên hệ, kèm thời gian, số lượng và phong cách mong muốn để được tư vấn.",
       ],
     ],
@@ -917,7 +983,7 @@ export function Content({ page }: { page: string }) {
       <Breadcrumb
         title={
           page === "about"
-            ? "Về Fleur"
+            ? "Về Fleurious"
             : page === "faq"
               ? "Câu hỏi thường gặp"
               : page === "privacy"
@@ -944,7 +1010,7 @@ export function Content({ page }: { page: string }) {
         ),
       )}
       <Link href="/contact" className="text-link">
-        Liên hệ với Fleur <ArrowUpRight size={16} />
+        Liên hệ với Fleurious <ArrowUpRight size={16} />
       </Link>
     </main>
   );

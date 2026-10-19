@@ -72,7 +72,7 @@ export default function ProductGallery({ product }: { product: Product }) {
           sizes="(max-width: 700px) 90vw, 44vw"
           eager
         />
-        <span className="badge">{product.badge || "Thiết kế bởi Fleur"}</span>
+        <span className="badge">{product.badge || "Thiết kế bởi Fleurious"}</span>
         {images.length > 1 && (
           <>
             <button

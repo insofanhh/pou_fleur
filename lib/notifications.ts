@@ -1,5 +1,6 @@
 import { currentUser, HttpError, permissions } from "./auth";
 import { query } from "./db";
+import { tenantId } from "./tenant";
 import type { AdminNotification } from "./notification-types";
 
 export async function adminNotifications() {
@@ -22,13 +23,13 @@ export async function adminNotifications() {
     },
     {
       area: "users",
-      title: "Người dùng mới",
-      sql: "SELECT id, name AS detail, UNIX_TIMESTAMP(created_at)*1000 AS createdAt FROM users ORDER BY id DESC LIMIT 30",
+      title: "Khách hàng mới",
+      sql: "SELECT id, name AS detail, UNIX_TIMESTAMP(created_at)*1000 AS createdAt FROM customers ORDER BY id DESC LIMIT 30",
     },
   ] as const;
-  const batches = await Promise.all(
+  const batches: AdminNotification[][] = await Promise.all(
     sources
-      .filter((s) => allowed.includes(s.area))
+      .filter((s) => allowed.includes(s.area === "users" ? "crm" : s.area))
       .map(async (source) => {
         const rows = await query<
           { id: number; detail: string; createdAt: number }[]
@@ -41,11 +42,13 @@ export async function adminNotifications() {
               title: source.title,
               detail: row.detail,
               createdAt: Number(row.createdAt),
-              href: `/admin/${source.area}`,
+              href: `/admin/${source.area === "users" ? "crm" : source.area}`,
             }) satisfies AdminNotification,
         );
       }),
   );
+  const notices = await query<any[]>("SELECT id,event_key,title,body,href,UNIX_TIMESTAMP(created_at)*1000 createdAt FROM notifications WHERE store_id=? AND user_id=? ORDER BY id DESC LIMIT 30", [tenantId(), user.id]);
+  batches.push(notices.map((n) => ({ key: "system:" + n.id, type: "system" as const, title: n.title, detail: n.body || "", href: n.href, createdAt: Number(n.createdAt) })));
   return {
     userId: user.id,
     items: batches

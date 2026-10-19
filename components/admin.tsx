@@ -1,7 +1,16 @@
 "use client";
-import Link from "next/link";
+import { hanoiDateKey, formatDate, formatDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
+import { TableAction, TableActions } from "./table-actions";
+import { displayLabel, auditAction } from "@/lib/display-labels";
+import WorkspaceView, { workspaceAreas } from "./workspace";
+
+import Link, { useLocalPath } from "./routing";
 import AdminNotifications from "./admin-notifications";
 import ProductMediaEditor from "./product-media-editor";
+import ProductTaxonomyManager, {
+  ProductTaxonomyFields,
+} from "./product-taxonomy";
 import { productSlug } from "@/lib/product-images";
 import EmailWorkspace from "./email-admin";
 import { usePathname, useRouter } from "next/navigation";
@@ -30,11 +39,14 @@ import {
   LogOut,
   MessageSquare,
   History,
+  Eye,
   Menu,
   TrendingUp,
   Wallet,
   ClipboardList,
   Mail,
+  RotateCcw,
+  EyeOff,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
@@ -42,6 +54,12 @@ import { money } from "./home";
 import { Status, statusNames } from "./pages";
 const nav = [
   ["overview", "Tổng quan", LayoutDashboard],
+  ["analytics", "Phân tích dữ liệu", TrendingUp],
+  ["board", "Đơn hàng · Kanban", ClipboardList],
+  ["calendar", "Lịch giao & ghi chú", CalendarDays],
+  ["theme", "Giao diện cửa hàng", Layers],
+  ["settings", "Cấu hình cửa hàng", ShieldCheck],
+  ["billing", "Gói & hóa đơn", Wallet],
   ["products", "Sản phẩm", Flower2],
   ["categories", "Danh mục", Layers],
   ["orders", "Đơn hàng", Package],
@@ -50,27 +68,36 @@ const nav = [
   ["posts", "Tin tức", Newspaper],
   ["crm", "Khách hàng & CRM", ContactRound],
   ["emails", "Email & chương trình", Mail],
+  ["automations", "Chăm sóc tự động", ContactRound],
   ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
   ["users", "Người dùng & quyền", Users],
   ["audit", "Nhật ký hoạt động", History],
 ] as const;
 const rights: Record<string, string[]> = {
-  admin: nav.map((n) => n[0]),
+  owner: nav.map((n) => n[0]),
+  admin: nav
+    .map((n) => n[0])
+    .filter((k) => !["settings", "theme", "billing"].includes(k)),
   manager: [
     "overview",
+    "analytics",
+    "board",
+    "calendar",
     "products",
     "categories",
     "orders",
     "promotions",
     "events",
-    "crm",
     "inquiries",
+    "crm",
     "emails",
+    "automations",
   ],
   editor: ["posts", "events"],
-  support: ["orders", "crm", "inquiries", "emails"],
+  support: ["board", "calendar", "orders", "inquiries", "crm", "emails"],
 };
 const roleNames: Record<string, string> = {
+  owner: "Chủ cửa hàng",
   admin: "Quản trị viên",
   manager: "Quản lý cửa hàng",
   editor: "Biên tập viên",
@@ -93,7 +120,7 @@ const fields: Record<string, FieldDef[]> = {
     { key: "name", label: "Tên thiết kế" },
     { key: "slug", label: "Đường dẫn (không dấu)" },
     { key: "category_id", label: "Danh mục", type: "category" },
-    { key: "price", label: "Giá tiêu chuẩn (₫)", type: "number" },
+    { key: "price", label: "Giá tiêu chuẩn (VNĐ)", type: "number" },
     {
       key: "compare_price",
       label: "Giá gốc (tuỳ chọn)",
@@ -129,7 +156,7 @@ const fields: Record<string, FieldDef[]> = {
       ],
     },
     { key: "value", label: "Giá trị giảm", type: "number" },
-    { key: "min_order", label: "Đơn tối thiểu (₫)", type: "number" },
+    { key: "min_order", label: "Đơn tối thiểu (VNĐ)", type: "number" },
     { key: "usage_limit", label: "Giới hạn lượt dùng", type: "number" },
     { key: "starts_at", label: "Bắt đầu", type: "datetime-local" },
     { key: "ends_at", label: "Kết thúc", type: "datetime-local" },
@@ -181,11 +208,16 @@ const fields: Record<string, FieldDef[]> = {
   ],
 };
 export default function Admin({ data }: { data: Catalog }) {
-  const path = usePathname();
-  const requested = path.split("/")[2] || "overview";
+  const path = useLocalPath();
+  const requested =
+    path === "/admin/orders/new"
+      ? "new-order"
+      : path.split("/")[2] || "overview";
   const { user, setUser, ready, toast } = useShop();
   const area = requested;
-  const [payload, setPayload] = useState<any>(null),
+  const [loaded, setLoaded] = useState<{ area: string; payload: any } | null>(
+      null,
+    ),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [search, setSearch] = useState(""),
@@ -193,18 +225,30 @@ export default function Admin({ data }: { data: Catalog }) {
     [selected, setSelected] = useState<any>(null),
     [mobile, setMobile] = useState(false),
     [statusFilter, setStatusFilter] = useState("");
+  const payload = loaded?.area === area ? loaded.payload : null;
+  const requestId = useRef(0);
+  const activeArea = useRef(area);
+  activeArea.current = area;
   const router = useRouter();
-  const allowed = user ? rights[user.role] || [] : [];
+  const baseAllowed = user ? rights[user.role] || [] : [];
+  const allowed = baseAllowed.includes("orders")
+    ? [...baseAllowed, "new-order"]
+    : baseAllowed;
   async function refresh() {
+    if (activeArea.current !== area) return;
+    const request = ++requestId.current;
     setError("");
     if (!payload) setLoading(true);
     try {
-      setPayload(await api("admin/" + area));
+      const result = await api("admin/" + area);
+      if (request === requestId.current) setLoaded({ area, payload: result });
     } catch (e) {
-      setError((e as Error).message);
-      setPayload(null);
+      if (request === requestId.current) {
+        setError((e as Error).message);
+        setLoaded({ area, payload: null });
+      }
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }
   useEffect(() => {
@@ -213,20 +257,28 @@ export default function Admin({ data }: { data: Catalog }) {
     setSearch("");
     setStatusFilter("");
     setLoading(true);
-    if (user && allowed.includes(area)) void refresh();
-  }, [area, user]);
+    if (workspaceAreas.includes(area)) {
+      setLoading(false);
+      setLoaded(null);
+    } else if (user && allowed.includes(area)) void refresh();
+    return () => {
+      requestId.current++;
+    };
+    // Focus revalidates auth/me with a new object. Only an actual account or
+    // permission change should reset the current editor, filters and content.
+  }, [area, user?.id, user?.role]);
   if (!ready)
-    return <div className="admin-loading">Đang mở Fleur Workspace...</div>;
+    return <div className="admin-loading">Đang mở Fleurious Workspace...</div>;
   if (!user || user.role === "customer")
     return (
       <div className="admin-gate">
         <Link className="logo" href="/">
-          fleur<span>®</span>
+          fleurious<span>®</span>
         </Link>
         <ShieldCheck size={48} />
-        <h1>Fleur Workspace.</h1>
+        <h1>Fleurious Workspace.</h1>
         <p>
-          Khu vực dành cho đội ngũ Fleur.
+          Khu vực dành cho đội ngũ Fleurious.
           <br />
           Vui lòng đăng nhập tài khoản được cấp quyền.
         </p>
@@ -238,7 +290,10 @@ export default function Admin({ data }: { data: Catalog }) {
         </Link>
       </div>
     );
-  const currentNav = nav.find((n) => n[0] === area);
+  const currentNav =
+    area === "new-order"
+      ? (["new-order", "Tạo đơn hàng", ClipboardList] as const)
+      : nav.find((n) => n[0] === area);
   const list = Array.isArray(payload) ? payload : [];
   const filtered = list.filter(
     (r) =>
@@ -266,7 +321,10 @@ export default function Admin({ data }: { data: Catalog }) {
   }
   async function transition(o: any, status: string) {
     try {
-      await api("admin/orders/" + o.id, "PATCH", { status });
+      await api("admin/orders/" + o.id, "PATCH", {
+        status,
+        version: o.version,
+      });
       toast("Đã cập nhật đơn hàng.");
       setSelected(null);
       void refresh();
@@ -278,15 +336,20 @@ export default function Admin({ data }: { data: Catalog }) {
     <div className="admin-shell">
       <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <Link href="/admin" className="logo">
-          fleur<span>®</span>
+          fleurious<span>®</span>
         </Link>
-        <div className="workspace-label">WORKSPACE</div>
+        <div className="workspace-label store-workspace-label">
+          {data.store?.name ? `${data.store.name}'s workspace` : "Workspace"}
+        </div>
         <nav>
           {nav
             .filter((n) => allowed.includes(n[0]))
             .map(([key, label, Icon], i) => (
               <Link
                 href={"/admin/" + key}
+                scroll={false}
+                prefetch={true}
+                aria-current={area === key ? "page" : undefined}
                 onClick={() => setMobile(false)}
                 className={area === key ? "active" : ""}
                 key={key}
@@ -337,7 +400,7 @@ export default function Admin({ data }: { data: Catalog }) {
           </span>
           <div>
             <Link
-              href="/"
+              href={"/s/" + (data.store?.slug || "fleur")}
               target="_blank"
               rel="noopener noreferrer"
               className="admin-store-link"
@@ -345,35 +408,54 @@ export default function Admin({ data }: { data: Catalog }) {
               <ArrowUpRight size={17} /> Xem cửa hàng
             </Link>
             <AdminNotifications
-              key={`${user.id}:${user.role}`}
+              key={`${data.store?.id}:${user.id}:${user.role}`}
               userId={user.id}
             />
           </div>
         </header>
         <main className="admin-content">
+          {data.store?.status === "suspended" && area !== "billing" && (
+            <div className="panel" role="alert">
+              <h3>Cửa hàng đang tạm đóng băng</h3>
+              <p>
+                {data.store.suspension_reason ||
+                  "Vui lòng liên hệ admin platform để được hỗ trợ."}
+              </p>
+              {user.role === "owner" && (
+                <Link className="button" href="/admin/billing">
+                  Xem gói & hóa đơn
+                </Link>
+              )}
+            </div>
+          )}
           <div className="admin-heading">
             <div>
-              <div className="eyebrow">FLEUR FLORAL STUDIO</div>
+              <div className="eyebrow">FLEURIOUS FLORAL STUDIO</div>
               <h1>
                 {area === "overview"
                   ? "Mỗi ngày, một điều tốt đẹp."
-                  : currentNav?.[1]}
+                  : area === "new-order"
+                    ? "Tạo đơn hàng"
+                    : currentNav?.[1]}
               </h1>
               <p>
                 {area === "overview"
                   ? "Chào " + user.name + ". Đây là hoạt động cửa hàng của bạn."
-                  : area === "crm"
-                    ? "Hiểu khách hàng hơn. Chăm sóc từ những điều nhỏ."
-                    : "Quản lý và cập nhật thông tin cửa hàng."}
+                  : "Quản lý và cập nhật thông tin cửa hàng."}
               </p>
             </div>
             <div>
-              {area === "overview" ? (
+              {["board", "orders", "calendar"].includes(area) &&
+              allowed.includes("new-order") ? (
+                <Link className="button" href="/admin/orders/new">
+                  <Plus size={17} /> Tạo đơn hàng
+                </Link>
+              ) : area === "overview" ? (
                 <span className="date-pill">
                   <CalendarDays size={16} />
-                  {new Date().toLocaleDateString("vi-VN")}
+                  {formatDate(new Date())}
                 </span>
-              ) : fields[area] && area !== "users" ? (
+              ) : fields[area] && !["users", "categories"].includes(area) ? (
                 <button className="button" onClick={() => setEditing({})}>
                   <Plus size={17} />
                   Thêm{" "}
@@ -398,7 +480,9 @@ export default function Admin({ data }: { data: Catalog }) {
                 Mở workspace của bạn
               </Link>
             </div>
-          ) : loading ? (
+          ) : workspaceAreas.includes(area) ? (
+            <WorkspaceView key={area} area={area} />
+          ) : loading || loaded?.area !== area ? (
             <div className="panel loading-state">
               Đang tải dữ liệu cửa hàng...
             </div>
@@ -411,14 +495,17 @@ export default function Admin({ data }: { data: Catalog }) {
             </div>
           ) : area === "overview" ? (
             <Overview payload={payload} />
+          ) : area === "crm" ? (
+            <CRM payload={payload} refresh={refresh} />
+          ) : area === "categories" ? (
+            <ProductTaxonomyManager categories={list} refresh={refresh} />
           ) : area === "emails" ? (
             <EmailWorkspace
               payload={payload}
               refresh={refresh}
-              canEdit={["admin", "manager"].includes(user.role)}
+              storeName={data.store?.name}
+              canEdit={["owner", "admin", "manager"].includes(user.role)}
             />
-          ) : area === "crm" ? (
-            <CRM payload={payload} refresh={refresh} />
           ) : (
             <>
               {area === "users" && (
@@ -447,7 +534,7 @@ export default function Admin({ data }: { data: Catalog }) {
                   </label>
                   <span className="small">{filtered.length} bản ghi</span>
                   {area === "orders" && (
-                    <select
+                    <Select
                       aria-label="Trạng thái đơn"
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
@@ -460,7 +547,7 @@ export default function Admin({ data }: { data: Catalog }) {
                             {v}
                           </option>
                         ))}
-                    </select>
+                    </Select>
                   )}
                 </div>
                 <div className="table-scroll">
@@ -534,7 +621,7 @@ export default function Admin({ data }: { data: Catalog }) {
                             <th>Mô tả</th>
                           </>
                         )}
-                        {area !== "audit" && <th aria-label="Thao tác" />}
+                        {area !== "audit" && <th className="table-actions-heading" scope="col">Thao tác</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -554,11 +641,10 @@ export default function Admin({ data }: { data: Catalog }) {
                                 </div>
                               </td>
                               <td>
-                                {
+                                {r.category ||
                                   data.categories.find(
                                     (c) => c.id === r.category_id,
-                                  )?.name
-                                }
+                                  )?.name}
                               </td>
                               <td>{money(r.price)}</td>
                               <td>
@@ -613,7 +699,7 @@ export default function Admin({ data }: { data: Catalog }) {
                                   {roleNames[r.role]}
                                 </span>
                               </td>
-                              <td>{r.created_at?.slice(0, 10)}</td>
+                              <td>{formatDate(r.created_at)}</td>
                               <td>
                                 <Flag active={r.active} />
                               </td>
@@ -646,8 +732,8 @@ export default function Admin({ data }: { data: Catalog }) {
                               <td>
                                 <strong>{r.name}</strong>
                               </td>
-                              <td>{r.starts_at}</td>
-                              <td>{r.ends_at}</td>
+                              <td>{formatDate(r.starts_at)}</td>
+                              <td>{formatDate(r.ends_at)}</td>
                               <td>
                                 <Flag active={r.active} />
                               </td>
@@ -661,7 +747,7 @@ export default function Admin({ data }: { data: Catalog }) {
                                 </div>
                               </td>
                               <td>{r.slug}</td>
-                              <td>{r.created_at?.slice(0, 10)}</td>
+                              <td>{formatDate(r.created_at)}</td>
                               <td>
                                 <Flag active={r.published} />
                               </td>
@@ -682,11 +768,12 @@ export default function Admin({ data }: { data: Catalog }) {
                           ) : area === "audit" ? (
                             <>
                               <td>{r.user_name || "Hệ thống"}</td>
-                              <td>{r.action}</td>
+                              <td>{auditAction(r.action, r.entity)}</td>
                               <td>
-                                {r.entity} #{r.entity_id}
+                                {displayLabel("entity", r.entity)} #
+                                {r.entity_id}
                               </td>
-                              <td>{r.created_at}</td>
+                              <td>{formatDateTime(r.created_at)}</td>
                             </>
                           ) : (
                             <>
@@ -699,18 +786,16 @@ export default function Admin({ data }: { data: Catalog }) {
                           )}
                           {area !== "audit" && (
                             <td>
-                              <div className="row-actions">
+                              <TableActions className="row-actions">
                                 {area === "orders" ? (
-                                  <button
-                                    className="icon-button"
+                                  <TableAction icon={Eye}
                                     aria-label="Chi tiết đơn hàng"
                                     onClick={() => setSelected(r)}
                                   >
-                                    <ChevronRight size={17} />
-                                  </button>
+                                    Chi tiết
+                                  </TableAction>
                                 ) : area === "inquiries" ? (
-                                  <button
-                                    className="icon-button"
+                                  <TableAction icon={r.status === "new" ? Check : RotateCcw}
                                     aria-label="Đổi trạng thái hỗ trợ"
                                     onClick={async () => {
                                       try {
@@ -730,27 +815,25 @@ export default function Admin({ data }: { data: Catalog }) {
                                       }
                                     }}
                                   >
-                                    <Check size={17} />
-                                  </button>
+                                    {r.status === "new" ? "Đã xử lý" : "Mở lại"}
+                                  </TableAction>
                                 ) : (
                                   <>
-                                    <button
-                                      className="icon-button"
+                                    <TableAction icon={Pencil}
                                       aria-label="Chỉnh sửa"
                                       onClick={() => setEditing(r)}
                                     >
-                                      <Pencil size={16} />
-                                    </button>
-                                    <button
-                                      className="icon-button"
+                                      Sửa
+                                    </TableAction>
+                                    <TableAction icon={EyeOff}
                                       aria-label="Ẩn hoặc xoá"
                                       onClick={() => void archive(r)}
                                     >
-                                      <Trash2 size={16} />
-                                    </button>
+                                      Ẩn
+                                    </TableAction>
                                   </>
                                 )}
-                              </div>
+                              </TableActions>
                             </td>
                           )}
                         </tr>
@@ -844,7 +927,8 @@ export default function Admin({ data }: { data: Catalog }) {
                     {
                       pending: ["confirmed", "cancelled"],
                       confirmed: ["preparing", "cancelled"],
-                      preparing: ["shipping"],
+                      preparing: ["ready"],
+                      ready: ["shipping"],
                       shipping: ["delivered"],
                       delivered: [],
                       cancelled: [],
@@ -872,7 +956,7 @@ export default function Admin({ data }: { data: Catalog }) {
           )}
         </main>
         <div className="admin-footer">
-          Fleur Workspace <span>Chăm chút từng chi tiết, mỗi ngày.</span>
+          Fleurious Workspace <span>Chăm chút từng chi tiết, mỗi ngày.</span>
         </div>
       </div>
     </div>
@@ -890,9 +974,7 @@ function Flag({ active }: { active: number }) {
 function Overview({ payload }: { payload: any }) {
   const stats = payload?.stats || {};
   const dates = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - 13 + i);
-    const key = d.toISOString().slice(0, 10);
+    const key = hanoiDateKey(Date.now() + (-13 + i) * 86400000);
     return {
       day: key,
       value: Number(
@@ -958,7 +1040,7 @@ function Overview({ payload }: { payload: any }) {
             <div className="chart-y">
               <span>{money(max === 1 ? 1000000 : max)}</span>
               <span>{money(max === 1 ? 500000 : Math.round(max / 2))}</span>
-              <span>0 ₫</span>
+              <span>0 VNĐ</span>
             </div>
             <div className="chart-bars">
               {dates.map((d) => (
@@ -1050,7 +1132,7 @@ function Overview({ payload }: { payload: any }) {
                     <Link href="/admin/orders">{o.reference}</Link>
                   </td>
                   <td>{o.customer_name}</td>
-                  <td>{o.created_at?.slice(0, 10)}</td>
+                  <td>{formatDate(o.created_at)}</td>
                   <td>{money(o.total)}</td>
                   <td>
                     <Status value={o.status} />
@@ -1128,9 +1210,10 @@ function Editor({
   const [designName, setDesignName] = useState(record.name || "");
   const [designSlug, setDesignSlug] = useState(record.slug || "");
   const manualSlug = useRef(false);
+  const [taxonomyReady, setTaxonomyReady] = useState(area !== "products");
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !taxonomyReady) return;
     setBusy(true);
     setError("");
     const f: any = Object.fromEntries(new FormData(e.currentTarget));
@@ -1141,6 +1224,7 @@ function Editor({
         return;
       }
       f.gallery = JSON.parse(f.gallery || "[]");
+      f.flower_component_ids = JSON.parse(f.flower_component_ids || "[]");
     }
     for (const d of fields[area]) {
       if (d.type === "number")
@@ -1175,8 +1259,19 @@ function Editor({
           />
         )}
         {fields[area]
-          .filter((f) => area !== "products" || f.key !== "image")
+          .filter(
+            (f) => area !== "products" || !["image", "flowers"].includes(f.key),
+          )
           .map((f) => {
+            if (area === "products" && f.key === "category_id")
+              return (
+                <ProductTaxonomyFields
+                  key={f.key}
+                  record={record}
+                  disabled={busy}
+                  onReady={setTaxonomyReady}
+                />
+              );
             let value =
               record[f.key] ??
               (["active", "published"].includes(f.key)
@@ -1237,15 +1332,15 @@ function Editor({
                     </button>
                   </>
                 ) : f.options ? (
-                  <select name={f.key} defaultValue={value || f.options[0][0]}>
+                  <Select name={f.key} defaultValue={value || f.options[0][0]}>
                     {f.options.map(([v, l]) => (
                       <option value={v} key={v}>
                         {l}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 ) : f.type === "category" ? (
-                  <select
+                  <Select
                     name={f.key}
                     defaultValue={value || data.categories[0]?.id}
                   >
@@ -1254,7 +1349,7 @@ function Editor({
                         {c.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 ) : f.type === "textarea" ? (
                   <textarea
                     name={f.key}
@@ -1323,7 +1418,7 @@ function Editor({
           <button className="button outline" type="button" onClick={close}>
             Huỷ
           </button>
-          <button className="button" disabled={busy}>
+          <button className="button" disabled={busy || !taxonomyReady}>
             {busy ? "Đang lưu..." : "Lưu thay đổi"}
             <Check size={17} />
           </button>
@@ -1332,6 +1427,7 @@ function Editor({
     </Modal>
   );
 }
+
 function CRM({
   payload,
   refresh,
@@ -1405,7 +1501,7 @@ function CRM({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "fleur-khach-hang.csv";
+    a.download = "fleurious-khach-hang.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1451,7 +1547,7 @@ function CRM({
                 <th>Đã chi tiêu</th>
                 <th>Tiếp thị</th>
                 <th>Sinh nhật</th>
-                <th />
+                <th className="table-actions-heading" scope="col">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -1467,20 +1563,36 @@ function CRM({
                     </div>
                   </td>
                   <td>
-                    <span className="role-tag">{names[c.segment]}</span>
+                    <span className={"role-tag crm-tag crm-tag-" + c.segment}>
+                      {names[c.segment]}
+                    </span>
                   </td>
                   <td>{c.order_count}</td>
                   <td>{money(c.total_spent)}</td>
-                  <td>{c.marketing_consent ? "Đã đồng ý" : "Chưa đồng ý"}</td>
+                  <td>
+                    <span
+                      className={
+                        "role-tag crm-tag " +
+                        (c.marketing_consent
+                          ? "crm-tag-consented"
+                          : "crm-tag-declined")
+                      }
+                    >
+                      {c.marketing_consent ? "Đã đồng ý" : "Chưa đồng ý"}
+                    </span>
+                  </td>
                   <td>{c.birthday || "—"}</td>
                   <td>
-                    <button
-                      className="icon-button"
-                      aria-label="Mở hồ sơ khách hàng"
-                      onClick={() => setSelected(c)}
-                    >
-                      <ChevronRight size={18} />
-                    </button>
+                    <TableActions className="crm-actions">
+                      <TableAction icon={Eye}
+                        type="button"
+                        aria-label="Mở hồ sơ khách hàng"
+                        title={"Xem hồ sơ " + c.name}
+                        onClick={() => setSelected(c)}
+                      >
+                        Xem hồ sơ
+                      </TableAction>
+                    </TableActions>
                   </td>
                 </tr>
               ))}
@@ -1522,7 +1634,7 @@ function CRM({
                     {customers.find((c: any) => c.id === t.customer_id)?.name}
                   </small>
                 </div>
-                <span>{t.due_date}</span>
+                <span>{formatDate(t.due_date)}</span>
                 <ChevronRight size={17} />
               </button>
             ))
@@ -1537,7 +1649,13 @@ function CRM({
           <div className="customer-contact">
             <span className="avatar large">{customer.name.charAt(0)}</span>
             <div>
-              <strong>{customer.email}</strong>
+              <strong>{customer.email || "Chưa có email"}</strong>
+              <Link
+                className="text-link"
+                href={"/admin/orders/new?customer=" + customer.id}
+              >
+                Tạo đơn cho khách
+              </Link>
               <p>
                 {customer.phone || "Chưa có số điện thoại"} ·{" "}
                 {customer.order_count} đơn · {money(customer.total_spent)}
@@ -1554,13 +1672,13 @@ function CRM({
           >
             <label className="field">
               Phân nhóm
-              <select name="segment" defaultValue={customer.segment}>
+              <Select name="segment" defaultValue={customer.segment}>
                 {Object.entries(names).map(([k, v]) => (
                   <option value={k} key={k}>
                     {v}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               Ngày sinh
@@ -1574,12 +1692,18 @@ function CRM({
               Lưu hồ sơ
             </button>
           </form>
+          <CRMMarketingConsent
+            key={customer.id + ":" + customer.marketing_consent}
+            customer={customer}
+            refresh={refresh}
+            disabled={busy}
+          />
           <div className="crm-section">
             <h3>Lịch sử mua hàng</h3>
-            {payload.orders?.filter((o: any) => o.email === customer.email)
+            {payload.orders?.filter((o: any) => o.customer_id === customer.id)
               .length ? (
               payload.orders
-                .filter((o: any) => o.email === customer.email)
+                .filter((o: any) => o.customer_id === customer.id)
                 .map((o: any) => (
                   <div className="crm-note" key={o.id}>
                     <div className="flex-between">
@@ -1589,7 +1713,7 @@ function CRM({
                     <p>
                       {money(o.total)} · Giao {o.delivery_date}
                     </p>
-                    <small>{o.created_at}</small>
+                    <small>{formatDateTime(o.created_at)}</small>
                   </div>
                 ))
             ) : (
@@ -1604,7 +1728,7 @@ function CRM({
                 <div className="crm-note" key={n.id}>
                   <p>{n.content}</p>
                   <small>
-                    {n.author} · {n.created_at}
+                    {n.author} · {formatDateTime(n.created_at)}
                   </small>
                 </div>
               ))}
@@ -1660,7 +1784,7 @@ function CRM({
                     }}
                   >
                     {t.title}
-                    <small>{t.due_date}</small>
+                    <small>{formatDate(t.due_date)}</small>
                   </span>
                 </label>
               ))}
@@ -1694,13 +1818,116 @@ function CRM({
               </button>
             </form>
           </div>
-          <div className="notice">
-            Đồng ý nhận tiếp thị:{" "}
-            <strong>{customer.marketing_consent ? "Có" : "Chưa đồng ý"}</strong>
-            . Chỉ dùng thông tin đúng mục đích khách đã cho phép.
-          </div>
         </Modal>
       )}
     </>
+  );
+}
+function CRMMarketingConsent({
+  customer,
+  refresh,
+  disabled,
+}: {
+  customer: any;
+  refresh: () => Promise<void>;
+  disabled: boolean;
+}) {
+  const { toast } = useShop();
+  const current = !!customer.marketing_consent;
+  const [consent, setConsent] = useState(current);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const changed = consent !== current;
+  return (
+    <section className="crm-section">
+      <h3>Đồng ý nhận tiếp thị</h3>
+      <p className="small">
+        Hiện tại: <strong>{current ? "Đã đồng ý" : "Chưa đồng ý"}</strong>. Ghi
+        nhận khi khách xác nhận trực tiếp với cửa hàng.
+      </p>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy || disabled || !changed) return;
+          const note = String(new FormData(e.currentTarget).get("note") || "");
+          setBusy(true);
+          setError("");
+          try {
+            await api(
+              "admin/crm/" + customer.id + "/marketing-consent",
+              "PATCH",
+              { consent, previousConsent: current, confirmed, note },
+            );
+            await refresh();
+            toast("Đã cập nhật lựa chọn nhận tiếp thị của khách hàng.");
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label className="field">
+          Trạng thái tiếp thị
+          <Select
+            aria-label="Trạng thái tiếp thị"
+            disabled={busy || disabled}
+            value={consent ? "1" : "0"}
+            onChange={(e) => {
+              setConsent(e.target.value === "1");
+              setConfirmed(false);
+              setError("");
+            }}
+          >
+            <option value="0">Chưa đồng ý</option>
+            <option value="1" disabled={!customer.email}>
+              Đã đồng ý
+            </option>
+          </Select>
+        </label>
+        {!customer.email && (
+          <p className="small">Khách chưa có email để nhận tiếp thị.</p>
+        )}
+        {changed && (
+          <>
+            {consent && (
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  required
+                  checked={confirmed}
+                  disabled={busy || disabled}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                />
+                Khách đã đồng ý nhận email tiếp thị từ cửa hàng; tôi xác nhận
+                ghi nhận thay khách.
+              </label>
+            )}
+            <label className="field">
+              Ghi chú xác nhận (không bắt buộc)
+              <textarea
+                name="note"
+                maxLength={500}
+                rows={2}
+                disabled={busy || disabled}
+                placeholder="Ví dụ: khách xác nhận qua điện thoại hoặc tin nhắn."
+              />
+            </label>
+          </>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          className="button outline compact"
+          disabled={busy || disabled || !changed || (consent && !confirmed)}
+        >
+          {busy ? "Đang lưu…" : "Lưu lựa chọn tiếp thị"}
+        </button>
+      </form>
+    </section>
   );
 }

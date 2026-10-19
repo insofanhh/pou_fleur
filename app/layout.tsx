@@ -1,16 +1,21 @@
+import AppNavigation from "@/components/pwa";
 import type { Metadata } from "next";
 import "./globals.css";
+import "./saas.css";
+import "./controls.css";
+import "./table-actions.css";
+import "./store-team.css";
 import { Provider } from "@/components/context";
 import StoreShell from "@/components/store-shell";
 import SectionReveal from "@/components/section-reveal";
 import { sectionMotionStyles } from "@/lib/section-motion";
 export const metadata: Metadata = {
   title: {
-    default: "Fleur — Hoa cho những điều không thể nói",
-    template: "%s | Fleur",
+    default: "Fleurious — Hoa cho những điều không thể nói",
+    template: "%s | Fleurious",
   },
   description:
-    "Những thiết kế hoa tinh tế, được làm bằng cả sự tận tâm. Chọn hoa, gửi lời thương và đặt lịch giao tại Fleur.",
+    "Những thiết kế hoa tinh tế, được làm bằng cả sự tận tâm. Chọn hoa, gửi lời thương và đặt lịch giao tại Fleurious.",
   robots: { index: false, follow: false },
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -23,6 +28,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <Provider>
           <StoreShell>{children}</StoreShell>
           <SectionReveal />
+          <AppNavigation />
         </Provider>
       </body>
     </html>

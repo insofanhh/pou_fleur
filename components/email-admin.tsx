@@ -1,4 +1,8 @@
 "use client";
+import { formatDateTime } from "@/lib/date-time";
+import Select from "./ui-select";
+import { Eye, RotateCcw, Ban } from "lucide-react";
+import { TableAction, TableActions } from "./table-actions";
 import { useState } from "react";
 import { api, useShop } from "./context";
 import {
@@ -40,12 +44,17 @@ export default function EmailWorkspace({
   payload,
   refresh,
   canEdit,
+  platform = false,
+  storeName,
 }: {
   payload: any;
   refresh: () => Promise<void>;
   canEdit: boolean;
+  platform?: boolean;
+  storeName?: string;
 }) {
   const { toast } = useShop();
+  const base = platform ? "platform/emails" : "admin/emails";
   const [tab, setTab] = useState("templates");
   const [selected, setSelected] = useState<any>(null);
   const [campaign, setCampaign] = useState(initialCampaign);
@@ -70,14 +79,17 @@ export default function EmailWorkspace({
     setCampaign({ ...campaign, ...patch });
     setPreview(null);
   }
+  const previewValues = { ...demoEmailValues, ...(!platform && storeName ? { store_name: storeName } : {}) };
   const rendered = selected
     ? {
-        subject: interpolateEmail(selected.subject, demoEmailValues),
+        subject: interpolateEmail(selected.subject, previewValues),
         html: emailHTML(
-          interpolateEmail(selected.body, demoEmailValues),
+          interpolateEmail(selected.body, previewValues),
           selected.kind === "marketing"
             ? "https://example.com/unsubscribe"
             : undefined,
+          platform ? "Fleurious Platform" : "Fleurious",
+          platform ? undefined : storeName,
         ),
       }
     : null;
@@ -87,19 +99,22 @@ export default function EmailWorkspace({
         <div>
           <strong>
             {cfg.enabled && cfg.ready
-              ? "SMTP đã cấu hình"
+              ? "Email hệ thống đã sẵn sàng"
               : "Email đang tạm dừng"}
           </strong>
           <p>
             {cfg.enabled && cfg.ready
-              ? "Người gửi: " + cfg.from
-              : "Đơn hàng vẫn được lưu. Email xác nhận chờ trong hàng đợi đến khi SMTP được cấu hình và bật gửi."}
+              ? platform
+                ? "Email tài khoản, cửa hàng và gói dịch vụ được quản lý tập trung. Không trừ hạn mức email của store."
+                : "Gửi bằng email hệ thống, hiển thị tên cửa hàng của bạn."
+              : platform
+                ? "Thông báo hệ thống được lưu trong hàng đợi đến khi SMTP sẵn sàng và bật gửi."
+                : "Đơn hàng vẫn được lưu. Email xác nhận chờ trong hàng đợi đến khi SMTP được cấu hình và bật gửi."}
           </p>
           {(!cfg.ready || !cfg.enabled) && (
             <p className="small">
-              Cần SMTP_HOST, SMTP_PORT (465/587), SMTP_USER, SMTP_PASSWORD,
-              SMTP_FROM_EMAIL, APP_ORIGIN HTTPS và EMAIL_ENABLED=true trong môi
-              trường triển khai.
+              Quản trị nền tảng quản lý cấu hình gửi thư chung. Liên hệ hỗ trợ
+              nếu email chưa được bật.
             </p>
           )}
         </div>
@@ -110,7 +125,7 @@ export default function EmailWorkspace({
               disabled={busy || !cfg.ready}
               onClick={() =>
                 void act(async () => {
-                  await api("admin/emails/verify", "POST", {});
+                  await api(base + "/verify", "POST", {});
                   toast("Kết nối và xác thực SMTP thành công. Chưa gửi email.");
                 })
               }
@@ -140,7 +155,10 @@ export default function EmailWorkspace({
       <div className="email-tabs" role="tablist" aria-label="Quản lý email">
         {[
           ["templates", "Mẫu email"],
-          ["campaigns", "Chương trình CRM"],
+          [
+            "campaigns",
+            platform ? "Chương trình nền tảng" : "Chương trình CRM",
+          ],
           ["history", "Lịch sử gửi"],
         ].map(([key, label]) => (
           <button
@@ -159,8 +177,12 @@ export default function EmailWorkspace({
       {tab === "templates" && (
         <div className="email-columns">
           <section className="email-panel">
-            <h2>Thư từ Fleur</h2>
-            <p>Mẫu trắng đen, nội dung cá nhân hóa theo từng khách.</p>
+            <h2>{platform ? "Email hệ thống" : "Thư từ cửa hàng"}</h2>
+            <p>
+              {platform
+                ? "Mẫu tài khoản, cửa hàng và thuê bao. Email đã xếp hàng giữ nội dung tại thời điểm tạo."
+                : "Sáu mẫu đơn hàng và chăm sóc có thể tùy chỉnh riêng; gửi bằng email hệ thống với tên cửa hàng."}
+            </p>
             {canEdit && (
               <button
                 className="button secondary"
@@ -168,7 +190,7 @@ export default function EmailWorkspace({
                   setSelected({
                     name: "Mẫu CRM mới",
                     subject: "Chào {{customer_name}}",
-                    body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleur",
+                    body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleurious",
                     active: 1,
                     kind: "marketing",
                   })
@@ -187,7 +209,9 @@ export default function EmailWorkspace({
                   <strong>{t.name}</strong>
                   <small>
                     {t.kind === "transactional"
-                      ? "Tự động theo đơn hàng"
+                      ? platform
+                        ? "Tự động theo sự kiện hệ thống"
+                        : "Tự động theo đơn hàng"
                       : "Chương trình CRM"}{" "}
                     · {t.active ? "Đang bật" : "Đã tắt"}
                   </small>
@@ -208,12 +232,17 @@ export default function EmailWorkspace({
                     e.preventDefault();
                     void act(async () => {
                       const result = await api(
-                        "admin/emails/templates" +
+                        base +
+                          "/templates" +
                           (selected.id ? "/" + selected.id : ""),
                         selected.id ? "PATCH" : "POST",
                         selected,
                       );
-                      setSelected({ ...selected, id: result.id });
+                      setSelected({
+                        ...selected,
+                        id: result.id,
+                        version: result.version,
+                      });
                       await refresh();
                       toast(
                         "Đã lưu mẫu. Email đã xếp hàng giữ nội dung tại thời điểm tạo.",
@@ -267,13 +296,31 @@ export default function EmailWorkspace({
                           selected.kind === "marketing"
                             ? [
                                 "customer_name",
+                                "store_name",
+                                "store_url",
                                 "campaign_name",
                                 "campaign_message",
                                 "promotion_code",
                                 "event_date",
                               ].includes(k)
-                            : !k.startsWith("campaign_") &&
-                              !["promotion_code", "event_date"].includes(k),
+                            : platform
+                              ? selected.variables?.includes(k)
+                              : [
+                                  "customer_name",
+                                  "store_name",
+                                  "store_url",
+                                  "order_reference",
+                                  "order_items",
+                                  "order_total",
+                                  "payment_method",
+                                  "order_status",
+                                  "previous_status",
+                                  "recipient_name",
+                                  "delivery_address",
+                                  "delivery_date",
+                                  "delivery_slot",
+                                  "tracking_url",
+                                ].includes(k),
                         )
                         .map(([key, label]) => (
                           <span key={key}>
@@ -283,15 +330,18 @@ export default function EmailWorkspace({
                     </div>
                   </details>
                   <p className="small">
-                    Nhập nội dung văn bản; xuống dòng được giữ nguyên. Mẫu đơn
-                    hàng luôn cần mã đơn. Nội dung HTML được hiển thị như văn
-                    bản.
+                    Nhập nội dung văn bản; xuống dòng được giữ nguyên. Giữ các
+                    biến nghiệp vụ bắt buộc. Mẫu đơn hàng luôn cần mã đơn. Nội
+                    dung HTML được hiển thị như văn bản.
                   </p>
                   <div className="email-actions">
                     <label className="check-field">
                       <input
                         type="checkbox"
-                        disabled={!canEdit}
+                        disabled={
+                          !canEdit ||
+                          (platform && selected.kind === "transactional")
+                        }
                         checked={Boolean(selected.active)}
                         onChange={(e) =>
                           setSelected({
@@ -336,11 +386,7 @@ export default function EmailWorkspace({
                   e.preventDefault();
                   void act(async () => {
                     setPreview(
-                      await api(
-                        "admin/emails/preview-campaign",
-                        "POST",
-                        campaign,
-                      ),
+                      await api(base + "/preview-campaign", "POST", campaign),
                     );
                   });
                 }}
@@ -356,7 +402,7 @@ export default function EmailWorkspace({
                 </label>
                 <label className="field">
                   Mẫu email
-                  <select
+                  <Select
                     required
                     value={campaign.templateId || ""}
                     onChange={(e) =>
@@ -371,26 +417,28 @@ export default function EmailWorkspace({
                           {t.name}
                         </option>
                       ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   Nhóm khách
-                  <select
+                  <Select
                     value={campaign.segment}
                     onChange={(e) =>
                       updateCampaign({ segment: e.target.value })
                     }
                   >
-                    {segments.map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
+                    {(payload.audienceSegments || segments).map(
+                      ([v, l]: string[]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ),
+                    )}
+                  </Select>
                 </label>
                 <label className="field">
                   Một khách cụ thể (tùy chọn)
-                  <select
+                  <Select
                     value={campaign.customerId || ""}
                     onChange={(e) =>
                       updateCampaign({
@@ -408,11 +456,11 @@ export default function EmailWorkspace({
                           {c.name} · {c.email}
                         </option>
                       ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   Tháng sinh nhật (tùy chọn)
-                  <select
+                  <Select
                     value={campaign.birthdayMonth || ""}
                     onChange={(e) =>
                       updateCampaign({
@@ -428,7 +476,7 @@ export default function EmailWorkspace({
                         Tháng {i + 1}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   Lời nhắn chương trình
@@ -465,7 +513,7 @@ export default function EmailWorkspace({
                   </label>
                 </div>
                 <p className="small">
-                  Mã ưu đãi cần được tạo riêng trong mục Khuyến mãi. Các bộ lọc
+                  Mã ưu đãi cần được thiết lập riêng trước khi gửi. Các bộ lọc
                   được áp dụng đồng thời.
                 </p>
                 <button className="button secondary" disabled={busy}>
@@ -515,7 +563,7 @@ export default function EmailWorkspace({
                     }
                     onClick={() =>
                       void act(async () => {
-                        const r = await api("admin/emails/campaigns", "POST", {
+                        const r = await api(base + "/campaigns", "POST", {
                           ...campaign,
                           recipientIds: preview.recipients.map(
                             (c: any) => c.id,
@@ -550,7 +598,7 @@ export default function EmailWorkspace({
                     <th>Khách</th>
                     <th>SMTP tiếp nhận</th>
                     <th>Chờ gửi</th>
-                    <th></th>
+                    <th className="table-actions-heading" scope="col">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -559,20 +607,19 @@ export default function EmailWorkspace({
                       <td>
                         {c.name}
                         <small>
-                          #{c.id} · {c.created_at}
+                          #{c.id} · {formatDateTime(c.created_at)}
                         </small>
                       </td>
                       <td>{c.recipient_count}</td>
                       <td>{c.sent_count}</td>
                       <td>{c.pending_count}</td>
                       <td>
-                        <button
-                          className="text-link"
+                        <TableActions><TableAction icon={Ban}
                           disabled={busy || !c.pending_count}
                           onClick={() =>
                             void act(async () => {
                               await api(
-                                "admin/emails/cancel-campaign/" + c.id,
+                                base + "/cancel-campaign/" + c.id,
                                 "POST",
                                 {},
                               );
@@ -584,7 +631,7 @@ export default function EmailWorkspace({
                           }
                         >
                           Hủy phần chưa gửi
-                        </button>
+                        </TableAction></TableActions>
                       </td>
                     </tr>
                   ))}
@@ -598,7 +645,7 @@ export default function EmailWorkspace({
         <section className="email-panel">
           <div className="email-actions">
             <h2>Lịch sử email</h2>
-            <select
+            <Select
               aria-label="Lọc kết quả gửi"
               value={logFilter}
               onChange={(e) => setLogFilter(e.target.value)}
@@ -609,13 +656,13 @@ export default function EmailWorkspace({
                   {v}
                 </option>
               ))}
-            </select>
+            </Select>
             <button
               className="button secondary"
               disabled={busy || !cfg.enabled || !cfg.ready}
               onClick={() =>
                 void act(async () => {
-                  const r = await api("admin/emails/process", "POST", {});
+                  const r = await api(base + "/process", "POST", {});
                   await refresh();
                   toast(
                     "Đã xử lý " +
@@ -641,7 +688,7 @@ export default function EmailWorkspace({
                   <th>Kết quả</th>
                   <th>Số lần</th>
                   <th>Thời gian</th>
-                  <th></th>
+                  <th className="table-actions-heading" scope="col">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -652,24 +699,36 @@ export default function EmailWorkspace({
                       <td>
                         {m.recipient}
                         <small>{m.subject}</small>
+                        {platform && (
+                          <small>
+                            {m.id.startsWith("store-")
+                              ? "Cửa hàng / gói dịch vụ"
+                              : "Tài khoản / chương trình platform"}
+                          </small>
+                        )}
                       </td>
                       <td>
                         <span className={"email-status " + m.status}>
                           {statusNames[m.status]}
                         </span>
-                        {m.last_error && <small>{m.last_error}</small>}
+                        {m.last_error && (
+                          <small>
+                            {m.last_error === "EMAIL_MONTHLY_LIMIT"
+                              ? "Đã đạt hạn mức email tháng này. Thư sẽ được gửi khi có hạn mức."
+                              : m.last_error}
+                          </small>
+                        )}
                       </td>
                       <td>{m.attempts}</td>
-                      <td>{m.sent_at || m.created_at}</td>
+                      <td>{formatDateTime(m.sent_at || m.created_at)}</td>
                       <td>
-                        <button
-                          className="text-link"
+                        <TableActions><TableAction icon={Eye}
                           disabled={busy}
                           onClick={() =>
                             void act(async () =>
                               setMessagePreview(
                                 await api(
-                                  "admin/emails/message/" + m.id,
+                                  base + "/message/" + m.id,
                                   "POST",
                                   {},
                                 ),
@@ -678,26 +737,22 @@ export default function EmailWorkspace({
                           }
                         >
                           Xem
-                        </button>
+                        </TableAction>
                         {m.status === "failed" && (
-                          <button
-                            className="text-link"
+                          <TableAction icon={RotateCcw}
                             disabled={busy || !cfg.enabled || !cfg.ready}
                             onClick={() =>
                               void act(async () => {
-                                await api(
-                                  "admin/emails/retry/" + m.id,
-                                  "POST",
-                                  {},
-                                );
+                                await api(base + "/retry/" + m.id, "POST", {});
                                 await refresh();
                                 toast("Đã đưa email về hàng đợi.");
                               })
                             }
                           >
                             Thử lại
-                          </button>
+                          </TableAction>
                         )}
+                        </TableActions>
                       </td>
                     </tr>
                   ))}

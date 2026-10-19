@@ -1,3 +1,11 @@
+import { hanoiDateKey } from "./date-time";
+import { tenantId } from "./tenant";
+import { needsTransitionReason, orderStates } from "./order-workflow";
+import { orderLabels } from "./display-labels";
+import { orderPaymentStatusSQL } from "./order-payment-state";
+import { validateFulfillment } from "./fulfillment";
+import { assertStoreOpen } from "./stores";
+import { emit } from "./domain-events";
 import type { PoolConnection } from "mysql2/promise";
 import { pool } from "./db";
 import { enqueueOrderEmail } from "./email";
@@ -5,6 +13,7 @@ import { HttpError } from "./auth";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import type { Product, Promotion } from "./types";
+import { activeBank, createIntent } from "./sepay";
 export const itemSchema = z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(30),
@@ -25,17 +34,16 @@ export const checkoutSchema = quoteSchema.extend({
   recipientName: z.string().trim().min(2).max(100),
   recipientPhone: phone,
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  deliverySlot: z.enum([
-    "09:00–12:00",
-    "12:00–15:00",
-    "15:00–18:00",
-    "18:00–20:00",
-  ]),
+  deliverySlot: z.string().min(5).max(30),
+  deliveryMode: z.enum(["self", "gift"]).default("gift"),
   message: z.string().max(500).default(""),
   notes: z.string().max(1000).default(""),
-  paymentMethod: z.enum(["cod"]),
+  paymentMethod: z.enum(["cod", "bank"]),
   consent: z.boolean().default(false),
   idempotencyKey: z.string().uuid(),
+  expectedTotal: z.number().int().nonnegative().optional(),
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryLng: z.number().min(-180).max(180).optional(),
 });
 export async function calculate(
   c: PoolConnection,
@@ -79,14 +87,19 @@ export async function calculate(
       price: Math.round(p.price * { S: 1, M: 1.3, L: 1.6 }[i.size]),
     };
   });
+  return calculateTotals(c, items, body.code, lock);
+}
+export async function calculateTotals<
+  T extends { price: number; quantity: number },
+>(c: PoolConnection, items: T[], code: string, lock = false) {
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
   let discount = 0,
     promotionId: null | number = null;
-  if (body.code) {
+  if (code) {
     const [rs] = await c.execute(
       "SELECT * FROM promotions WHERE code=? AND active=1 AND starts_at<=NOW() AND ends_at>=NOW()" +
         (lock ? " FOR UPDATE" : ""),
-      [body.code.trim().toUpperCase()],
+      [code.trim().toUpperCase()],
     );
     const p = (rs as Promotion[])[0];
     if (!p || p.used >= p.usage_limit)
@@ -105,7 +118,9 @@ export async function calculate(
     );
     promotionId = p.id;
   }
-  const shipping = subtotal >= 1000000 ? 0 : 35000;
+  const store = await assertStoreOpen(c);
+  const shipping =
+    subtotal >= store.settings.free_shipping ? 0 : store.settings.shipping;
   return {
     items,
     subtotal,
@@ -118,41 +133,65 @@ export async function calculate(
 export async function createOrder(
   body: z.infer<typeof checkoutSchema>,
   userId: number | null,
+  checkoutOwner?: string,
 ) {
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const store = await assertStoreOpen();
+  const today = hanoiDateKey();
   const date = new Date(body.deliveryDate + "T00:00:00+07:00");
   if (
     Number.isNaN(date.getTime()) ||
+    new Date(body.deliveryDate + "T12:00:00Z").toISOString().slice(0, 10) !==
+      body.deliveryDate ||
     body.deliveryDate < today ||
-    date.getTime() > Date.now() + 90 * 86400000
+    date.getTime() > Date.now() + store.settings.advance_days * 86400000
   )
     throw new HttpError(
       400,
-      "Vui lòng chọn ngày giao từ hôm nay đến 90 ngày tới.",
+      `Vui lòng chọn ngày giao từ hôm nay đến ${store.settings.advance_days} ngày tới.`,
     );
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
+    // Lock before the first consistent read so waiting transactions see committed reservations.
+    const [lockedStores]: any = await c.execute(
+      "SELECT * FROM stores WHERE id=? FOR UPDATE",
+      [tenantId()],
+    );
+    const locked = lockedStores[0];
+    if (!locked || locked.status !== "approved")
+      throw new HttpError(409, "Cửa hàng hiện chưa nhận đơn.");
+    store.settings =
+      typeof locked.settings === "string"
+        ? JSON.parse(locked.settings)
+        : locked.settings;
+    if (!store.settings.open)
+      throw new HttpError(409, "Cửa hàng đang tạm nghỉ.");
     const [existing] = await c.execute(
-      "SELECT reference,email FROM orders WHERE idempotency_key=?",
+      "SELECT reference,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
       [body.idempotencyKey],
     );
-    const previous = (existing as { reference: string; email: string }[])[0];
+    const previous = (existing as any[])[0];
     if (previous) {
-      if (previous.email !== body.email)
+      if (
+        previous.email !== body.email ||
+        (userId
+          ? previous.user_id !== userId
+          : !checkoutOwner || previous.checkout_owner !== checkoutOwner)
+      )
         throw new HttpError(409, "Yêu cầu không hợp lệ.");
       await c.commit();
       return { reference: previous.reference };
     }
+    await validateFulfillment(c, store, body);
     const quote = await calculate(c, body, true);
+    if (body.expectedTotal !== undefined && body.expectedTotal !== quote.total)
+      throw new HttpError(
+        409,
+        "Giá đã thay đổi. Vui lòng kiểm tra lại giỏ hàng trước khi đặt.",
+      );
     const reference =
       "FL" +
-      new Date().toISOString().slice(0, 10).replaceAll("-", "") +
+      hanoiDateKey().replaceAll("-", "") +
       randomBytes(4).toString("hex").toUpperCase();
     const [result] = await c.execute(
       "INSERT INTO orders(reference,user_id,customer_name,email,phone,address,recipient_name,recipient_phone,delivery_date,delivery_slot,message,notes,payment_method,subtotal,discount,shipping,total,promotion_id,idempotency_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -179,6 +218,12 @@ export async function createOrder(
       ],
     );
     const id = (result as { insertId: number }).insertId;
+    let payment: any = null;
+    if (body.paymentMethod === "bank") {
+      const bank = await activeBank(tenantId(), c);
+      if (!bank) throw new HttpError(409, "Cửa hàng chưa cấu hình nhận chuyển khoản.");
+      payment = await createIntent(c, tenantId(), "order", store.owner_id, quote.total, id, null, bank);
+    }
     for (const i of quote.items) {
       await c.execute(
         "INSERT INTO order_items(order_id,product_id,product_name,image,size,quantity,price) VALUES(?,?,?,?,?,?,?)",
@@ -193,17 +238,51 @@ export async function createOrder(
       await c.execute("UPDATE promotions SET used=used+1 WHERE id=?", [
         quote.promotionId,
       ]);
+    const [existingCustomer]: any = await c.execute(
+      "SELECT id FROM customers WHERE email=?",
+      [body.email],
+    );
+    if (!existingCustomer.length)
+      await emit(c, "customer:" + tenantId() + ":" + body.email, {
+        audience: "staff",
+        title: "Khách hàng mới",
+        body: body.customerName,
+        href: "/workspace/" + tenantId() + "/crm",
+      });
     await c.execute(
       "INSERT INTO customers(email,name,phone,marketing_consent) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),phone=VALUES(phone),marketing_consent=GREATEST(marketing_consent,VALUES(marketing_consent))",
       [body.email, body.customerName, body.phone, body.consent ? 1 : 0],
     );
-    if (body.consent && userId)
-      await c.execute("UPDATE users SET marketing_consent=1 WHERE id=?", [
-        userId,
-      ]);
+
+    await c.execute(
+      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=?,customer_id=(SELECT id FROM customers WHERE email=?) WHERE id=?",
+      [
+        store.name,
+        body.deliveryMode,
+        checkoutOwner || null,
+        body.deliveryLat ?? null,
+        body.deliveryLng ?? null,
+        body.email,
+        id,
+      ],
+    );
+    if (userId)
+      await c.execute(
+        "INSERT INTO notification_preferences(user_id,store_id,marketing,push) VALUES(?,?,?,0) ON DUPLICATE KEY UPDATE marketing=VALUES(marketing)",
+        [userId, tenantId(), body.consent ? 1 : 0],
+      );
+    await c.execute(
+      "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
+      [id, userId, "pending"],
+    );
+    await emit(c, "order:" + id + ":new", {
+      audience: "staff",
+      title: "Đơn hàng mới",
+      body: reference + " · " + body.customerName,
+    });
     await enqueueOrderEmail(c, id, "order_confirmation");
     await c.commit();
-    return { reference, total: quote.total };
+    return { reference, total: quote.total, payment };
   } catch (e) {
     await c.rollback();
     if (
@@ -211,13 +290,17 @@ export async function createOrder(
       (e instanceof HttpError && e.status === 409)
     ) {
       const [rows] = await c.execute(
-        "SELECT reference,total,email FROM orders WHERE idempotency_key=?",
+        "SELECT reference,total,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
         [body.idempotencyKey],
       );
-      const previous = (
-        rows as { reference: string; total: number; email: string }[]
-      )[0];
-      if (previous && previous.email === body.email)
+      const previous = (rows as any[])[0];
+      if (
+        previous &&
+        previous.email === body.email &&
+        (userId
+          ? previous.user_id === userId
+          : checkoutOwner && previous.checkout_owner === checkoutOwner)
+      )
         return { reference: previous.reference, total: previous.total };
     }
     throw e;
@@ -230,42 +313,101 @@ export async function changeOrder(
   status: string,
   actor: number,
   owner = false,
+  version?: number,
+  options: { reason?: string; date?: string; slot?: string } = {},
 ) {
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
+    // Use the same lock order as checkout/rescheduling to serialize capacity checks.
+    await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [
+      tenantId(),
+    ]);
     const [rows] = await c.execute(
-      "SELECT * FROM orders WHERE id=? FOR UPDATE",
+      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status FROM orders o WHERE o.id=? FOR UPDATE",
       [id],
     );
     const o = (rows as any[])[0];
     if (!o) throw new HttpError(404, "Không tìm thấy đơn hàng.");
+    if (version !== undefined && o.version !== version)
+      throw new HttpError(409, "Đơn hàng vừa được cập nhật. Hãy tải lại.");
     if (
       owner &&
       (o.user_id !== actor ||
         status !== "cancelled" ||
-        o.payment_status === "paid")
+        ["paid", "partially_paid", "partially_refunded"].includes(
+          o.payment_status,
+        ))
     )
       throw new HttpError(
         403,
-        "Không thể huỷ đơn này. Vui lòng liên hệ Fleur.",
+        "Không thể huỷ đơn này. Vui lòng liên hệ Fleurious.",
       );
-    const next: Record<string, string[]> = {
-      pending: ["confirmed", "cancelled"],
-      confirmed: ["preparing", "cancelled"],
-      preparing: ["shipping"],
-      shipping: ["delivered"],
-      delivered: [],
-      cancelled: [],
-    };
-    if (!next[o.status]?.includes(status))
+    if (
+      !orderStates.includes(status as any) ||
+      (owner && !["pending", "confirmed"].includes(o.status))
+    )
       throw new HttpError(
         400,
         "Trạng thái đơn hàng không thể chuyển theo cách này.",
       );
+    if (status === o.status) return await c.commit().then(() => ({ ok: true }));
+    const reason = options.reason?.trim() || "";
+    if (!owner && needsTransitionReason(o.status, status) && reason.length < 5)
+      throw new HttpError(400, "Vui lòng nhập lý do ít nhất 5 ký tự.");
+    let deliveryDate = o.delivery_date,
+      deliverySlot = o.delivery_slot;
+    if (o.status === "cancelled") {
+      const store = await assertStoreOpen(c);
+      deliveryDate = options.date || o.delivery_date;
+      deliverySlot = options.slot || o.delivery_slot;
+      await validateFulfillment(
+        c,
+        store,
+        {
+          deliveryDate,
+          deliverySlot,
+          ...(o.delivery_lat != null && o.delivery_lng != null
+            ? {
+                deliveryLat: Number(o.delivery_lat),
+                deliveryLng: Number(o.delivery_lng),
+              }
+            : {}),
+        },
+        id,
+      );
+      const [items]: any = await c.execute(
+        "SELECT product_id,SUM(quantity) quantity FROM order_items WHERE order_id=? AND line_type='catalog' GROUP BY product_id ORDER BY product_id",
+        [id],
+      );
+      for (const i of items) {
+        if (!i.product_id)
+          throw new HttpError(409, "Sản phẩm đã bị xóa. Hãy tạo đơn mới.");
+        const [r]: any = await c.execute(
+          "UPDATE products SET stock=stock-? WHERE id=? AND stock>=? AND active=1",
+          [i.quantity, i.product_id, i.quantity],
+        );
+        if (!r.affectedRows)
+          throw new HttpError(
+            409,
+            "Không đủ tồn kho hoặc sản phẩm đã ngừng bán để khôi phục đơn.",
+          );
+      }
+      if (o.promotion_id) {
+        const [r]: any = await c.execute(
+          "UPDATE promotions SET used=used+1 WHERE id=? AND used<usage_limit",
+          [o.promotion_id],
+        );
+        if (!r.affectedRows)
+          throw new HttpError(
+            409,
+            "Chương trình giảm giá đã hết lượt. Hãy tạo đơn mới.",
+          );
+      }
+    }
     if (status === "cancelled") {
       const [items] = await c.execute(
-        "SELECT product_id,quantity FROM order_items WHERE order_id=? ORDER BY product_id",
+        "SELECT product_id,quantity FROM order_items WHERE order_id=? AND product_id IS NOT NULL AND line_type='catalog' ORDER BY product_id",
         [id],
       );
       for (const i of items as any[])
@@ -280,13 +422,27 @@ export async function changeOrder(
         );
     }
     await c.execute(
-      "UPDATE orders SET status=?,payment_status=IF(?='delivered' AND payment_method='cod','paid',payment_status) WHERE id=?",
-      [status, status, id],
+      "UPDATE orders SET status=?,version=version+1,delivery_date=?,delivery_slot=?,completed_at=IF(?='delivered',COALESCE(completed_at,NOW()),NULL),confirmed_at=IF(? IN ('confirmed','preparing','ready','shipping','delivered'),COALESCE(confirmed_at,NOW()),NULL),shipped_at=IF(? IN ('shipping','delivered'),COALESCE(shipped_at,NOW()),NULL) WHERE id=?",
+      [status, deliveryDate, deliverySlot, status, status, status, id],
     );
     await c.execute(
       "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
       [actor, status, "orders", String(id)],
     );
+    await c.execute(
+      "INSERT INTO order_status_events(order_id,actor_id,status,detail) VALUES(?,?,?,?)",
+      [
+        id,
+        actor,
+        status,
+        `${orderLabels[o.status]} → ${orderLabels[status]}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · Lịch giao: ${deliveryDate} ${deliverySlot}` : ""}`,
+      ],
+    );
+    await emit(c, "order:" + id + ":" + (o.version + 1), {
+      userId: o.user_id,
+      title: "Đơn " + o.reference + " · " + orderLabels[status],
+      body: "Cửa hàng đã cập nhật trạng thái đơn hoa của bạn.",
+    });
     await enqueueOrderEmail(c, id, "order_status", o.status);
     await c.commit();
     return { ok: true };

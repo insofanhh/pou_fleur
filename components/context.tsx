@@ -7,13 +7,25 @@ import {
   useCallback,
   ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
+import { storeRef } from "./routing";
 import type { CartItem, User } from "@/lib/types";
 import { X, Check } from "lucide-react";
+export function track(name: string) {
+  if (typeof crypto !== "undefined")
+    void api("analytics", "POST", {
+      event_key: crypto.randomUUID(),
+      name,
+    }).catch(() => {});
+}
 export async function api(path: string, method = "GET", body?: unknown) {
   const r = await fetch("/api/" + path, {
     method,
-    headers:
-      body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      "x-fleur-store":
+        typeof location === "undefined" ? "1" : storeRef(location.pathname),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await r.json();
@@ -34,14 +46,28 @@ type State = {
 const Context = createContext<State>(null!);
 export const useShop = () => useContext(Context);
 export function Provider({ children }: { children: ReactNode }) {
+  const pathname = usePathname(),
+    scope = storeRef(pathname);
+  const storageKey = "fleur.cart." + scope;
   const [cart, updateCart] = useState<CartItem[]>([]),
     [wishlist, setWish] = useState<number[]>([]),
     [user, setUser] = useState<User | null>(null),
+    [ghost, setGhost] = useState<any>(null),
     [ready, setReady] = useState(false),
     [message, setMessage] = useState("");
   useEffect(() => {
+    let active = true;
+    setReady(false);
+    updateCart([]);
+    setWish([]);
     try {
-      const c = JSON.parse(localStorage.getItem("fleur.cart") || "[]");
+      const c = JSON.parse(
+        localStorage.getItem(storageKey) ||
+          (scope === "1" || scope === "fleur"
+            ? localStorage.getItem("fleur.cart")
+            : null) ||
+          "[]",
+      );
       if (Array.isArray(c))
         updateCart(
           c.filter(
@@ -53,23 +79,76 @@ export function Provider({ children }: { children: ReactNode }) {
               ["S", "M", "L"].includes(i.size),
           ),
         );
-      const w = JSON.parse(localStorage.getItem("fleur.wishlist") || "[]");
+      const w = JSON.parse(
+        localStorage.getItem("fleur.wishlist." + scope) || "[]",
+      );
       if (Array.isArray(w)) setWish(w.filter(Number.isInteger));
     } catch {}
     api("auth/me")
-      .then((d) => setUser(d.user))
-      .finally(() => setReady(true))
+      .then((d) => {
+        if (active) {
+          setUser(d.user);
+          setGhost(d.ghost || null);
+        }
+      })
+      .finally(() => {
+        if (active) setReady(true);
+      })
       .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [scope]);
+  useEffect(() => {
+    let active = true;
+    const refreshIdentity = () => {
+      if (document.visibilityState !== "visible") return;
+      api("auth/me")
+        .then((d) => {
+          if (active) {
+            setUser(d.user);
+            setGhost(d.ghost || null);
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("focus", refreshIdentity);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshIdentity);
+    };
   }, []);
+  useEffect(() => {
+    if (!ghost) return;
+    const timer = setInterval(() => {
+      api("auth/me")
+        .then((d) => {
+          setUser(d.user);
+          setGhost(d.ghost || null);
+        })
+        .catch(() => {});
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [!!ghost]);
+  useEffect(() => {
+    if (!pathname.startsWith("/s/")) return;
+    const tail = pathname.replace(/^\/s\/[^/]+/, "");
+    if (!tail) track("store_view");
+    if (tail.startsWith("/product/")) track("product_view");
+    if (tail === "/checkout") track("checkout_start");
+  }, [pathname]);
   useEffect(() => {
     if (!message) return;
     const t = setTimeout(() => setMessage(""), 4000);
     return () => clearTimeout(t);
   }, [message]);
-  const setCart = useCallback((items: CartItem[]) => {
-    updateCart(items);
-    localStorage.setItem("fleur.cart", JSON.stringify(items));
-  }, []);
+  const setCart = useCallback(
+    (items: CartItem[]) => {
+      updateCart(items);
+      localStorage.setItem(storageKey, JSON.stringify(items));
+    },
+    [storageKey],
+  );
   const add = useCallback(
     (id: number, quantity = 1, size = "S") => {
       if (
@@ -91,6 +170,7 @@ export function Provider({ children }: { children: ReactNode }) {
             )
           : [...cart, { productId: id, quantity, size }],
       );
+      track("add_to_cart");
       setMessage("Đã thêm hoa vào giỏ hàng.");
     },
     [cart, setCart],
@@ -100,7 +180,7 @@ export function Provider({ children }: { children: ReactNode }) {
       ? wishlist.filter((x) => x !== id)
       : [...wishlist, id];
     setWish(next);
-    localStorage.setItem("fleur.wishlist", JSON.stringify(next));
+    localStorage.setItem("fleur.wishlist." + scope, JSON.stringify(next));
     setMessage(
       next.includes(id)
         ? "Đã lưu vào hoa yêu thích."
@@ -122,6 +202,7 @@ export function Provider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {ghost && <GhostBanner ghost={ghost} />}
       {message && (
         <div className="toast" role="status">
           <Check size={18} />
@@ -136,5 +217,49 @@ export function Provider({ children }: { children: ReactNode }) {
         </div>
       )}
     </Context.Provider>
+  );
+}
+
+function GhostBanner({ ghost }: { ghost: any }) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  async function stop() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("auth/ghost/stop", "POST", {});
+      window.location.assign(result.redirect);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <aside
+      className="ghost-banner"
+      aria-label="Phiên hỗ trợ Ghost"
+      data-no-fade-in
+    >
+      <div>
+        <strong>
+          {ghost.valid
+            ? `Đang Ghost: ${ghost.targetName}`
+            : "Phiên Ghost đã hết hạn hoặc bị thu hồi"}
+        </strong>
+        <p>
+          {ghost.valid
+            ? "Bạn đang thao tác với quyền của tài khoản này. Phiên hỗ trợ tối đa 20 phút."
+            : "Quay lại tài khoản admin để tiếp tục."}
+        </p>
+        {error && <p role="alert">{error}</p>}
+      </div>
+      <button
+        className="button light"
+        onClick={() => void stop()}
+        disabled={busy}
+      >
+        {busy ? "Đang quay lại…" : "Quay lại admin"}
+      </button>
+    </aside>
   );
 }

@@ -303,6 +303,24 @@ p {
   font-size: 14px;
   font-weight: 500;
 }
+.button-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: button-spin 0.7s linear infinite;
+}
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button-spinner {
+    animation: none;
+  }
+}
 .button:hover {
   background: #3c3c3c;
   opacity: 1;
@@ -2285,6 +2303,33 @@ td code {
   font-size: 12px;
   color: #777;
   border-radius: 4px;
+}
+.crm-tag {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.crm-tag-new {
+  color: #075aa8;
+  background: #eaf3ff;
+}
+.crm-tag-loyal,
+.crm-tag-consented {
+  color: #246644;
+  background: #eaf6ee;
+}
+.crm-tag-vip {
+  color: #6941a5;
+  background: #f3edfc;
+}
+.crm-tag-inactive {
+  color: #a45a0b;
+  background: #fff3e0;
+}
+.crm-tag-declined {
+  color: #61616a;
+  background: #f0f0f3;
 }
 .message-cell {
   white-space: normal;

@@ -1,0 +1,81 @@
+/* Record actions follow the icon + text pattern used by platform users. */
+.table-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+th.table-actions-heading {
+  text-align: left;
+  white-space: nowrap;
+}
+button.table-action,
+.table-action-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 32px;
+  min-width: 32px;
+  width: fit-content;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #171717;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.table-action svg,
+.table-action-disclosure > summary svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+button.table-action:hover:not(:disabled),
+.table-action-disclosure > summary:hover {
+  background: #f1f1f1;
+  color: #000;
+}
+button.table-action:focus-visible,
+.table-action-disclosure > summary:focus-visible {
+  outline: 2px solid #171717;
+  outline-offset: 2px;
+}
+button.table-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.table-action-form {
+  display: grid;
+  gap: 8px;
+  min-width: 200px;
+  max-width: 260px;
+}
+.table-action-disclosure {
+  margin-top: 6px;
+}
+.table-action-disclosure > summary {
+  list-style: none;
+}
+.table-action-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.table-action-disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+@media (max-width: 700px) {
+  button.table-action,
+  .table-action-disclosure > summary {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .table-actions {
+    gap: 4px 12px;
+  }
+}

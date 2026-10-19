@@ -1,7 +1,10 @@
 "use client";
-import Link from "next/link";
+import { hanoiDateKey } from "@/lib/date-time";
+import Select from "./ui-select";
+import Link, { useScopedRouter, storeRef } from "./routing";
 import FlowerImage from "./flower-image";
 import ProductGallery from "./product-gallery";
+import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import {
@@ -111,7 +114,7 @@ export function Shop({ data }: { data: Catalog }) {
           />
         </label>
         <div className="filters">
-          <select
+          <Select
             aria-label="Dịp tặng hoa"
             value={occasion}
             onChange={(e) => setOccasion(e.target.value)}
@@ -120,18 +123,18 @@ export function Shop({ data }: { data: Catalog }) {
             <option value="sinh-nhat">Sinh nhật</option>
             <option value="ky-niem">Kỷ niệm</option>
             <option value="su-kien">Sự kiện</option>
-          </select>
-          <select
+          </Select>
+          <Select
             aria-label="Khoảng giá"
             value={budget}
             onChange={(e) => setBudget(e.target.value)}
           >
             <option value="">Mọi mức giá</option>
-            <option value="low">Dưới 600.000 ₫</option>
-            <option value="mid">600.000–1.000.000 ₫</option>
-            <option value="high">Trên 1.000.000 ₫</option>
-          </select>
-          <select
+            <option value="low">Dưới 600.000 VNĐ</option>
+            <option value="mid">600.000–1.000.000 VNĐ</option>
+            <option value="high">Trên 1.000.000 VNĐ</option>
+          </Select>
+          <Select
             aria-label="Sắp xếp"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
@@ -140,7 +143,7 @@ export function Shop({ data }: { data: Catalog }) {
             <option value="new">Mới nhất</option>
             <option value="price-up">Giá tăng dần</option>
             <option value="price-down">Giá giảm dần</option>
-          </select>
+          </Select>
         </div>
       </div>
       <div className="category-pills">
@@ -199,7 +202,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
     return (
       <Empty
         title="Bó hoa chưa được tìm thấy."
-        description="Khám phá những thiết kế khác đang có tại Fleur."
+        description="Khám phá những thiết kế khác đang có tại Fleurious."
       />
     );
   const price = Math.round(p.price * ({ S: 1, M: 1.3, L: 1.6 }[size] || 1));
@@ -215,7 +218,7 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
       <div className="detail-layout">
         <ProductGallery key={p.id} product={p} />
         <div className="detail-info">
-          <span className="eyebrow">{p.category} / FLEUR SIGNATURE</span>
+          <span className="eyebrow">{p.category} / FLEURIOUS SIGNATURE</span>
           <h1>{p.name}</h1>
           <p className="detail-flowers">{p.flowers}</p>
           <div className="detail-price">
@@ -310,9 +313,9 @@ export function ProductDetail({ data, slug }: { data: Catalog; slug: string }) {
           <details>
             <summary>Giao hàng & cam kết</summary>
             <p>
-              Giao hàng trong khu vực TP. Hà Nội, phí 35.000 ₫; miễn phí từ
-              1.000.000 ₫. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
-              hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleur hỗ trợ.
+              Giao hàng trong khu vực TP. Hà Nội, phí 35.000 VNĐ; miễn phí từ
+              1.000.000 VNĐ. Chọn ngày và khung giờ tại bước thanh toán. Nếu hoa
+              hư hỏng khi nhận, gửi yêu cầu trong 24 giờ để Fleurious hỗ trợ.
             </p>
           </details>
         </div>
@@ -407,7 +410,10 @@ export function Cart({ data }: { data: Catalog }) {
       setQuote(
         await api("checkout/quote", "POST", { items: cart, code: promo }),
       );
-      sessionStorage.setItem("fleur.promo", promo);
+      sessionStorage.setItem(
+        "fleur.promo." + storeRef(location.pathname),
+        promo,
+      );
     } catch (e) {
       setQuote(null);
       setError((e as Error).message);
@@ -533,7 +539,7 @@ export function Cart({ data }: { data: Catalog }) {
           <aside className="order-summary">
             <h3>Tóm tắt đơn hàng</h3>
             <p className="small">
-              Ưu đãi chào bạn mới: HELLOFLEUR giảm 10% cho đơn từ 400.000 ₫.
+              Ưu đãi chào bạn mới: HELLOFLEUR giảm 10% cho đơn từ 400.000 VNĐ.
             </p>
             <form
               className="coupon"
@@ -564,7 +570,7 @@ export function Cart({ data }: { data: Catalog }) {
               Tiến hành đặt hoa <ArrowRight size={18} />
             </Link>
             <div className="secure-note">
-              <Truck size={16} /> Giao miễn phí từ 1.000.000 ₫
+              <Truck size={16} /> Giao miễn phí từ 1.000.000 VNĐ
             </div>
           </aside>
         </div>
@@ -590,22 +596,27 @@ export function Checkout({ data }: { data: Catalog }) {
   const [giftName, setGiftName] = useState("");
   const [giftPhone, setGiftPhone] = useState("");
   const [giftAddress, setGiftAddress] = useState("");
+  const [selfLocation, setSelfLocation] = useState<DeliveryLocation | null>(
+    null,
+  );
+  const [giftLocation, setGiftLocation] = useState<DeliveryLocation | null>(
+    null,
+  );
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "bank">("cod");
   const customerName = buyerName ?? user?.name ?? "";
   const customerPhone = buyerPhone ?? user?.phone ?? "";
   const receivingSelf = deliveryMode === "self";
   const key = useRef("");
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = hanoiDateKey();
   useEffect(() => {
     if (!key.current) key.current = crypto.randomUUID();
     if (cart.length)
       api("checkout/quote", "POST", {
         items: cart,
-        code: sessionStorage.getItem("fleur.promo") || "",
+        code:
+          sessionStorage.getItem(
+            "fleur.promo." + storeRef(location.pathname),
+          ) || "",
       })
         .then(setQuote)
         .catch((e) => setError(e.message));
@@ -622,15 +633,25 @@ export function Checkout({ data }: { data: Catalog }) {
     try {
       const result = await api("checkout", "POST", {
         ...f,
+        ...((receivingSelf ? selfLocation : giftLocation)
+          ? {
+              deliveryLat: (receivingSelf ? selfLocation : giftLocation)!.lat,
+              deliveryLng: (receivingSelf ? selfLocation : giftLocation)!.lng,
+            }
+          : {}),
         items: cart,
-        code: sessionStorage.getItem("fleur.promo") || "",
+        code:
+          sessionStorage.getItem(
+            "fleur.promo." + storeRef(location.pathname),
+          ) || "",
         consent: f.consent === "on",
         idempotencyKey: key.current,
-        paymentMethod: "cod",
+        expectedTotal: quote?.total,
+        paymentMethod,
       });
       setSuccess({ ...result, email: f.email });
       setCart([]);
-      sessionStorage.removeItem("fleur.promo");
+      sessionStorage.removeItem("fleur.promo." + storeRef(location.pathname));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -647,15 +668,15 @@ export function Checkout({ data }: { data: Catalog }) {
           <span className="eyebrow">THANK YOU, WITH LOVE</span>
           <h1>Lời thương đã được gửi.</h1>
           <p>
-            Fleur đã nhận đơn <strong>{success.reference}</strong>.<br />
+            Fleurious đã nhận đơn <strong>{success.reference}</strong>.<br />
             Đơn đang chờ cửa hàng xác nhận và sẽ được chuẩn bị theo lịch bạn
             chọn.
           </p>
           <div className="notice">
-            Thanh toán khi nhận hoa ·{" "}
-            {money(success.total || quote?.total || 0)}
+            {success.payment ? <>Vui lòng quét mã QR để thanh toán · {money(success.total || quote?.total || 0)}<br /><img src={success.payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 220, maxWidth: "100%" }} /></> : <>Thanh toán khi nhận hoa · {money(success.total || quote?.total || 0)}</>}
             <br />
-            Vui lòng lưu mã đơn để tra cứu. Thông báo email chưa được cấu hình.
+            Vui lòng lưu mã đơn để tra cứu. Cửa hàng sẽ gửi cập nhật đơn qua
+            email đã cung cấp.
           </div>
           <Link
             className="button"
@@ -792,46 +813,42 @@ export function Checkout({ data }: { data: Catalog }) {
                   />
                 </>
               )}
-              <label className="field span-2">
-                Địa chỉ tại TP. Hà Nội
-                <input
-                  name="address"
-                  required
-                  minLength={10}
-                  maxLength={500}
-                  placeholder="Số nhà, đường, phường, quận"
-                  value={
-                    receivingSelf
-                      ? (selfAddress ?? user?.address ?? "")
-                      : giftAddress
-                  }
-                  onChange={(e) =>
-                    receivingSelf
-                      ? setSelfAddress(e.target.value)
-                      : setGiftAddress(e.target.value)
-                  }
-                />
-              </label>
+              <DeliveryAddress
+                key={deliveryMode}
+                enabled={!!data.features?.goong}
+                value={
+                  receivingSelf
+                    ? (selfAddress ?? user?.address ?? "")
+                    : giftAddress
+                }
+                onChange={receivingSelf ? setSelfAddress : setGiftAddress}
+                location={receivingSelf ? selfLocation : giftLocation}
+                onLocation={receivingSelf ? setSelfLocation : setGiftLocation}
+              />
               <div className="delivery-schedule span-2">
                 <Field
                   label="Ngày giao hoa"
                   name="deliveryDate"
                   type="date"
                   min={today}
-                  max={new Date(Date.now() + 89 * 86400000)
-                    .toISOString()
-                    .slice(0, 10)}
+                  max={hanoiDateKey(Date.now() + 89 * 86400000)}
                   defaultValue={today}
                   required
                 />
                 <label className="field">
                   Khung giờ
-                  <select name="deliverySlot">
-                    <option>09:00–12:00</option>
-                    <option>12:00–15:00</option>
-                    <option>15:00–18:00</option>
-                    <option>18:00–20:00</option>
-                  </select>
+                  <Select name="deliverySlot">
+                    {(
+                      data.store?.settings?.slots || [
+                        "09:00–12:00",
+                        "12:00–15:00",
+                        "15:00–18:00",
+                        "18:00–20:00",
+                      ]
+                    ).map((slot: string) => (
+                      <option key={slot}>{slot}</option>
+                    ))}
+                  </Select>
                 </label>
               </div>
             </div>
@@ -846,11 +863,11 @@ export function Checkout({ data }: { data: Catalog }) {
                 name="message"
                 maxLength={500}
                 rows={3}
-                placeholder="Viết điều bạn muốn gửi gắm. Fleur sẽ viết tay giúp bạn."
+                placeholder="Viết điều bạn muốn gửi gắm. Fleurious sẽ viết tay giúp bạn."
               />
             </label>
             <label className="field">
-              Ghi chú cho Fleur
+              Ghi chú cho Fleurious
               <textarea
                 name="notes"
                 maxLength={1000}
@@ -864,12 +881,15 @@ export function Checkout({ data }: { data: Catalog }) {
               <span>04</span> Thanh toán
             </h3>
             <label className="payment-option">
-              <input type="radio" name="payment" defaultChecked />
+              <input type="radio" name="payment" value="cod" checked={paymentMethod === "cod"} onChange={() => setPaymentMethod("cod")} />
               Thanh toán khi nhận hoa (COD)<span>Tiền mặt khi giao hàng</span>
             </label>
+            {data.store?.bank?.enabled && <label className="payment-option">
+              <input type="radio" name="payment" value="bank" checked={paymentMethod === "bank"} onChange={() => setPaymentMethod("bank")} />
+              Chuyển khoản ngân hàng<span>Quét mã QR VietQR, đơn sẽ cập nhật khi nhận tiền</span>
+            </label>}
             <p className="small">
-              Bạn chỉ thanh toán khi nhận hoa. Các phương thức thanh toán trực
-              tuyến sẽ xuất hiện khi cửa hàng kết nối nhà cung cấp.
+              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 10 phút. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : "Bạn chỉ thanh toán khi nhận hoa."}
             </p>
             <label className="check-field">
               <input name="consent" type="checkbox" />

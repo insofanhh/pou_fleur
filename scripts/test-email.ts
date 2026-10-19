@@ -1,7 +1,9 @@
+import { withStore } from "../lib/tenant";
 import assert from "node:assert/strict";
 import mysql from "mysql2/promise";
 import nodemailer from "nodemailer";
 import { randomBytes } from "node:crypto";
+import { migratePlatformEmail } from "./platform-email-schema.mjs";
 import { setupEmail } from "./email-schema.mjs";
 import { emailHTML, interpolateEmail } from "../lib/email-content";
 async function main() {
@@ -56,9 +58,32 @@ async function main() {
       rendered.includes("&lt;img") && !rendered.includes("<img"),
       "Personalization escapes HTML injection",
     );
+    const storeBranding = emailHTML("Order body", undefined, "Store qua Fleurious", "Hoa <An> & Bạn");
+    check(
+      storeBranding.includes('class="store-workspace-label"') && storeBranding.includes("Hoa &lt;An&gt; &amp; Bạn&#39;s workspace") && !storeBranding.includes("Store qua Fleurious</div>"),
+      "Store mail keeps the Fleurious logo and escapes the workspace label beneath it",
+    );
+    check(!emailHTML("System body", undefined, "Fleurious Platform").includes('class="store-workspace-label"'), "Platform mail has no store workspace label");
     await c.query(
       "INSERT INTO customers VALUES(1,'yes@example.test','Yes',1),(2,'no@example.test','No',0); INSERT INTO users VALUES(1,'yes@example.test',1); INSERT INTO orders VALUES(1,'FLTEST','An','order@example.test',932000,'pending','Minh','Địa chỉ thử','2026-10-20','09:00–12:00'); INSERT INTO order_items VALUES(1,1,'Tulip','M',1,897000)",
     );
+    for (const table of [
+      "customers",
+      "orders",
+      "order_items",
+      "email_templates",
+      "email_campaigns",
+      "email_suppressions",
+      "email_outbox",
+    ])
+      await c.query(
+        "ALTER TABLE " + table + " ADD COLUMN store_id INT NOT NULL DEFAULT 1",
+      );
+    await c.query(
+      "ALTER TABLE orders ADD COLUMN version INT DEFAULT 1,ADD COLUMN store_name VARCHAR(100) DEFAULT 'Fleur'; CREATE TABLE stores(id INT PRIMARY KEY,slug VARCHAR(100),name VARCHAR(160),owner_id INT,status VARCHAR(30)); INSERT INTO stores VALUES(1,'fleur','Fleur',1,'pending'); ALTER TABLE users ADD COLUMN name VARCHAR(160) DEFAULT 'QA Owner'; CREATE TABLE plans(id INT PRIMARY KEY,limits JSON); CREATE TABLE plan_versions(id INT PRIMARY KEY,limits JSON); CREATE TABLE subscriptions(store_id INT PRIMARY KEY,plan_id INT,plan_version_id INT); INSERT INTO plans VALUES(1,'{\"email_sends\":100}'); INSERT INTO subscriptions VALUES(1,1,NULL)",
+    );
+    await c.query("CREATE TABLE identity_mail(id INT AUTO_INCREMENT PRIMARY KEY,recipient VARCHAR(190),subject VARCHAR(240),body TEXT,status VARCHAR(20) DEFAULT 'pending',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP); ALTER TABLE users ADD COLUMN active INT DEFAULT 1");
+    await migratePlatformEmail(c);
     const conn = await appPool.getConnection();
     try {
       await conn.beginTransaction();
@@ -108,8 +133,10 @@ async function main() {
       buffer: true,
     });
     let mime = "";
+    let smtpOptions: any;
     const transport = {
       sendMail: async (options: any) => {
+        smtpOptions = options;
         const result = await stream.sendMail(options);
         mime = result.message.toString();
         return { accepted: ["yes@example.test"], messageId: result.messageId };
@@ -117,7 +144,7 @@ async function main() {
       close: () => stream.close(),
     };
     await mail.sendSMTP(
-      { ...confirmation, unsubscribe_token: randomBytes(32).toString("hex") },
+      { ...confirmation, sender_name: "Fleur qua Fleurious", store_name: "Fleur", unsubscribe_token: randomBytes(32).toString("hex") },
       transport as any,
     );
     check(
@@ -127,6 +154,7 @@ async function main() {
         mime.includes("Message-ID: <fleur-"),
       "SMTP message contains HTML, text, stable ID and unsubscribe headers",
     );
+    check(smtpOptions.html.includes("Fleur&#39;s workspace") && smtpOptions.text.startsWith("Fleurious\nFleur's workspace\n\n") && smtpOptions.from.name === "Fleur qua Fleurious", "Actual SMTP HTML and text include store branding while retaining sender identity");
     let sends = 0;
     const sender = async () => {
       sends++;
@@ -272,6 +300,96 @@ async function main() {
         status.body.includes("FLTEST"),
       "Status email includes previous state, new state and reference",
     );
+    const lifecycle = await appPool.getConnection();
+    try {
+      await lifecycle.beginTransaction();
+      await mail.enqueueStoreLifecycleEmail(lifecycle,1,'store_registration_pending');
+      await mail.enqueueStoreLifecycleEmail(lifecycle,1,'store_registration_pending');
+      await lifecycle.commit();
+      const [[pending]]: any = await c.query("SELECT COUNT(*) n,MIN(body) body FROM email_outbox WHERE template_key='store_registration_pending'");
+      check(pending.n===1 && pending.body.includes('Fleur') && pending.body.includes('/workspace/1'), 'Registration mail identifies owner/store and deduplicates');
+      await lifecycle.beginTransaction();
+      await mail.enqueueStoreLifecycleEmail(lifecycle,1,'store_approved');
+      await lifecycle.rollback();
+      const [[rollback]]: any = await c.query("SELECT COUNT(*) n FROM email_outbox WHERE template_key='store_approved'");
+      check(rollback.n===0,'Approval rollback cannot send success email');
+    } finally { lifecycle.release(); }
+    await c.query("UPDATE email_outbox SET status='cancelled' WHERE status='pending'");
+    await c.query("UPDATE plans SET limits='{\"email_sends\":1}' WHERE id=1");
+    const blocked=await insert('quota-blocked');
+    const beforeQuota=sends;
+    await mail.processEmails(10,sender);
+    const [[quotaMail]]: any=await c.query('SELECT status,last_error,attempts FROM email_outbox WHERE id=?',[blocked]);
+    check(sends===beforeQuota && quotaMail.status==='pending' && quotaMail.last_error==='EMAIL_MONTHLY_LIMIT' && quotaMail.attempts===0,'Quota keeps business mail pending without contacting SMTP');
+    const platformConn=await appPool.getConnection();
+    try { await mail.enqueueStoreLifecycleEmail(platformConn,1,'store_approved'); } finally {platformConn.release();}
+    await mail.processEmails(10,async m=>{check(m.sender_name==='Fleurious Platform' && !m.store_name,'Platform approval mail does not inherit store branding');return sender();});
+    check(sends===beforeQuota+1,'Platform approval email is exempt from store quota');
+    await c.query("UPDATE plans SET limits='{\"email_sends\":100}' WHERE id=1");
+    await c.query("UPDATE email_outbox SET next_attempt_at=NOW() WHERE id=?",[blocked]);
+    let senderName='';
+    await mail.processEmails(1,async (m)=>{senderName=m.sender_name || '';return 'quota-upgraded';});
+    check(senderName==='Fleur qua Fleurious','Upgraded allowance resumes pending email with seller identity');
+    const identity=await import('../lib/identity-mail');
+    const system=await import('../lib/system-email');
+    const {emailAllowance}=await import('../lib/email-policy');
+    const accountConn=await appPool.getConnection();
+    try {
+      await accountConn.beginTransaction();
+      await system.enqueueAccountWelcome(accountConn,1);
+      await accountConn.rollback();
+      const [[none]]:any=await c.query("SELECT COUNT(*) n FROM identity_mail");
+      check(none.n===0,'Welcome mail rolls back with account creation');
+      await accountConn.beginTransaction();
+      await system.enqueueAccountWelcome(accountConn,1);
+      await system.enqueueAccountWelcome(accountConn,1);
+      await accountConn.commit();
+    }finally{accountConn.release();}
+    const [[welcome]]:any=await c.query("SELECT * FROM identity_mail WHERE template_key='account_welcome'");
+    check(welcome.body.includes('/account'),'Account welcome includes the correct destination');
+    const countBefore=(await emailAllowance(appPool,1)).used;
+    let identitySends=0;
+    await Promise.all([identity.processIdentityMail(async m=>{check(m.sender_name==='Fleurious Platform','Account mail uses system sender identity');identitySends++;return 'identity-sent';}),identity.processIdentityMail(async()=>{identitySends++;return 'identity-sent';})]);
+    check(identitySends===1,'Concurrent identity workers send welcome once');
+    check((await emailAllowance(appPool,1)).used===countBefore,'Account mail does not consume store allowance');
+    await c.execute("UPDATE platform_email_templates SET body='Platform-approved {{store_name}} · {{workspace_url}}' WHERE template_key='store_approved'");
+    await c.execute("DELETE FROM email_outbox WHERE template_key='store_approved'");
+    const centralConn=await appPool.getConnection();
+    try{await mail.enqueueStoreLifecycleEmail(centralConn,1,'store_approved');}finally{centralConn.release();}
+    const [[central]]:any=await c.query("SELECT body FROM email_outbox WHERE template_key='store_approved'");
+    check(central.body.startsWith('Platform-approved Fleur'),'Store lifecycle mail renders the central platform template');
+    const platformToken=randomBytes(32).toString('hex');
+    await c.execute("UPDATE users SET marketing_consent=1 WHERE id=1");
+    await c.execute("INSERT INTO identity_mail(user_id,template_key,kind,recipient,subject,body,unsubscribe_token) VALUES(1,'platform_news','marketing','yes@example.test','News','Body',?)",[platformToken]);
+    await c.execute("UPDATE users SET marketing_consent=0 WHERE id=1");
+    await identity.processIdentityMail(async()=>{throw Error('Consent must block SMTP');});
+    const [[cancelled]]:any=await c.execute("SELECT status FROM identity_mail WHERE unsubscribe_token=?",[platformToken]);
+    check(cancelled.status==='cancelled','Platform marketing consent is rechecked before SMTP');
+    await c.execute("UPDATE users SET marketing_consent=1 WHERE id=1");
+    await c.execute("UPDATE customers SET marketing_consent=1 WHERE id=1");
+    await c.execute("DELETE FROM email_suppressions");
+    check(await mail.unsubscribeEmail(platformToken),'Platform unsubscribe token is accepted');
+    const [[consents]]:any=await c.query("SELECT u.marketing_consent platform_consent,c.marketing_consent store_consent FROM users u JOIN customers c ON c.id=u.id WHERE u.id=1");
+    check(consents.platform_consent===0&&consents.store_consent===1,'Platform unsubscribe preserves independent store consent');
+    const lostId=(await c.execute<any>("INSERT INTO identity_mail(template_key,recipient,subject,body) VALUES('account_welcome','yes@example.test','Hi','Body')"))[0].insertId;
+    await identity.processIdentityMail(async()=>{throw Object.assign(Error('lost ack'),{code:'ETIMEDOUT'});});
+    const [[lost]]:any=await c.query("SELECT status FROM identity_mail WHERE id=?",[lostId]);
+    check(lost.status==='uncertain','Identity worker does not blindly retry lost SMTP acknowledgement');
+    await c.query("ALTER TABLE email_templates DROP INDEX template_key,ADD UNIQUE KEY store_template(store_id,template_key)");
+    await c.query("INSERT INTO stores VALUES(2,'store-two','Second Store',1,'approved'); INSERT INTO subscriptions VALUES(2,1,NULL)");
+    await c.query("INSERT INTO email_templates(store_id,template_key,name,kind,subject,body,active) SELECT 2,template_key,name,kind,subject,body,active FROM email_templates WHERE store_id=1");
+    await c.query("UPDATE email_templates SET subject='Custom Second Store {{order_reference}}',body='Second Store order {{order_reference}} for {{customer_name}}' WHERE store_id=2 AND template_key='order_confirmation'");
+    await c.query("INSERT INTO orders(id,reference,customer_name,email,total,status,recipient_name,address,delivery_date,delivery_slot,store_id,store_name,version) VALUES(2,'FLSECOND','Buyer Two','buyer2@example.test',100000,'pending','Recipient','Address','2026-10-20','09:00',2,'Second Store',1)");
+    await withStore(2,async()=>{
+      const c2=await appPool.getConnection();
+      try{await mail.enqueueOrderEmail(c2,2,'order_confirmation');}finally{c2.release();}
+      let second:any;
+      await mail.processEmails(1,async m=>{second=m;return 'second-store-sent';});
+      check(second.recipient==='buyer2@example.test'&&second.subject==='Custom Second Store FLSECOND'&&second.body.includes('Second Store order FLSECOND')&&second.sender_name==='Second Store qua Fleurious','Second store sends its own customized content and identity through shared SMTP');
+      check(second.store_name==='Second Store' && emailHTML(second.body,undefined,second.sender_name,second.store_name).includes('Second Store&#39;s workspace'),'Worker applies the correct store label independently for each tenant');
+      check((await emailAllowance(appPool,2)).used===1,'Second-store mail increments only the second-store counter');
+    });
+    check((await emailAllowance(appPool,1)).used===countBefore,'Other-store sends do not change first-store usage');
     console.log(
       "All " + checks + " email checks passed. No external email sent.",
     );
@@ -283,7 +401,7 @@ async function main() {
     await c.end();
   }
 }
-main().catch((e) => {
+withStore(1, main).catch((e) => {
   console.error(e);
   process.exitCode = 1;
 });

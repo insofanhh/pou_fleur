@@ -1,5 +1,6 @@
 "use client";
-import Link from "next/link";
+import { hanoiDateKey } from "@/lib/date-time";
+import Link from "./routing";
 import Image from "next/image";
 import FlowerImage from "./flower-image";
 import {
@@ -11,8 +12,8 @@ import {
   Plus,
 } from "lucide-react";
 import type { Catalog, Product } from "@/lib/types";
-export const money = (n: number) =>
-  new Intl.NumberFormat("vi-VN").format(n) + " ₫";
+import { formatMoney as money } from "@/lib/money";
+export { money };
 export default function Home({ data }: { data: Catalog }) {
   return (
     <main>
@@ -23,14 +24,10 @@ export default function Home({ data }: { data: Catalog }) {
             THIÊN NHIÊN. ĐƯỢC NÂNG NIU.
           </div>
           <h1>
-            Có những điều,
-            <br />
-            để hoa nói thay.
+            {data.store?.theme?.hero || "Có những điều, để hoa nói thay."}
           </h1>
           <p>
-            Một bó hoa nhỏ. Một lời thương lớn.
-            <br />
-            Gửi trao những cảm xúc chân thành, theo cách của bạn.
+            {data.store?.theme?.story || "Một bó hoa nhỏ. Một lời thương lớn."}
           </p>
           <Link href="/shop" className="button">
             Tìm bó hoa của bạn <ArrowUpRight size={18} />
@@ -57,7 +54,7 @@ export default function Home({ data }: { data: Catalog }) {
             Được trao bằng tim.
           </span>
           <span className="vertical-caption">
-            FLEUR FLORAL STUDIO — EST. 2026
+            FLEURIOUS FLORAL STUDIO — EST. 2026
           </span>
         </div>
       </section>
@@ -82,7 +79,7 @@ export default function Home({ data }: { data: Catalog }) {
       <section className="section">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">THE FLEUR EDIT</span>
+            <span className="eyebrow">THE FLEURIOUS EDIT</span>
             <h2>Những bó hoa được yêu.</h2>
           </div>
           <Link href="/shop" className="text-link">
@@ -150,18 +147,24 @@ export function ProductCard({ p }: { p: Product }) {
     </article>
   );
 }
-export function Footer() {
+export function Footer({ name = "Fleurious" }: { name?: string }) {
   return (
     <footer>
       <div className="footer-main">
         <div>
           <Link className="logo" href="/">
-            fleur<span>®</span>
+            {name === "Fleurious" ? (
+              <>
+                fleurious<span>®</span>
+              </>
+            ) : (
+              name
+            )}
           </Link>
           <p>Hoa cho những điều không thể nói.</p>
         </div>
         <div>
-          <h4>Khám phá Fleur</h4>
+          <h4>Khám phá {name}</h4>
           <Link href="/shop">Tất cả sản phẩm</Link>
           <Link href="/events">Sự kiện & bộ sưu tập</Link>
           <Link href="/journal">Chuyện về hoa</Link>
@@ -177,12 +180,14 @@ export function Footer() {
           <Link href="/account">Tài khoản của bạn</Link>
           <Link href="/wishlist">Hoa yêu thích</Link>
           <Link href="/admin">
-            Fleur Workspace <ArrowUpRight size={13} />
+            Quản lý cửa hàng <ArrowUpRight size={13} />
           </Link>
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2026 Fleur Floral Studio.</span>
+        <span>
+          © {hanoiDateKey().slice(0, 4)} {name}.
+        </span>
         <span>Một chút hoa. Thật nhiều yêu thương.</span>
         <Link href="/privacy">Quyền riêng tư</Link>
       </div>

@@ -1,6 +1,15 @@
+import { enqueueAccountWelcome } from "@/lib/system-email";
+import { requestPasswordReset, processIdentityMail } from "@/lib/identity-mail";
+import { cookies } from "next/headers";
+import { withStore, withSystem, tenantId } from "@/lib/tenant";
+import { requestStore } from "@/lib/stores";
+import { saasAPI } from "@/lib/saas";
+import { emit, processDomainEvents } from "@/lib/domain-events";
 import { NextRequest, NextResponse, after } from "next/server";
 import { emailAdminRead, emailAdminAction } from "@/lib/email-admin";
-import { safelyProcessEmails } from "@/lib/email";
+import { updateCustomerMarketingConsent } from "@/lib/crm-consent";
+import { orderPaymentStatusSQL } from "@/lib/order-payment-state";
+import { safelyProcessEmails, processAllStoreEmails } from "@/lib/email";
 import { z } from "zod";
 import { adminNotifications } from "@/lib/notifications";
 import { publicProducts, invalidateCatalog } from "@/lib/catalog";
@@ -17,6 +26,8 @@ import {
   throttle,
   digest,
   permissions,
+  ghostContext,
+  guardGhostAction,
 } from "@/lib/auth";
 import {
   calculate,
@@ -26,6 +37,7 @@ import {
   changeOrder,
 } from "@/lib/commerce";
 import { adminRead, adminWrite } from "@/lib/admin";
+import { refreshBillingAccess } from "@/lib/billing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,12 +63,47 @@ async function handle(
         throw new HttpError(400, "Dữ liệu không hợp lệ.");
       }
     }
-    let result: unknown;
+    await guardGhostAction(key, method);
+    let result: unknown = await saasAPI(
+      path,
+      method,
+      body,
+      req.nextUrl,
+      digest(req.headers.get("x-forwarded-for")?.split(",")[0] || "local"),
+    );
+    if (result !== undefined) {
+      if (method !== "GET" && !(path[0] === "platform" && path[1] === "emails" && !["campaigns", "retry"].includes(path[2])))
+        after(async () => {
+          const deadline=Date.now()+45000;
+          await processIdentityMail();
+          if (path[0] === 'platform' || key === 'stores') await processAllStoreEmails(deadline);
+          else await safelyProcessEmails();
+          await processDomainEvents();
+        });
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     if (key === "catalog/products" && method === "GET")
       result = await publicProducts();
     else if (key === "auth/me" && method === "GET")
-      result = { user: await currentUser(), permissions };
-    else if (key === "auth/register" && method === "POST") {
+      result = {
+        user: await currentUser(),
+        permissions,
+        ghost:
+          (await ghostContext()) ||
+          ((await cookies()).get("fleur_ghost")?.value
+            ? { valid: false, targetName: "người dùng" }
+            : null),
+      };
+    else if (key === "auth/forgot-password" && method === "POST") {
+      const email = z.email().toLowerCase().parse(body.email);
+      await requestPasswordReset(email);
+      after(async () => {
+        await processIdentityMail();
+      });
+      result = { ok: true };
+    } else if (key === "auth/register" && method === "POST") {
       const b = z
         .object({
           name: z.string().trim().min(2).max(100),
@@ -67,15 +114,17 @@ async function handle(
         })
         .parse(body);
       await throttle("register:" + b.email);
-      const r = await mutate(
-        "INSERT INTO users(name,email,password_hash,phone,address,marketing_consent) VALUES(?,?,?,?,'',?)",
-        [b.name, b.email, passwordHash(b.password), b.phone, b.consent ? 1 : 0],
-      );
-      await mutate(
-        "INSERT IGNORE INTO customers(name,email,phone,marketing_consent) VALUES(?,?,?,?)",
-        [b.name, b.email, b.phone, b.consent ? 1 : 0],
-      );
-      await setSession(r.insertId);
+      const c=await pool.getConnection();
+      let userId:number;
+      try{
+        await c.beginTransaction();
+        const [r]:any=await c.execute("INSERT INTO users(name,email,password_hash,phone,address,marketing_consent) VALUES(?,?,?,?,'',?)",[b.name,b.email,passwordHash(b.password),b.phone,b.consent?1:0]);
+        userId=r.insertId;
+        await enqueueAccountWelcome(c,userId);
+        await c.commit();
+      }catch(e){await c.rollback();throw e;}finally{c.release();}
+      await setSession(userId!);
+      after(async()=>{await processIdentityMail();});
       result = { user: await currentUser() };
     } else if (key === "auth/login" && method === "POST") {
       const b = z
@@ -102,6 +151,11 @@ async function handle(
       await setSession(user.id);
       result = { user: await currentUser() };
     } else if (key === "auth/logout" && method === "POST") {
+      const user = await currentUser();
+      if (user && !(await cookies()).get("fleur_ghost")?.value)
+        await mutate("DELETE FROM push_subscriptions WHERE user_id=?", [
+          user.id,
+        ]);
       await clearSession();
       result = { ok: true };
     } else if (key === "account" && method === "PATCH") {
@@ -130,10 +184,7 @@ async function handle(
           user.id,
         ],
       );
-      await mutate(
-        "UPDATE customers SET name=?,phone=?,birthday=?,marketing_consent=? WHERE email=?",
-        [b.name, b.phone, b.birthday, b.marketing_consent ? 1 : 0, user.email],
-      );
+
       result = { user: await currentUser() };
     } else if (key === "account/password" && method === "POST") {
       const user = await currentUser();
@@ -160,9 +211,11 @@ async function handle(
     } else if (key === "orders" && method === "GET") {
       const user = await currentUser();
       if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
-      result = await query(
-        "SELECT o.*,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE user_id=? ORDER BY id DESC",
-        [user.id],
+      result = await withSystem(() =>
+        query(
+          "SELECT o.id,o.reference,o.user_id,o.customer_name,o.email,o.phone,o.address,o.recipient_name,o.recipient_phone,o.delivery_date,o.delivery_slot,o.message,o.notes,o.payment_method," + orderPaymentStatusSQL() + " payment_status,o.status,o.subtotal,o.discount,o.shipping,o.total,o.created_at,o.store_id,o.store_name,o.delivery_mode,o.version,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
+          [user.id],
+        ),
       );
     } else if (key === "checkout/quote" && method === "POST") {
       const c = await pool.getConnection();
@@ -180,7 +233,19 @@ async function handle(
           "Vui lòng dùng email của tài khoản đang đăng nhập.",
         );
       await throttle("checkout:" + b.email, 40);
-      result = await createOrder(b, user?.id || null);
+      const jar = await cookies();
+      let checkoutToken = jar.get("fleur_checkout")?.value;
+      if (!checkoutToken) {
+        checkoutToken = randomBytes(32).toString("hex");
+        jar.set("fleur_checkout", checkoutToken, {
+          httpOnly: true,
+          secure: (process.env.APP_ORIGIN || "").startsWith("https:"),
+          sameSite: "lax",
+          path: "/",
+          maxAge: 86400,
+        });
+      }
+      result = await createOrder(b, user?.id || null, digest(checkoutToken));
     } else if (key === "orders/track" && method === "POST") {
       const b = z
         .object({
@@ -203,11 +268,16 @@ async function handle(
     ) {
       const user = await currentUser();
       if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
-      result = await changeOrder(
-        z.coerce.number().int().positive().parse(path[1]),
-        "cancelled",
-        user.id,
-        true,
+      const orderId = z.coerce.number().int().positive().parse(path[1]);
+      const [order] = await withSystem(() =>
+        query<any[]>("SELECT store_id FROM orders WHERE id=? AND user_id=?", [
+          orderId,
+          user.id,
+        ]),
+      );
+      if (!order) throw new HttpError(404, "Không tìm thấy đơn hàng.");
+      result = await withStore(order.store_id, () =>
+        changeOrder(orderId, "cancelled", user.id, true),
       );
     } else if (key === "contact" && method === "POST") {
       const b = z
@@ -218,11 +288,26 @@ async function handle(
         })
         .parse(body);
       await throttle("contact:" + b.email, 5);
-      await mutate("INSERT INTO inquiries(name,email,message) VALUES(?,?,?)", [
-        b.name,
-        b.email,
-        b.message,
-      ]);
+      const c = await pool.getConnection();
+      try {
+        await c.beginTransaction();
+        const [r]: any = await c.execute(
+          "INSERT INTO inquiries(name,email,message) VALUES(?,?,?)",
+          [b.name, b.email, b.message],
+        );
+        await emit(c, "support:" + r.insertId, {
+          audience: "staff",
+          title: "Yêu cầu hỗ trợ mới",
+          body: b.name,
+          href: "/workspace/" + tenantId() + "/inquiries",
+        });
+        await c.commit();
+      } catch (e) {
+        await c.rollback();
+        throw e;
+      } finally {
+        c.release();
+      }
       result = { ok: true };
     } else if (key === "auth/reset-password" && method === "POST") {
       const b = z
@@ -265,30 +350,10 @@ async function handle(
       path[3] === "reset-password" &&
       method === "POST"
     ) {
-      const actor = await requirePermission("users");
-      const id = z.coerce.number().int().positive().parse(path[2]);
-      const [u] = await query<any[]>(
-        "SELECT id FROM users WHERE id=? AND active=1",
-        [id],
+      throw new HttpError(
+        403,
+        "Chủ cửa hàng chỉ quản lý vai trò nhân sự. Tài khoản tự khôi phục mật khẩu qua luồng xác minh email.",
       );
-      if (!u)
-        throw new HttpError(404, "Tài khoản không tồn tại hoặc đã bị khoá.");
-      const token = randomBytes(32).toString("hex");
-      await mutate("DELETE FROM password_resets WHERE user_id=?", [id]);
-      await mutate(
-        "INSERT INTO password_resets(token_hash,user_id,expires_at) VALUES(?,?,DATE_ADD(NOW(),INTERVAL 30 MINUTE))",
-        [digest(token), id],
-      );
-      await mutate(
-        "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,'issue_password_reset','users',?)",
-        [actor.id, String(id)],
-      );
-      result = {
-        url:
-          (process.env.APP_ORIGIN || req.nextUrl.origin) +
-          "/reset-password?token=" +
-          token,
-      };
     } else if (key === "admin/notifications" && method === "GET") {
       result = await adminNotifications();
     } else if (path[0] === "admin" && path[1] === "emails") {
@@ -305,19 +370,33 @@ async function handle(
           z.coerce.number().int().positive().parse(path[2]),
           z
             .enum([
+              "pending",
               "confirmed",
               "preparing",
+              "ready",
               "shipping",
               "delivered",
               "cancelled",
             ])
             .parse(body.status),
           user.id,
+          false,
+          z.number().int().positive().parse(body.version),
+          { reason: z.string().trim().max(500).optional().parse(body.reason) },
         );
       } else if (area === "crm") {
         const user = await requirePermission("crm");
         const id = z.coerce.number().int().positive().parse(path[2]);
-        if (path[3] === "notes") {
+        const [customer] = await query<any[]>(
+          "SELECT id FROM customers WHERE id=?",
+          [id],
+        );
+        if (!customer)
+          throw new HttpError(404, "Không tìm thấy khách hàng trong cửa hàng.");
+        if (path.length === 4 && path[3] === "marketing-consent" && method === "PATCH") {
+          return NextResponse.json(await updateCustomerMarketingConsent(id, user.id, body), { headers: { "Cache-Control": "no-store" } });
+        }
+        if (path.length === 4 && path[3] === "notes" && method === "POST") {
           const content = z
             .string()
             .trim()
@@ -328,7 +407,7 @@ async function handle(
             "INSERT INTO crm_notes(customer_id,author_id,content) VALUES(?,?,?)",
             [id, user.id, content],
           );
-        } else if (path[3] === "tasks" && method === "POST") {
+        } else if (path.length === 4 && path[3] === "tasks" && method === "POST") {
           const b = z
             .object({
               title: z.string().min(2).max(200),
@@ -339,8 +418,8 @@ async function handle(
             "INSERT INTO crm_tasks(customer_id,title,due_date) VALUES(?,?,?)",
             [id, b.title, b.due_date],
           );
-        } else if (path[3] === "tasks" && method === "PATCH") {
-          await mutate(
+        } else if (path.length === 4 && path[3] === "tasks" && method === "PATCH") {
+          const updated=await mutate(
             "UPDATE crm_tasks SET status=? WHERE id=? AND customer_id=?",
             [
               z.enum(["open", "done"]).parse(body.status),
@@ -348,7 +427,8 @@ async function handle(
               id,
             ],
           );
-        } else {
+          if(!updated.affectedRows) throw new HttpError(404,"Không tìm thấy công việc của khách hàng này.");
+        } else if(path.length===3 && method==="PATCH") {
           const b = z
             .object({
               segment: z.enum(["new", "loyal", "vip", "inactive"]),
@@ -364,6 +444,7 @@ async function handle(
             id,
           ]);
         }
+        else throw new HttpError(405,"Thao tác CRM không hỗ trợ.");
         await mutate(
           "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,'update','crm',?)",
           [user.id, String(id)],
@@ -379,14 +460,18 @@ async function handle(
     } else throw new HttpError(404, "Không tìm thấy chức năng.");
     if (
       method !== "GET" &&
-      (key === "checkout" ||
+      (key === "contact" ||
+        key === "checkout" ||
         path[0] === "orders" ||
         (path[0] === "admin" &&
           (path[1] === "orders" ||
             (path[1] === "emails" &&
               ["campaigns", "retry"].includes(path[2])))))
     )
-      after(safelyProcessEmails);
+      after(async () => {
+        await safelyProcessEmails();
+        await processDomainEvents();
+      });
     if (method !== "GET") {
       if (path[0] === "admin") invalidateCatalog(path[1]);
       else if (key === "checkout" || path[0] === "orders")
@@ -425,4 +510,41 @@ async function handle(
     );
   }
 }
-export { handle as GET, handle as POST, handle as PATCH, handle as DELETE };
+async function scopedHandle(
+  req: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> },
+) {
+  try {
+    const store = await requestStore(req);
+    return await withStore(store.id, async () => {
+      const { path } = await ctx.params;
+      if (req.method !== "GET" && ["admin", "workspace"].includes(path[0]) && path[1] !== "billing") {
+        const access = await refreshBillingAccess(store.id);
+        if (access.status !== "approved") throw new HttpError(403, access.suspension_reason || "Cửa hàng chưa thể vận hành. Vui lòng xem mục Gói & hóa đơn.");
+      }
+      if (
+        path.join("/") === "catalog/products" &&
+        store.status !== "approved"
+      ) {
+        const u = await currentUser();
+        if (!u?.memberships?.some((m) => m.store_id === store.id))
+          throw new HttpError(404, "Cửa hàng chưa mở.");
+      }
+      return handle(req, ctx);
+    });
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error:
+          e instanceof HttpError ? e.message : "Không thể xác định cửa hàng.",
+      },
+      { status: e instanceof HttpError ? e.status : 500 },
+    );
+  }
+}
+export {
+  scopedHandle as GET,
+  scopedHandle as POST,
+  scopedHandle as PATCH,
+  scopedHandle as DELETE,
+};

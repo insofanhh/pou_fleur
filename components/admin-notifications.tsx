@@ -1,6 +1,8 @@
 "use client";
-import Link from "next/link";
+import { formatDateTime } from "@/lib/date-time";
+import Link, { storeRef } from "./routing";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   Package,
@@ -11,9 +13,10 @@ import {
 } from "lucide-react";
 import type { AdminNotification } from "@/lib/notification-types";
 
-const icons = { orders: Package, inquiries: MessageSquare, users: UserPlus };
+const icons = { orders: Package, inquiries: MessageSquare, users: UserPlus, system: Bell };
 const interval = 15000;
 export default function AdminNotifications({ userId }: { userId: number }) {
+  const router = useRouter();
   const [items, setItems] = useState<AdminNotification[]>([]);
   const [read, setRead] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
@@ -23,7 +26,9 @@ export default function AdminNotifications({ userId }: { userId: number }) {
   const root = useRef<HTMLDivElement>(null);
   const bell = useRef<HTMLButtonElement>(null);
   const readKeys = useRef(new Set<string>());
-  const storageKey = `fleur.notifications.read.${userId}`;
+  const scope =
+    typeof location === "undefined" ? "1" : storeRef(location.pathname);
+  const storageKey = `fleur.notifications.read.${userId}.${scope}`;
 
   useEffect(() => {
     const loadRead = () => {
@@ -67,6 +72,7 @@ export default function AdminNotifications({ userId }: { userId: number }) {
       try {
         const response = await fetch("/api/admin/notifications", {
           cache: "no-store",
+          headers: { "x-fleur-store": scope },
           signal: controller.signal,
         });
         if (response.status === 401 || response.status === 403) {
@@ -98,6 +104,7 @@ export default function AdminNotifications({ userId }: { userId: number }) {
         setItems(data.items);
         setError("");
         if (fresh.length) {
+          if (fresh.some((n) => n.type === "system")) router.refresh();
           const notices = Object.keys(icons).flatMap((type) => {
             const batch = fresh.filter((item) => item.type === type);
             return batch.length
@@ -260,7 +267,7 @@ export default function AdminNotifications({ userId }: { userId: number }) {
                       <strong>{item.title}</strong>
                       <span>{item.detail}</span>
                       <time dateTime={new Date(item.createdAt).toISOString()}>
-                        {new Date(item.createdAt).toLocaleString("vi-VN")}
+                        {formatDateTime(item.createdAt)}
                       </time>
                     </span>
                     {unreadItem && <i aria-label="Chưa đọc" />}

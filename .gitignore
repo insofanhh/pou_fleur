@@ -7,3 +7,10 @@ node_modules/
 
 storage/uploads/*
 .next-production/
+
+.local/
+playwright-report/
+test-results/
+
+.next-saas-test/
+.next-manual-qa/

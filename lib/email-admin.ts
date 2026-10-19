@@ -14,10 +14,11 @@ import {
   verifySMTP,
   safeMailError,
 } from "./email";
+import { isPlatformEmail, storeEmailIdentity } from './email-policy';
 
-const reviewVersion = (v: unknown) =>
+export const reviewVersion = (v: unknown) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
-const templateSchema = z.object({
+export const templateSchema = z.object({
   name: z.string().trim().min(2).max(160),
   subject: z
     .string()
@@ -28,7 +29,7 @@ const templateSchema = z.object({
   body: z.string().trim().min(10).max(15000),
   active: z.coerce.number().int().min(0).max(1),
 });
-const campaignSchema = z.object({
+export const campaignSchema = z.object({
   requestKey: z.string().uuid(),
   name: z.string().trim().min(2).max(160),
   templateId: z.coerce.number().int().positive(),
@@ -45,7 +46,7 @@ const campaignSchema = z.object({
   promotionCode: z.string().trim().max(80).default(""),
   eventDate: z.string().trim().max(120).default(""),
 });
-function validateTemplate(
+export function validateTemplate(
   t: z.infer<typeof templateSchema>,
   kind: string,
   key = "",
@@ -55,13 +56,16 @@ function validateTemplate(
     kind === "marketing"
       ? [
           "customer_name",
+          "store_name",
+          "store_url",
           "campaign_name",
           "campaign_message",
           "promotion_code",
           "event_date",
         ].includes(k)
-      : !k.startsWith("campaign_") &&
-        !["promotion_code", "event_date"].includes(k),
+      : key.startsWith("order_")
+        ? ["customer_name","store_name","store_url","order_reference","order_items","order_total","payment_method","order_status","previous_status","recipient_name","delivery_address","delivery_date","delivery_slot","tracking_url"].includes(k)
+        : !k.startsWith("campaign_") && !["promotion_code", "event_date"].includes(k),
   );
   const without = combined.replace(/{{\s*([a-z_]+)\s*}}/g, (_, k) => {
     if (!known.includes(k)) throw new HttpError(400, "Biến không hỗ trợ: " + k);
@@ -69,7 +73,7 @@ function validateTemplate(
   });
   if (/[{}]/.test(without))
     throw new HttpError(400, "Biến cần có dạng {{customer_name}}.");
-  if (kind === "transactional" && !/{{\s*order_reference\s*}}/.test(combined))
+  if (key.startsWith('order_') && !/{{\s*order_reference\s*}}/.test(combined))
     throw new HttpError(400, "Email đơn hàng phải chứa {{order_reference}}.");
   if (key === "order_status" && !/{{\s*order_status\s*}}/.test(combined))
     throw new HttpError(400, "Mẫu cập nhật phải chứa {{order_status}}.");
@@ -79,6 +83,7 @@ async function audience(
   c: { execute: Function },
 ) {
   const where = [
+    "c.email IS NOT NULL AND c.email<>''",
     "c.marketing_consent=1",
     "NOT EXISTS(SELECT 1 FROM email_suppressions s WHERE s.email=c.email)",
   ];
@@ -108,8 +113,9 @@ async function audience(
     );
   return rows as { id: number; name: string; email: string }[];
 }
-function values(b: z.infer<typeof campaignSchema>, name: string) {
+function values(b: z.infer<typeof campaignSchema>, name: string, identity: {store_name:string;store_url:string}) {
   return {
+    ...identity,
     customer_name: name,
     campaign_name: b.name,
     campaign_message: b.message,
@@ -120,9 +126,9 @@ function values(b: z.infer<typeof campaignSchema>, name: string) {
 export async function emailAdminRead() {
   await requirePermission("emails");
   const [templates, messages, campaigns, customers, stats] = await Promise.all([
-    query("SELECT * FROM email_templates ORDER BY kind DESC,id"),
+    query("SELECT * FROM email_templates WHERE LEFT(template_key,13)<>'subscription_' AND LEFT(template_key,6)<>'store_' ORDER BY kind DESC,id"),
     query(
-      "SELECT id,template_key,kind,recipient,subject,status,attempts,last_error,order_id,campaign_id,created_at,sent_at FROM email_outbox ORDER BY id DESC LIMIT 200",
+      "SELECT id,template_key,kind,recipient,subject,status,attempts,last_error,order_id,campaign_id,created_at,sent_at FROM email_outbox WHERE LEFT(template_key,13)<>'subscription_' AND LEFT(template_key,6)<>'store_' ORDER BY id DESC LIMIT 200",
     ),
     query(
       "SELECT c.*,(SELECT COUNT(*) FROM email_outbox m WHERE m.campaign_id=c.id AND m.status='sent') sent_count,(SELECT COUNT(*) FROM email_outbox m WHERE m.campaign_id=c.id AND m.status='pending') pending_count FROM email_campaigns c ORDER BY c.id DESC LIMIT 50",
@@ -130,7 +136,7 @@ export async function emailAdminRead() {
     query(
       "SELECT id,name,email,segment,birthday,marketing_consent FROM customers ORDER BY id DESC LIMIT 1000",
     ),
-    query("SELECT status,COUNT(*) count FROM email_outbox GROUP BY status"),
+    query("SELECT status,COUNT(*) count FROM email_outbox WHERE LEFT(template_key,13)<>'subscription_' AND LEFT(template_key,6)<>'store_' GROUP BY status"),
   ]);
   return {
     templates,
@@ -163,6 +169,7 @@ export async function emailAdminAction(
         [id],
       );
       if (!t) throw new HttpError(404, "Không tìm thấy mẫu.");
+      if (isPlatformEmail(t.template_key)) throw new HttpError(403,'Mẫu hệ thống được quản lý bởi nền tảng.');
       validateTemplate(b, t.kind, t.template_key);
       await mutate(
         "UPDATE email_templates SET name=?,subject=?,body=?,active=? WHERE id=?",
@@ -187,9 +194,11 @@ export async function emailAdminAction(
   if (action === "preview-template") {
     await requirePermission("email_templates");
     const b = templateSchema.parse(body);
+    const identity = await storeEmailIdentity();
+    const previewValues = { ...demoEmailValues, ...identity };
     return {
-      subject: interpolateEmail(b.subject, demoEmailValues),
-      html: emailHTML(interpolateEmail(b.body, demoEmailValues)),
+      subject: interpolateEmail(b.subject, previewValues),
+      html: emailHTML(interpolateEmail(b.body, previewValues), undefined, undefined, identity.store_name),
     };
   }
   if (action === "verify") {
@@ -209,16 +218,17 @@ export async function emailAdminAction(
   if (action === "message") {
     const id = z.coerce.number().int().positive().parse(path[1]);
     const [mail] = await query<any[]>(
-      "SELECT subject,body FROM email_outbox WHERE id=?",
+      "SELECT subject,body FROM email_outbox WHERE id=? AND LEFT(template_key,13)<>'subscription_' AND LEFT(template_key,6)<>'store_'",
       [id],
     );
     if (!mail) throw new HttpError(404, "Không tìm thấy email.");
-    return { subject: mail.subject, html: emailHTML(mail.body) };
+    const identity = await storeEmailIdentity();
+    return { subject: mail.subject, html: emailHTML(mail.body, undefined, undefined, identity.store_name) };
   }
   if (action === "retry") {
     const id = z.coerce.number().int().positive().parse(path[1]);
     const result = await mutate(
-      "UPDATE email_outbox SET status='pending',attempts=0,next_attempt_at=NOW(),last_error=NULL WHERE id=? AND status='failed'",
+      "UPDATE email_outbox SET status='pending',attempts=0,next_attempt_at=NOW(),last_error=NULL WHERE id=? AND status='failed' AND LEFT(template_key,13)<>'subscription_' AND LEFT(template_key,6)<>'store_'",
       [id],
     );
     if (!result.affectedRows)
@@ -233,7 +243,7 @@ export async function emailAdminAction(
     return { ok: true };
   }
   if (action === "cancel-campaign") {
-    await requirePermission("crm");
+    await requirePermission("emails");
     const id = z.coerce.number().int().positive().parse(path[1]);
     await mutate(
       "UPDATE email_outbox SET status='cancelled',last_error='CANCELLED_BY_STAFF' WHERE campaign_id=? AND status IN ('pending','failed')",
@@ -246,8 +256,9 @@ export async function emailAdminAction(
     return { ok: true };
   }
   if (action === "preview-campaign" || action === "campaigns") {
-    await requirePermission("crm");
+    await requirePermission("emails");
     const b = campaignSchema.parse(body);
+    const identity=await storeEmailIdentity();
     const c = await pool.getConnection();
     try {
       await c.beginTransaction();
@@ -269,13 +280,16 @@ export async function emailAdminAction(
           })),
           subject: interpolateEmail(
             t.subject,
-            values(b, customers[0]?.name || "Khách hàng"),
+            values(b, customers[0]?.name || "Khách hàng", identity),
           ),
           html: emailHTML(
             interpolateEmail(
               t.body,
-              values(b, customers[0]?.name || "Khách hàng"),
+              values(b, customers[0]?.name || "Khách hàng", identity),
             ),
+            undefined,
+            undefined,
+            identity.store_name,
           ),
           templateVersion: reviewVersion([t.subject, t.body, t.active]),
           audienceVersion: reviewVersion(customers),
@@ -290,7 +304,7 @@ export async function emailAdminAction(
       if (!config.enabled || !config.ready)
         throw new HttpError(
           400,
-          "Hãy cấu hình SMTP và bật EMAIL_ENABLED trước khi gửi chương trình.",
+          "Email hệ thống chưa sẵn sàng. Vui lòng liên hệ quản trị nền tảng trước khi gửi chương trình.",
         );
       // A reviewed audience and template version are required, preventing stale previews.
       const approved = z
@@ -347,10 +361,10 @@ export async function emailAdminAction(
             customer.email,
             customer.id,
             id,
-            interpolateEmail(t.subject, values(b, customer.name))
+            interpolateEmail(t.subject, values(b, customer.name, identity))
               .replace(/[\r\n]/g, " ")
               .slice(0, 500),
-            interpolateEmail(t.body, values(b, customer.name)),
+            interpolateEmail(t.body, values(b, customer.name, identity)),
             randomBytes(32).toString("hex"),
           ],
         );

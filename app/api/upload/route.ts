@@ -1,14 +1,17 @@
+import { withStore, tenantId } from "@/lib/tenant";
+import { requestStore, quota } from "@/lib/stores";
+import { mutate } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { productBlobAuth } from "@/lib/product-blob";
 import { uploadFailure } from "@/lib/upload-errors";
 import { MAX_IMAGE_BYTES } from "@/lib/product-images";
-import { requirePermission, HttpError } from "@/lib/auth";
+import { requirePermission, HttpError, guardGhostAction } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 export const runtime = "nodejs";
-export async function POST(req: NextRequest) {
+async function upload(req: NextRequest) {
   let stage = "authorize";
   try {
     if (
@@ -16,7 +19,12 @@ export async function POST(req: NextRequest) {
       (process.env.APP_ORIGIN || req.nextUrl.origin)
     )
       throw new HttpError(403, "Nguồn yêu cầu không hợp lệ.");
-    await requirePermission("products");
+    await requirePermission(
+      req.nextUrl.searchParams.get("purpose") === "order-reference"
+        ? "orders"
+        : "products",
+    );
+    await guardGhostAction("upload", "POST");
     if (
       Number(req.headers.get("content-length") || 0) >
       MAX_IMAGE_BYTES + 100000
@@ -46,16 +54,25 @@ export async function POST(req: NextRequest) {
     )
       ext = "webp";
     if (!ext) throw new HttpError(400, "Định dạng ảnh không hợp lệ.");
+    await quota("storage_mb", file.size / 1048576);
     stage = "storage";
     const name = randomUUID() + "." + ext;
     const blobAuth = await productBlobAuth();
     if (blobAuth) {
-      const blob = await put("products/" + name, bytes, {
-        ...blobAuth,
-        access: "public",
-        contentType: ext === "jpg" ? "image/jpeg" : "image/" + ext,
-        addRandomSuffix: false,
-      });
+      const blob = await put(
+        "stores/" + tenantId() + "/products/" + name,
+        bytes,
+        {
+          ...blobAuth,
+          access: "public",
+          contentType: ext === "jpg" ? "image/jpeg" : "image/" + ext,
+          addRandomSuffix: false,
+        },
+      );
+      await mutate("INSERT INTO assets(url,size) VALUES(?,?)", [
+        blob.url,
+        file.size,
+      ]);
       return NextResponse.json({ url: blob.url });
     }
     if (process.env.VERCEL === "1")
@@ -66,6 +83,10 @@ export async function POST(req: NextRequest) {
     const dir = path.join(process.cwd(), "storage", "uploads");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, name), bytes);
+    await mutate("INSERT INTO assets(url,size) VALUES(?,?)", [
+      "/uploads/" + name,
+      file.size,
+    ]);
     return NextResponse.json({ url: "/uploads/" + name });
   } catch (e) {
     if (e instanceof HttpError)
@@ -87,6 +108,21 @@ export async function POST(req: NextRequest) {
         requestId,
       },
       { status: failure.status },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const s = await requestStore(req);
+    const { refreshBillingAccess } = await import("@/lib/billing");
+    const access = await refreshBillingAccess(s.id);
+    if (access.status !== "approved") return NextResponse.json({ error: "Cửa hàng chưa thể vận hành, không thể tải thêm ảnh." }, { status: 403 });
+    return await withStore(s.id, () => upload(req));
+  } catch {
+    return NextResponse.json(
+      { error: "Không tìm thấy cửa hàng." },
+      { status: 404 },
     );
   }
 }

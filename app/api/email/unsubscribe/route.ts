@@ -11,7 +11,7 @@ const headers = {
 };
 function page(content: string, status = 200) {
   return new Response(
-    '<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email Fleur</title><body style="font-family:Arial,sans-serif;background:#f5f5f7;padding:40px;line-height:1.7"><main style="max-width:560px;margin:60px auto;background:white;padding:32px;border-radius:20px"><h1>fleur®</h1>' +
+    '<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email Fleurious</title><body style="font-family:Arial,sans-serif;background:#f5f5f7;padding:40px;line-height:1.7"><main style="max-width:560px;margin:60px auto;background:white;padding:32px;border-radius:20px"><h1>fleurious®</h1>' +
       content +
       "</main></body></html>",
     { status, headers },
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     );
     return page(
       ok
-        ? "<h2>Đã hủy đăng ký.</h2><p>Fleur đã ngừng gửi email chương trình đến bạn. Thông báo đơn hàng vẫn hoạt động.</p>"
+        ? "<h2>Đã hủy đăng ký.</h2><p>Fleurious đã ngừng gửi email chương trình đến bạn. Thông báo đơn hàng vẫn hoạt động.</p>"
         : "<p>Liên kết không hợp lệ.</p>",
       ok ? 200 : 400,
     );

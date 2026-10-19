@@ -1,4 +1,5 @@
 "use client";
+import { storeRef } from "./routing";
 import { useRef, useState } from "react";
 import {
   ImagePlus,
@@ -73,12 +74,14 @@ export default function ProductMediaEditor({
         try {
           const body = new FormData();
           body.set("file", file);
-          const response = await fetch("/api/upload", { method: "POST", body });
-          const result = await response
-            .json()
-            .catch(() => ({
-              error: "Máy chủ không nhận được ảnh. Vui lòng thử lại.",
-            }));
+          const response = await fetch("/api/upload", {
+            method: "POST",
+            body,
+            headers: { "x-fleur-store": storeRef(location.pathname) },
+          });
+          const result = await response.json().catch(() => ({
+            error: "Máy chủ không nhận được ảnh. Vui lòng thử lại.",
+          }));
           if (!response.ok || !result.url)
             throw Error(result.error || "Không thể tải ảnh lên.");
           setImages((current) => [
