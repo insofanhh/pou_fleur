@@ -947,15 +947,68 @@
   overflow-wrap: anywhere;
 }
 .merchant-detail {
-  width: 760px;
+  width: min(920px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 48px);
   margin: auto;
-  padding: 28px;
+  padding: 0 0 28px;
   background: white;
   overflow: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
+}
+.merchant-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 26px 28px 18px;
+  border-bottom: 1px solid #eee;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: white;
+}
+.merchant-detail-header h2 {
+  margin: 8px 0 0;
+  font-size: 30px;
+  letter-spacing: -1px;
+}
+.merchant-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 16px 28px;
+  border-bottom: 1px solid #eee;
+  color: #777;
+  font-size: 13px;
+}
+.merchant-detail-meta p {
+  margin: 0;
+}
+.merchant-detail-meta a {
+  color: #222;
+}
+.merchant-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 22px 28px 0;
+}
+.merchant-detail-section {
+  min-width: 0;
+}
+.merchant-detail-grid > .merchant-detail-section {
+  margin-top: 0;
+  padding: 20px;
+}
+.merchant-detail-full {
+  margin: 16px 28px 0 !important;
+  padding: 20px;
+}
+.merchant-detail-full:last-child {
+  margin-bottom: 0 !important;
 }
 .platform-shell .admin-main {
   min-width: 0;
@@ -1109,6 +1162,19 @@
   flex-shrink: 0;
 }
 @media (max-width: 700px) {
+  .merchant-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px 20px 0;
+  }
+  .merchant-detail-header,
+  .merchant-detail-meta {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .merchant-detail-full {
+    margin-left: 20px !important;
+    margin-right: 20px !important;
+  }
   .platform-users-toolbar .search-field {
     flex-basis: 100%;
     max-width: none;

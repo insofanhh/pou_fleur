@@ -653,8 +653,11 @@ export default function Platform({
               setDetail(null);
           }}
         >
-          <div className="flex-between">
-            <h2>{detail.store.name}</h2>
+          <div className="merchant-detail-header">
+            <div>
+              <span className="eyebrow">MERCHANT PROFILE</span>
+              <h2>{detail.store.name}</h2>
+            </div>
             <button
               className="icon-button"
               aria-label="Đóng"
@@ -663,20 +666,26 @@ export default function Platform({
               ✕
             </button>
           </div>
-          <p>
-            {detail.store.address} · {detail.store.phone}
-          </p>
-          <p>Trạng thái: {statusText("store", detail.store.status)}</p>
-          <Link href={"/s/" + detail.store.slug} target="_blank">
-            Xem storefront ↗
-          </Link>
+          <div className="merchant-detail-meta">
+            <p>{detail.store.address || "Chưa có địa chỉ"}</p>
+            <p>{detail.store.phone || "Chưa có số điện thoại"}</p>
+            <span className="tag">
+              {statusText("store", detail.store.status)}
+            </span>
+            <Link href={"/s/" + detail.store.slug} target="_blank">
+              Xem storefront ↗
+            </Link>
+          </div>
+          <div className="merchant-detail-grid">
           <form
-            className="panel"
+            className="panel merchant-detail-section"
             onSubmit={(e) => {
               e.preventDefault();
               const f = Object.fromEntries(new FormData(e.currentTarget));
+              const nextStatus = f.quickStatus || f.status;
               void action("stores/" + detail.store.id + "/status", "PATCH", {
-                ...f,
+                status: nextStatus,
+                reason: f.reason,
                 version: detail.store.version,
               });
             }}
@@ -684,22 +693,42 @@ export default function Platform({
             <h3>Vận hành store</h3>
             <label className="field">
               Chuyển trạng thái
-              <select name="status">
-                {["approved", "rejected", "suspended", "closed"].map((s) => (
+              <select name="status" defaultValue={detail.store.status}>
+                {[detail.store.status, ...(detail.store.status === "pending"
+                  ? ["approved", "rejected"]
+                  : ["approved", "rejected", "suspended", "closed"])]
+                  .filter((s, i, all) => all.indexOf(s) === i)
+                  .map((s) => (
                   <option key={s} value={s}>
                     {statusText("store", s)}
                   </option>
-                ))}
+                  ))}
               </select>
             </label>
             <label className="field">
               Lý do
               <textarea name="reason" minLength={5} required />
             </label>
-            <button className="button">Cập nhật trạng thái</button>
+            <div className="button-row">
+              {detail.store.status === "pending" && (
+                <>
+                  <button className="button" name="quickStatus" value="approved">
+                    Duyệt cửa hàng
+                  </button>
+                  <button
+                    className="button secondary"
+                    name="quickStatus"
+                    value="rejected"
+                  >
+                    Từ chối
+                  </button>
+                </>
+              )}
+              <button className="button secondary">Cập nhật trạng thái</button>
+            </div>
           </form>
           <form
-            className="panel"
+            className="panel merchant-detail-section"
             key={detail.subscription?.version}
             onSubmit={(e) => {
               e.preventDefault();
@@ -750,7 +779,8 @@ export default function Platform({
             </label>
             <button className="button secondary">Lưu gói</button>
           </form>
-          <div className="panel">
+          </div>
+          <div className="panel merchant-detail-section merchant-detail-full">
             <h3>Merchant CRM · Việc chăm sóc</h3>
             {detail.tasks.map((t: any) => (
               <div key={t.id}>
@@ -798,7 +828,7 @@ export default function Platform({
               <button className="button secondary">Thêm công việc</button>
             </form>
           </div>
-          <div className="panel">
+          <div className="panel merchant-detail-section merchant-detail-full">
             <h3>Nhật ký</h3>
             {detail.audit.map((a: any) => (
               <p key={a.id}>
