@@ -2,11 +2,14 @@
 // orders that predate receipts, so historic paid orders are not reset to unpaid.
 export function orderPaymentStatusSQL(orderAlias = "o") {
   if (!/^[a-z_]+$/i.test(orderAlias)) throw Error("Invalid order alias");
-  return `(SELECT CASE
-    WHEN COUNT(*)=0 THEN ${orderAlias}.payment_status
-    WHEN SUM(IF(payment_state.kind='collect',payment_state.amount,-payment_state.amount))>=${orderAlias}.total THEN 'paid'
-    WHEN SUM(IF(payment_state.kind='collect',payment_state.amount,-payment_state.amount))=0 THEN 'refunded'
+  const scope = `payment_state.order_id=${orderAlias}.id AND payment_state.store_id=${orderAlias}.store_id`;
+  const balance = `(SELECT SUM(IF(payment_state.kind='collect',payment_state.amount,-payment_state.amount)) FROM order_payments payment_state WHERE ${scope})`;
+  // Keep CASE at the order level and each correlated query one level below it.
+  // TiDB cannot resolve the outer order in the old aggregate CASE subquery.
+  return `(CASE
+    WHEN NOT EXISTS(SELECT 1 FROM order_payments payment_state WHERE ${scope}) THEN ${orderAlias}.payment_status
+    WHEN ${balance}>=${orderAlias}.total THEN 'paid'
+    WHEN ${balance}=0 THEN 'refunded'
     WHEN (SELECT payment_latest.kind FROM order_payments payment_latest WHERE payment_latest.order_id=${orderAlias}.id AND payment_latest.store_id=${orderAlias}.store_id ORDER BY payment_latest.id DESC LIMIT 1)='refund' THEN 'partially_refunded'
-    ELSE 'partially_paid' END
-    FROM order_payments payment_state WHERE payment_state.order_id=${orderAlias}.id AND payment_state.store_id=${orderAlias}.store_id)`;
+    ELSE 'partially_paid' END)`;
 }

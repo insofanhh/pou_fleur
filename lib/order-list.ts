@@ -82,8 +82,10 @@ export async function orderList(url: URL) {
       query<any[]>(
         "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE " +
           where +
-          " ORDER BY o.delivery_date,o.delivery_slot,o.id LIMIT ? OFFSET ?",
-        [...params, limit, (page - 1) * limit],
+          // Both values are bounded integers validated above. TiDB rejects
+          // mysql2's DOUBLE binding for LIMIT/OFFSET in prepared statements.
+          ` ORDER BY o.delivery_date,o.delivery_slot,o.id LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+        params,
       ),
     ]);
     return {

@@ -554,8 +554,8 @@ export async function manualOrdersAPI(
         page,
         total: Number(counts.total),
         items: await query(
-          "SELECT id,version,payload,updated_at,created_by FROM order_drafts WHERE status='draft' ORDER BY updated_at DESC,id DESC LIMIT 20 OFFSET ?",
-          [(page - 1) * 20],
+          // Page is a bounded integer; avoid TiDB's DOUBLE OFFSET binding.
+          `SELECT id,version,payload,updated_at,created_by FROM order_drafts WHERE status='draft' ORDER BY updated_at DESC,id DESC LIMIT 20 OFFSET ${(page - 1) * 20}`,
         ),
       };
     }

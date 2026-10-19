@@ -1,4 +1,8 @@
 "use client";
+import DateInput from "./date-input";
+import Brand, { DashboardBrand } from "@/components/brand";
+import { useDashboardSidebar, SidebarControls, SidebarMobileClose, SidebarBackdrop } from "./dashboard-sidebar";
+
 import { hanoiDateKey, formatDate, formatDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
 import { TableAction, TableActions } from "./table-actions";
@@ -40,7 +44,6 @@ import {
   MessageSquare,
   History,
   Eye,
-  Menu,
   TrendingUp,
   Wallet,
   ClipboardList,
@@ -223,8 +226,9 @@ export default function Admin({ data }: { data: Catalog }) {
     [search, setSearch] = useState(""),
     [editing, setEditing] = useState<any>(null),
     [selected, setSelected] = useState<any>(null),
-    [mobile, setMobile] = useState(false),
     [statusFilter, setStatusFilter] = useState("");
+  const sidebar = useDashboardSidebar();
+  const { mobile, setMobile } = sidebar;
   const payload = loaded?.area === area ? loaded.payload : null;
   const requestId = useRef(0);
   const activeArea = useRef(area);
@@ -273,7 +277,7 @@ export default function Admin({ data }: { data: Catalog }) {
     return (
       <div className="admin-gate">
         <Link className="logo" href="/">
-          fleurious<span>®</span>
+          <Brand />
         </Link>
         <ShieldCheck size={48} />
         <h1>Fleurious Workspace.</h1>
@@ -333,15 +337,17 @@ export default function Admin({ data }: { data: Catalog }) {
     }
   }
   return (
-    <div className="admin-shell">
-      <aside className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
-        <Link href="/admin" className="logo">
-          fleurious<span>®</span>
+    <div className={"admin-shell" + (sidebar.collapsed ? " sidebar-collapsed" : "") + (sidebar.motion ? " sidebar-animate" : "")}>
+      <SidebarBackdrop open={mobile} close={() => setMobile(false)} />
+      <aside id="dashboard-sidebar" aria-label="Menu workspace" inert={sidebar.narrow && !mobile} className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
+        <SidebarMobileClose close={() => setMobile(false)} />
+        <Link href="/admin" className="logo dashboard-logo" aria-label="Fleurious Workspace">
+          <DashboardBrand />
         </Link>
         <div className="workspace-label store-workspace-label">
           {data.store?.name ? `${data.store.name}'s workspace` : "Workspace"}
         </div>
-        <nav>
+        <nav aria-label="Điều hướng workspace">
           {nav
             .filter((n) => allowed.includes(n[0]))
             .map(([key, label, Icon], i) => (
@@ -350,12 +356,14 @@ export default function Admin({ data }: { data: Catalog }) {
                 scroll={false}
                 prefetch={true}
                 aria-current={area === key ? "page" : undefined}
+                aria-label={label}
+                title={sidebar.collapsed ? label : undefined}
                 onClick={() => setMobile(false)}
                 className={area === key ? "active" : ""}
                 key={key}
               >
                 <Icon size={18} />
-                {label}
+                <span className="sidebar-nav-label">{label}</span>
                 {key === "orders" && payload?.stats?.pending_count > 0 && (
                   <span className="nav-badge">
                     {payload.stats.pending_count}
@@ -387,13 +395,7 @@ export default function Admin({ data }: { data: Catalog }) {
       </aside>
       <div className="admin-main">
         <header className="admin-topbar">
-          <button
-            className="icon-button admin-menu"
-            aria-label="Mở menu quản trị"
-            onClick={() => setMobile(!mobile)}
-          >
-            <Menu />
-          </button>
+          <SidebarControls state={sidebar} />
           <span>
             Workspace <ChevronRight size={13} />{" "}
             <strong>{currentNav?.[1] || "Không tìm thấy"}</strong>
@@ -441,6 +443,8 @@ export default function Admin({ data }: { data: Catalog }) {
               <p>
                 {area === "overview"
                   ? "Chào " + user.name + ". Đây là hoạt động cửa hàng của bạn."
+                  : area === "analytics"
+                    ? "Theo dõi doanh thu, công nợ và hoạt động giao hoa của cửa hàng."
                   : "Quản lý và cập nhật thông tin cửa hàng."}
               </p>
             </div>
@@ -1357,6 +1361,8 @@ function Editor({
                     defaultValue={value}
                     required={f.required !== false}
                   />
+                ) : f.type === "date" || f.type === "datetime-local" ? (
+                  <DateInput name={f.key} type={f.type} defaultValue={value} required={f.required !== false} />
                 ) : (
                   <input
                     name={f.key}
@@ -1682,7 +1688,7 @@ function CRM({
             </label>
             <label className="field">
               Ngày sinh
-              <input
+              <DateInput
                 type="date"
                 name="birthday"
                 defaultValue={customer.birthday || ""}
@@ -1810,7 +1816,7 @@ function CRM({
               </label>
               <label className="field">
                 Ngày hẹn
-                <input name="due_date" type="date" required />
+                <DateInput name="due_date" type="date" required />
               </label>
               <button className="button compact" disabled={busy}>
                 <CalendarDays size={16} />

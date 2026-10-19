@@ -1,9 +1,11 @@
 "use client";
+import DateInput from "./date-input";
 import { hanoiDateKey } from "@/lib/date-time";
 import Select from "./ui-select";
 import Link, { useScopedRouter, storeRef } from "./routing";
 import FlowerImage from "./flower-image";
 import ProductGallery from "./product-gallery";
+import PasswordField from "./password-field";
 import DeliveryAddress, { type DeliveryLocation } from "./delivery-address";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
@@ -951,10 +953,15 @@ export function Field({
   label,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  if (props.type === "password") return <PasswordField label={label} {...props} />;
   return (
     <label className="field">
       {label}
-      <input {...props} />
+      {["date", "month", "time", "datetime-local"].includes(props.type || "") ? (
+        <DateInput {...props} type={props.type as "date" | "month" | "time" | "datetime-local"} />
+      ) : (
+        <input {...props} />
+      )}
     </label>
   );
 }

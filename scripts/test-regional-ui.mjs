@@ -41,7 +41,7 @@ for (const engine of [chromium, webkit]) {
       await page.getByRole("button", { name: "Tuần", exact: true }).click();
       await expect.poll(() => calls.filter(c => c.path.endsWith("/calendar")).at(-1)?.search).toContain("from=2026-10-19&to=2026-10-25");
       await page.goto(origin + "/admin/analytics");
-      await expect.poll(() => calls.filter(c => c.path.endsWith("/analytics")).at(-1)?.search).toContain("from=2026-09-19&to=2026-10-19");
+      await expect.poll(() => calls.filter(c => c.path.endsWith("/analytics")).at(-1)?.search).toContain("from=2026-09-20&to=2026-10-19");
       await page.goto(origin + "/admin/orders/new");
       await expect(page.getByRole("heading", { name: "1. Khách hàng", exact: true })).toBeVisible();
       await chooseSelect(nativeSelect(page, "Trạng thái thanh toán"), "partially_paid");

@@ -1,0 +1,236 @@
+/* Shared store/platform sidebar: a compact icon rail on desktop. */
+.sidebar-collapse-toggle {
+  display: flex;
+  flex-shrink: 0;
+}
+.sidebar-mobile-close,
+.sidebar-backdrop {
+  display: none;
+}
+.admin-topbar > span,
+.admin-topbar > strong {
+  flex: 1;
+  min-width: 0;
+}
+.admin-sidebar nav > a > svg {
+  flex-shrink: 0;
+}
+.admin-sidebar > .dashboard-logo {
+  font-size: clamp(32px, 2.8vw, 41px);
+}
+/* Long menus scroll without squeezing the workspace name or account controls. */
+.admin-sidebar > .workspace-label,
+.admin-sidebar > .sidebar-bottom {
+  flex-shrink: 0;
+}
+.admin-sidebar > nav {
+  flex: 1;
+  min-height: 0;
+}
+.admin-sidebar nav > a {
+  flex-shrink: 0;
+}
+
+@media (min-width: 701px) {
+  .admin-sidebar > .dashboard-logo {
+    position: relative;
+    height: 46px;
+    overflow: hidden;
+  }
+  .dashboard-wordmark {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+  .admin-sidebar .dashboard-brand-mark {
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -50%) scale(0.86);
+  }
+  .admin-sidebar .workspace-label {
+    max-height: 48px;
+    overflow: hidden;
+    opacity: 1;
+  }
+  .admin-sidebar .sidebar-nav-label {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+  .sidebar-animate .admin-sidebar {
+    transition:
+      width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      padding 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sidebar-animate .admin-main {
+    transition:
+      margin-left 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sidebar-animate .dashboard-logo {
+    transition: margin 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sidebar-animate .dashboard-wordmark,
+  .sidebar-animate .sidebar-nav-label {
+    transition:
+      opacity 180ms ease 60ms,
+      transform 260ms ease,
+      max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s;
+  }
+  .sidebar-animate .dashboard-brand-mark {
+    transition:
+      opacity 180ms ease,
+      transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s 180ms;
+  }
+  .sidebar-animate .workspace-label {
+    transition:
+      max-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      margin 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 160ms ease;
+  }
+  .sidebar-animate .admin-sidebar nav {
+    transition: margin-top 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sidebar-animate .admin-sidebar nav > a {
+    transition:
+      padding 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      gap 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 150ms;
+  }
+  .sidebar-collapsed .admin-sidebar {
+    width: 80px;
+    padding: 29px 12px 20px;
+  }
+  .sidebar-collapsed .admin-main {
+    margin-left: 80px;
+    width: calc(100% - 80px);
+  }
+  .sidebar-collapsed .admin-sidebar > .dashboard-logo {
+    margin: 0;
+    justify-content: center;
+    height: 46px;
+  }
+  .sidebar-collapsed .dashboard-wordmark {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-8px);
+  }
+  .sidebar-collapsed .dashboard-brand-mark {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  .sidebar-collapsed.sidebar-animate .dashboard-wordmark,
+  .sidebar-collapsed.sidebar-animate .sidebar-nav-label {
+    transition:
+      opacity 120ms ease,
+      transform 180ms ease,
+      max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s 120ms;
+  }
+  .sidebar-collapsed.sidebar-animate .dashboard-brand-mark {
+    transition-delay: 90ms, 90ms, 0s;
+  }
+  .sidebar-collapsed .workspace-label {
+    max-height: 0;
+    margin: 0;
+    opacity: 0;
+  }
+  .sidebar-collapsed .admin-sidebar nav {
+    margin-top: 30px;
+  }
+  .sidebar-collapsed .sidebar-nav-label {
+    max-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-6px);
+  }
+  .sidebar-collapsed .admin-sidebar nav > a {
+    justify-content: flex-start;
+    padding: 13px 19px;
+    min-height: 46px;
+    gap: 0;
+  }
+  .sidebar-collapsed .nav-badge {
+    position: absolute;
+    top: 3px;
+    right: 2px;
+    margin: 0;
+    font-size: 9px;
+    padding: 1px 3px;
+  }
+  .sidebar-collapsed .admin-user {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .sidebar-collapsed .admin-user > div,
+  .sidebar-collapsed .admin-user > .avatar {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .admin-sidebar {
+    z-index: 101;
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+  .sidebar-mobile-close {
+    display: flex;
+    position: absolute;
+    right: 10px;
+    top: 8px;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    border: 0;
+    padding: 0;
+    border-radius: 0;
+    background: #0005;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 240ms ease,
+      visibility 0s 300ms;
+  }
+  .sidebar-backdrop.is-open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+  .admin-topbar > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .platform-shell .admin-topbar > a {
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-animate *,
+  .sidebar-backdrop,
+  .admin-sidebar {
+    transition: none !important;
+  }
+}

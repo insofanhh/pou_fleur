@@ -2,6 +2,7 @@ import { migratePlatformEmail } from "./platform-email-schema.mjs";
 import { migrateProductTaxonomy } from "./product-taxonomy-schema.mjs";
 import defaults from "../lib/email-defaults.json" with { type: "json" };
 import { migrateManualOrders } from "./manual-orders-schema.mjs";
+import { migrateSuppressionKey } from "./suppression-key-schema.mjs";
 
 export const tenantTables = [
   "categories",
@@ -87,8 +88,15 @@ export async function migrateSaaS(c) {
     );
     if (!columns.length)
       await c.query(
-        `ALTER TABLE ${table} ADD COLUMN store_id INT NOT NULL DEFAULT 1, ADD INDEX tenant_lookup(store_id)`,
+        `ALTER TABLE ${table} ADD COLUMN store_id INT NOT NULL DEFAULT 1`,
       );
+    // TiDB cannot index a column added in the same ALTER TABLE statement.
+    // Check separately so a partially completed migration can be resumed.
+    const [tenantIndexes] = await c.query(
+      `SHOW INDEX FROM ${table} WHERE Key_name='tenant_lookup'`,
+    );
+    if (!tenantIndexes.length)
+      await c.query(`ALTER TABLE ${table} ADD INDEX tenant_lookup(store_id)`);
   }
   for (const [table, column] of [
     ["orders", "idempotency_key"],
@@ -121,13 +129,7 @@ export async function migrateSaaS(c) {
         `ALTER TABLE ${table} ADD UNIQUE KEY tenant_unique(store_id,${column})`,
       );
   }
-  const [supp] = await c.query(
-    "SHOW INDEX FROM email_suppressions WHERE Key_name='PRIMARY'",
-  );
-  if (supp.length === 1)
-    await c.query(
-      "ALTER TABLE email_suppressions DROP PRIMARY KEY, ADD PRIMARY KEY(store_id,email)",
-    );
+  await migrateSuppressionKey(c);
   const orderColumns = {
     checkout_owner: "CHAR(64) NULL",
     delivery_lat: "DOUBLE NULL",
@@ -304,7 +306,7 @@ export async function migrateSaaS(c) {
   for (const p of planRows) {
     const [versions] = await c.query("SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id LIMIT 1", [p.id]);
     if (!versions.length)
-      await c.execute("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,trial_days,effective_at) VALUES(?,?,?,?,?,UTC_TIMESTAMP())", [p.id,p.name,p.monthly_price,p.limits,p.trial_days]);
+      await c.execute("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,trial_days,effective_at) VALUES(?,?,?,?,?,UTC_TIMESTAMP())", [p.id,p.name,p.monthly_price,typeof p.limits === "string" ? p.limits : JSON.stringify(p.limits),p.trial_days]);
   }
   await c.query(
     "INSERT IGNORE INTO subscriptions(store_id,plan_id,status) SELECT id,1,'free' FROM stores",

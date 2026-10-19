@@ -1,0 +1,15 @@
+/* Website wordmarks retain the original type and registered mark. */
+.dashboard-wordmark {
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+.dashboard-brand-mark {
+  display: none;
+  flex-shrink: 0;
+}
+.admin-sidebar > .dashboard-logo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}

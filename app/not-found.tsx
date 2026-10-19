@@ -1,9 +1,10 @@
+import Brand from "@/components/brand";
 import Link from "next/link";
 export default function NotFound() {
   return (
     <main className="admin-gate">
       <Link className="logo" href="/">
-        fleurious<span>®</span>
+        <Brand />
       </Link>
       <span className="eyebrow">404 — A LITTLE DETOUR</span>
       <h1>Hoa ở một lối khác.</h1>
