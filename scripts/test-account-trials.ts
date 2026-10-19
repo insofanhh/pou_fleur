@@ -14,6 +14,7 @@ import {
   prepareSubscriptionInvoice,
   recordInvoicePayment,
   accountTrialAvailability,
+  cancelSubscriptionPayment,
 } from "../lib/billing";
 assert(
   process.env.MYSQL_DATABASE === "fleur_saas_test" &&
@@ -532,8 +533,8 @@ async function main() {
       const directOwner = await person(),
         directStore = await store(directOwner.id, studio);
       check(
-        (await accountTrialAvailability(directOwner.id)).available === 1,
-        "Registering a non-starter package consumes discovery only",
+        (await accountTrialAvailability(directOwner.id)).available === 0,
+        "Registering a non-starter package consumes the only selectable discovery trial",
       );
       await assert.rejects(
         () => quote(directStore, 1, directOwner.id),
@@ -579,12 +580,15 @@ async function main() {
           replaceInv.amount,
         ],
       );
-      await reserve(
+      const replacementQuote = await quote(replaceStore, atelier, replaceOwner.id);
+      await assert.rejects(() => reserve(
         replaceStore,
         atelier,
         replaceOwner.id,
-        await quote(replaceStore, atelier, replaceOwner.id),
-      );
+        replacementQuote,
+      ), /yêu cầu thanh toán/);
+      await tx(c => cancelSubscriptionPayment(c, replaceStore, replaceInv.id, replaceOwner.id));
+      await reserve(replaceStore, atelier, replaceOwner.id, await quote(replaceStore, atelier, replaceOwner.id));
       check(
         (await one("SELECT status FROM invoices WHERE id=?", [replaceInv.id]))
           .status === "void" &&
@@ -593,7 +597,7 @@ async function main() {
               replaceInv.id,
             ])
           ).status === "cancelled",
-        "Trial selection atomically voids untouched pending invoice and every pending QR",
+        "Trial selection requires explicit cancellation of the existing payment and QR",
       );
       const concurrent = await person(),
         a = await store(concurrent.id, 1, false),

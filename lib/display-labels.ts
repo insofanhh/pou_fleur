@@ -127,6 +127,8 @@ const auditLabels: Record<string, string> = {
   account_trial_reserved: "Đăng ký lượt dùng thử của tài khoản",
   subscription_cancel: "Cập nhật gia hạn gói dịch vụ",
   subscription_plan_selected: "Chọn hoặc đổi gói dịch vụ",
+  subscription_payment_cancelled: "Hủy thanh toán gói dịch vụ",
+  subscription_payment_expired: "Tự hủy phiên thanh toán hết hạn",
   subscription_change_expired: "Tự hủy yêu cầu đổi gói hết hạn",
   automation: "Cập nhật quy tắc chăm sóc",
   save_template: "Lưu mẫu email",

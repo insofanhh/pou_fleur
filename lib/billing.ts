@@ -9,6 +9,8 @@ import { formatMoney } from "./money";
 import type { PoolConnection } from "mysql2/promise";
 import { createHash } from "node:crypto";
 
+const sessionExpirySQL = (alias: string) => `(SELECT MAX(pi.expires_at) FROM payment_intents pi WHERE pi.store_id=${alias}.store_id AND pi.invoice_id=${alias}.id AND pi.kind='subscription' AND pi.status='pending')`;
+
 // Anniversary billing, including months shorter than the anchor day.
 export function nextBillingDate(
   start: string,
@@ -486,6 +488,8 @@ export async function reserveAccountTrial(
       [sid],
     );
     for (const i of replace) {
+      const [intents]: any = await c.execute("SELECT id FROM payment_intents WHERE store_id=? AND invoice_id=? LIMIT 1", [sid, i.id]);
+      if (intents.length) throw new HttpError(409, "Bạn đang có yêu cầu thanh toán. Hãy thanh toán hoặc hủy yêu cầu đó trước khi chọn dùng thử.");
       await c.execute(
         "UPDATE invoices SET status='void',void_reason='trial_selected' WHERE id=?",
         [i.id],
@@ -869,7 +873,7 @@ export async function recordInvoicePayment(
     if (!initial[0]) throw new HttpError(404, "Không có hóa đơn.");
     await subscription(c, initial[0].store_id);
     const [rows]: any = await c.execute(
-      "SELECT * FROM invoices WHERE id=? FOR UPDATE",
+      `SELECT i.*,${sessionExpirySQL("i")} session_expires_at FROM invoices i WHERE i.id=? FOR UPDATE`,
       [invoiceId],
     );
     const i = rows[0];
@@ -897,14 +901,13 @@ export async function recordInvoicePayment(
       );
     const time = await clock(c);
     if (
-      i.purpose === "plan_change" &&
       Number(i.paid) === 0 &&
-      i.payment_deadline_at &&
-      i.payment_deadline_at <= time
+      ((i.purpose === "plan_change" && i.payment_deadline_at && i.payment_deadline_at <= time) ||
+        (i.session_expires_at && i.session_expires_at <= time))
     )
       throw new HttpError(
         409,
-        "Yêu cầu đổi gói đã hết thời gian thanh toán. Giao dịch đến muộn cần platform đối soát, không tự kích hoạt gói.",
+        "Yêu cầu đã hết thời gian thanh toán. Giao dịch đến muộn cần platform đối soát, không tự kích hoạt gói.",
       );
     if (
       receivedAt &&
@@ -961,6 +964,8 @@ export async function prepareSubscriptionInvoice(
         const oldPlan = await versionPlan(c, open[0].plan_version_id);
         if (Number(oldPlan.plan_id) !== Number(planId)) {
           if (!allowPlanChange) return open[0];
+          const [intents]: any = await c.execute("SELECT id FROM payment_intents WHERE store_id=? AND invoice_id=? LIMIT 1", [sid, open[0].id]);
+          if (intents.length) throw new HttpError(409, "Bạn đang có yêu cầu thanh toán. Hãy thanh toán hoặc hủy yêu cầu đó trước khi đổi gói.");
           const expiry = endOf(sub);
           replaceUnpaid =
             Number(open[0].paid) === 0 &&
@@ -984,6 +989,11 @@ export async function prepareSubscriptionInvoice(
         }
       }
       if (!replaceUnpaid) return open[0];
+    }
+    if (!allowPlanChange && Number(sub.monthly_price) > 0) {
+      // Keep an owner's cancellation across refreshes and scheduled worker runs.
+      const [cancelled]: any = await c.execute("SELECT * FROM invoices WHERE store_id=? AND status='void' AND void_reason IN ('owner_cancelled','payment_timeout') AND starts_at>=? ORDER BY id DESC LIMIT 1", [sid, endOf(sub) || "1000-01-01 00:00:00"]);
+      if (cancelled[0]) return cancelled[0];
     }
     const [scheduled]: any = await c.execute(
       "SELECT * FROM invoices WHERE store_id=? AND status='paid' AND effective_start_at>? ORDER BY effective_start_at FOR UPDATE",
@@ -1086,13 +1096,30 @@ export async function prepareSubscriptionInvoice(
   });
 }
 
+export async function cancelSubscriptionPayment(c: PoolConnection, sid: number, invoiceId: number, actor: number) {
+  return withSystem(async () => {
+    await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [sid]);
+    const [rows]: any = await c.execute("SELECT * FROM invoices WHERE store_id=? AND id=? FOR UPDATE", [sid, invoiceId]);
+    const i = rows[0];
+    if (!i) throw new HttpError(404, "Không tìm thấy hóa đơn của cửa hàng.");
+    if (i.status === "void" && i.void_reason === "owner_cancelled") return;
+    if (i.status !== "open" || Number(i.paid) > 0) throw new HttpError(409, "Chỉ hủy được hóa đơn chưa nhận tiền. Nếu đã chuyển tiền, vui lòng liên hệ platform để đối soát.");
+    await c.execute("UPDATE invoices SET status='void',void_reason='owner_cancelled' WHERE id=?", [i.id]);
+    await c.execute("UPDATE payment_intents SET status='cancelled' WHERE invoice_id=? AND status='pending'", [i.id]);
+    await cancelReminders(c, sid, i.id, "OWNER_CANCELLED");
+    if (i.fallback_invoice_id) await c.execute("UPDATE invoices SET status='paid',void_reason=NULL WHERE id=? AND store_id=? AND status='void' AND void_reason='plan_replaced' AND amount=0 AND paid=0 AND effective_end_at>UTC_TIMESTAMP()", [i.fallback_invoice_id, sid]);
+    await c.execute("INSERT INTO audit_logs(store_id,user_id,action,entity,entity_id,detail) VALUES(?,?,'subscription_payment_cancelled','invoices',?,?)", [sid, actor, String(i.id), JSON.stringify({ reason: "owner_cancelled" })]);
+    await reconcileBilling(c, sid);
+  });
+}
+
 export async function expirePendingPlanChanges(c: PoolConnection, sid: number) {
   return withSystem(async () => {
     await subscription(c, sid);
     const time = await clock(c);
     const [rows]: any = await c.execute(
-      "SELECT * FROM invoices WHERE store_id=? AND purpose='plan_change' AND status='open' AND paid=0 AND payment_deadline_at<=? FOR UPDATE",
-      [sid, time],
+      `SELECT i.* FROM invoices i WHERE i.store_id=? AND i.status='open' AND i.paid=0 AND ((i.purpose='plan_change' AND i.payment_deadline_at<=?) OR ${sessionExpirySQL("i")}<=?) FOR UPDATE`,
+      [sid, time, time],
     );
     for (const i of rows) {
       await c.execute(
@@ -1112,9 +1139,10 @@ export async function expirePendingPlanChanges(c: PoolConnection, sid: number) {
         );
       }
       await c.execute(
-        "INSERT INTO audit_logs(store_id,action,entity,entity_id,detail) VALUES(?,'subscription_change_expired','invoices',?,?)",
+        "INSERT INTO audit_logs(store_id,action,entity,entity_id,detail) VALUES(?,?,'invoices',?,?)",
         [
           sid,
+          i.purpose === "plan_change" ? "subscription_change_expired" : "subscription_payment_expired",
           String(i.id),
           JSON.stringify({
             deadline: i.payment_deadline_at,
@@ -1126,8 +1154,8 @@ export async function expirePendingPlanChanges(c: PoolConnection, sid: number) {
         c,
         sid,
         `billing:change-expired:${i.id}`,
-        "Yêu cầu đổi gói đã hết hạn",
-        `Chưa nhận được thanh toán cho ${i.plan_name} trong 10 phút. Lựa chọn đổi gói đã được hủy, quyền sử dụng đã cấp được giữ nguyên.`,
+        "Phiên thanh toán đã hết hạn",
+        `Chưa nhận được thanh toán cho ${i.plan_name} trong thời hạn của phiên. Yêu cầu đã được hủy; bạn có thể tiếp tục tạo phiên mới. Quyền sử dụng đã cấp được giữ nguyên.`,
       );
     }
     return rows.length;
@@ -1139,7 +1167,7 @@ export async function expirePlanChangeRequests(sid?: number): Promise<number> {
   if (!sid)
     return withSystem(async () => {
       const rows = await query<any[]>(
-        "SELECT DISTINCT store_id FROM invoices WHERE purpose='plan_change' AND status='open' AND paid=0 AND payment_deadline_at<=UTC_TIMESTAMP()",
+        `SELECT DISTINCT i.store_id FROM invoices i WHERE i.status='open' AND i.paid=0 AND ((i.purpose='plan_change' AND i.payment_deadline_at<=UTC_TIMESTAMP()) OR ${sessionExpirySQL("i")}<=UTC_TIMESTAMP())`,
       );
       let count = 0;
       for (const row of rows)

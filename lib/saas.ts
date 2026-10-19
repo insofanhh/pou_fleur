@@ -6,7 +6,7 @@ import { hanoiDateKey, parseDateTime } from "./date-time";
 import { goongSearchLocation } from "./goong-config";
 import { platformEmails } from "./platform-email";
 import { manualOrdersAPI } from "./manual-orders";
-import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, trialBucket, previewAccountTrial, reserveAccountTrial } from "./billing";
+import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, trialBucket, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment } from "./billing";
 import { displayLabel } from "./display-labels";
 import { recordOrderPayment, changePaymentMethod, setOrderPaymentBalance } from "./order-payments";
 import { orderStates } from "./order-workflow";
@@ -504,12 +504,12 @@ export async function saasAPI(
         )
       )[0],
       invoices: await query(
-        "SELECT * FROM invoices WHERE store_id=? ORDER BY id DESC",
+        "SELECT i.*,v.plan_id,EXISTS(SELECT 1 FROM payment_intents pi WHERE pi.store_id=i.store_id AND pi.invoice_id=i.id) payment_started FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? ORDER BY i.id DESC",
         [tenantId()],
       ),
       scheduled: (await query<any[]>("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at LIMIT 1",[tenantId()]))[0] || null,
       reservations: await query("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.effective_start_at>UTC_TIMESTAMP() ORDER BY i.effective_start_at",[tenantId()]),
-      pending_plan: (await query<any[]>("SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='open' ORDER BY i.due_date,i.id LIMIT 1",[tenantId()]))[0] || null,
+      pending_plan: (await query<any[]>("SELECT i.*,v.plan_id,EXISTS(SELECT 1 FROM payment_intents pi WHERE pi.store_id=i.store_id AND pi.invoice_id=i.id) payment_started FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='open' ORDER BY i.due_date,i.id LIMIT 1",[tenantId()]))[0] || null,
       plans: await query("SELECT id,name,monthly_price,limits,active,trial_days FROM plans WHERE active=1"),
       store: publicStore(await storeBy(tenantId())),
       usage: {
@@ -549,6 +549,17 @@ export async function saasAPI(
     );
     return resultOK;
   }
+  if (key === "workspace/billing/cancel-payment" && method === "POST") {
+    const owner = await storeOwner();
+    const v = z.object({ invoice_id: id }).parse(b);
+    const c = await pool.getConnection();
+    try {
+      await c.beginTransaction();
+      await cancelSubscriptionPayment(c, tenantId(), v.invoice_id, owner.id);
+      await c.commit();
+      return resultOK;
+    } catch (e) { await c.rollback(); throw e; } finally { c.release(); }
+  }
   if (key === "workspace/billing/preview" && method === "POST") {
     const owner = await storeOwner();
     const v = z.object({ plan_id: id, trial: z.boolean().default(false) }).parse(b), sid = tenantId();
@@ -586,13 +597,20 @@ export async function saasAPI(
         await c.commit();
         return trial;
       }
-      if (v.quote_token && (!v.quote_expires_at || v.quote_expires_at < Date.now() || v.quote_token !== await subscriptionChangeToken(c, sid, v.plan_id))) throw new HttpError(409, "Giá gói, kỳ sử dụng hoặc thanh toán đã thay đổi. Vui lòng xem lại trước khi xác nhận.");
       let inv: any;
       if (v.invoice_id) {
         const [rows]: any = await c.execute("SELECT * FROM invoices WHERE store_id=? AND id=? AND status='open' AND paid<amount FOR UPDATE", [sid, v.invoice_id]);
         inv = rows[0];
         if (!inv) throw new HttpError(404, "Không tìm thấy hóa đơn cần thanh toán.");
-      } else inv = await prepareSubscriptionInvoice(c, sid, v.plan_id);
+      } else {
+        // A retry of a confirmed choice reopens its original invoice/session.
+        const [existing]: any = await c.execute("SELECT i.* FROM invoices i JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='open' AND i.paid<i.amount AND v.plan_id=? AND EXISTS(SELECT 1 FROM payment_intents pi WHERE pi.store_id=i.store_id AND pi.invoice_id=i.id) ORDER BY i.id LIMIT 1 FOR UPDATE", [sid, v.plan_id]);
+        inv = existing[0];
+        if (!inv) {
+          if (v.quote_token && (!v.quote_expires_at || v.quote_expires_at < Date.now() || v.quote_token !== await subscriptionChangeToken(c, sid, v.plan_id))) throw new HttpError(409, "Giá gói, kỳ sử dụng hoặc thanh toán đã thay đổi. Vui lòng xem lại trước khi xác nhận.");
+          inv = await prepareSubscriptionInvoice(c, sid, v.plan_id);
+        }
+      }
       let payment = null;
       if (inv.status === "open") {
         const bank = await platformBank(c);
@@ -602,7 +620,7 @@ export async function saasAPI(
       if (inv.purpose !== "plan_change" || inv.status === "paid") await c.execute("UPDATE subscriptions SET version=version+IF(cancel_at_period_end=1,1,0),cancel_at_period_end=0 WHERE store_id=?", [sid]);
       await c.execute("INSERT INTO audit_logs(user_id,action,entity,entity_id,detail) VALUES(?,'subscription_plan_selected','invoices',?,?)", [owner.id,String(inv.id),JSON.stringify({ plan_id:v.plan_id,invoice_id:inv.id,amount:inv.amount,starts_at:inv.effective_start_at || inv.starts_at,ends_at:inv.effective_end_at || inv.ends_at })]);
       await c.commit();
-      return { ok: true, invoiceId: inv.id, payment };
+      return { ok: true, invoiceId: inv.id, payment, server_now: new Date().toISOString() };
     } catch (e) { await c.rollback(); throw e; } finally { c.release(); }
   }
   if (key === "workspace/automations" && method === "GET") {

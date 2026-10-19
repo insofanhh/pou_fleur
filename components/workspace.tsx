@@ -5,7 +5,7 @@ import { APP_TIME_ZONE_LABEL } from "@/lib/regional";
 import Select from "./ui-select";
 import StoreTeam from "./store-team";
 import StoreAnalyticsReport from "./store-analytics";
-import { Eye, Trash2, Pause, Play, QrCode } from "lucide-react";
+import { Eye, Trash2, Pause, Play, QrCode, X } from "lucide-react";
 import { TableAction, TableActions } from "./table-actions";
 import { Fragment, useEffect, useState, useRef, useCallback } from "react";
 import { api, useShop } from "./context";
@@ -1670,20 +1670,23 @@ function BillingCards() {
     { toast } = useShop();
   const [payment, setPayment] = useState<any>(null);
   const [preview, setPreview] = useState<any>(null);
+  const [cancelInvoice, setCancelInvoice] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const requestPending = useRef(false);
   const waitingChange = data?.pending_plan?.purpose === "plan_change" && Number(data?.pending_plan?.paid) === 0;
+  const waitingPayment = Boolean(data?.pending_plan && (waitingChange || Number(data.pending_plan.payment_started)));
   useEffect(() => {
-    if (!payment && !waitingChange) return;
+    if (!payment && !waitingPayment) return;
     const timer = setInterval(() => void refresh(), 5000);
     return () => clearInterval(timer);
-  }, [payment, waitingChange, refresh]);
+  }, [payment, waitingPayment, refresh]);
   useEffect(() => {
     if (payment && data?.invoices?.find((i: any) => Number(i.id) === Number(payment.invoiceId))?.status === "paid") {
       setPayment(null); toast("Đã nhận thanh toán và cập nhật gói dịch vụ.");
     }
   }, [data, payment, toast]);
   if (!data) return <Loading error={error} />;
+  const expiredSelection = data.invoices?.[0]?.void_reason === "payment_timeout" ? data.invoices[0] : null;
   const currentLimits = billingLimits(data.subscription.limits);
   const usage = data.usage || {};
   const usageRows = Object.keys(billingLimitMeta).map((key) => {
@@ -1698,7 +1701,7 @@ function BillingCards() {
     try {
       const result = await api("workspace/billing/start", "POST", { plan_id: planId, trial, invoice_id: invoiceId, quote_token: quote?.token, quote_expires_at: quote?.expires_at });
       setPreview(null);
-      if (result.payment) setPayment({ ...result.payment, invoiceId: result.invoiceId });
+      if (result.payment) setPayment({ ...result.payment, invoiceId: result.invoiceId, planId, clockOffset: result.server_now ? Date.parse(result.server_now) - Date.now() : 0 });
       toast(result.trial ? "Đã đăng ký dùng thử theo lịch hiển thị." : result.payment ? "Đã tạo mã QR. Gói được xác nhận khi nhận đủ tiền." : "Đã xác nhận gói theo lịch áp dụng.");
       await refresh();
     } catch (e) { setPreview(null); toast((e as Error).message); await refresh(); }
@@ -1706,14 +1709,44 @@ function BillingCards() {
   }
   async function selectPlan(planId: number, trial = false) {
     if (requestPending.current) return;
+    if (!trial && Number(data.pending_plan?.plan_id) === planId) {
+      await start(planId, false, Number(data.pending_plan.id));
+      return;
+    }
     requestPending.current = true;
     setBusy(true);
     try { setPreview(await api("workspace/billing/preview", "POST", { plan_id: planId, trial })); }
     catch (e) { toast((e as Error).message); }
     finally { requestPending.current = false; setBusy(false); }
   }
+  async function cancelPayment() {
+    if (requestPending.current || !cancelInvoice) return;
+    requestPending.current = true;
+    setBusy(true);
+    try {
+      await api("workspace/billing/cancel-payment", "POST", { invoice_id: Number(cancelInvoice.id) });
+      setCancelInvoice(null);
+      setPayment(null);
+      toast("Đã hủy yêu cầu thanh toán. Quyền sử dụng đã cấp được giữ nguyên.");
+    } catch (e) { toast((e as Error).message); }
+    finally { await refresh(); requestPending.current = false; setBusy(false); }
+  }
   return <div className="billing-page">
-    {data.store?.status === "suspended" && <section className="panel" role="alert"><h3>Cửa hàng đang tạm đóng băng</h3><p>{data.store.suspension_reason}</p><p className="small">{data.store.billing_suspended ? "Thanh toán đủ công nợ để hệ thống tự khôi phục cửa hàng." : "Cửa hàng bị đóng băng bởi admin platform. Vui lòng liên hệ để được mở lại."}</p></section>}
+    {data.store?.status === "suspended" && (
+      <section className="panel store-suspension-notice" role="alert">
+        <div className="store-suspension-copy">
+          <h3>Cửa hàng đang tạm đóng băng</h3>
+          <p>{data.store.suspension_reason}</p>
+          <p className="small">{data.store.billing_suspended ? "Thanh toán đủ công nợ để hệ thống tự khôi phục cửa hàng." : "Cửa hàng bị đóng băng bởi admin platform. Vui lòng liên hệ để được mở lại."}</p>
+        </div>
+        {Boolean(data.store.billing_suspended) && (
+          <button className="button store-suspension-action" disabled={busy}
+            onClick={() => void selectPlan(Number(data.pending_plan?.plan_id || expiredSelection?.plan_id || data.subscription.plan_id))}>
+            {busy ? "Đang xử lý…" : !data.pending_plan && expiredSelection ? "Tiếp tục tạo phiên mới" : "Tiếp tục thanh toán"}
+          </button>
+        )}
+      </section>
+    )}
     <section className="billing-current panel">
       <div className="billing-current-heading"><div><span className="eyebrow">GÓI ĐANG SỬ DỤNG</span><h2>{data.subscription.name}</h2><p>{money(Number(data.subscription.monthly_price))} / tháng · {displayLabel("subscription", data.subscription.status)}</p></div><span className="tag">{data.store?.status === "suspended" ? "Đóng băng" : data.subscription.cancel_at_period_end ? "Sắp dừng gia hạn" : displayLabel("subscription", data.subscription.status)}</span></div>
       <p className="small billing-period">{data.subscription.expires_at ? <>{data.subscription.trial_ends_at ? "Hết dùng thử" : "Kết thúc kỳ"}: {billingTime(data.subscription.expires_at)} · <strong>{billingRemainingLabel(data.subscription)}</strong></> : billingRemainingLabel(data.subscription)}</p>
@@ -1723,18 +1756,24 @@ function BillingCards() {
       <div className="billing-usage-grid">{usageRows.map((row) => { const meta = billingLimitMeta[row.key]; return <div className="billing-usage-card" key={row.key}><div className="flex-between"><strong>{meta.label}</strong><span>{row.used.toLocaleString("vi-VN")} / {row.limit.toLocaleString("vi-VN")} {meta.unit}</span></div><div className="usage-track"><span style={{ width: row.percent + "%" }} /></div><small>{meta.description} · đã dùng {row.percent}%</small></div>; })}</div>
       <div className="button-row"><button className="button secondary" onClick={async () => { try { await api("workspace/billing/cancel", "POST", { cancel: !data.subscription.cancel_at_period_end }); await refresh(); } catch (e) { toast((e as Error).message); } }}>{data.subscription.cancel_at_period_end ? "Tiếp tục gia hạn" : "Ngừng gia hạn cuối kỳ"}</button></div>
     </section>
-    <section className="billing-plans-section"><div className="section-heading"><div><span className="eyebrow">LỰA CHỌN CỦA BẠN</span><h2>Các gói dịch vụ</h2><p className="small">Gói Khởi đầu tự động dùng thử theo số ngày admin platform cấu hình khi bạn mở cửa hàng đầu tiên. Bạn còn 1 lượt trải nghiệm dùng chung cho một gói khác trên mọi cửa hàng; lượt này không được cấp lại khi đổi gói.</p></div></div><div className="billing-plan-grid">{data.plans.map((plan: any) => { const limits = billingLimits(plan.limits); const isStarter = Number(plan.id) === 1; const isCurrent = Number(plan.id) === Number(data.subscription.plan_id); const reserved = (data.reservations || []).find((i: any) => Number(i.plan_id) === Number(plan.id)); const pending = Number(data.pending_plan?.plan_id) === Number(plan.id); const trialClaim = !isStarter && data.account_trials?.claims.find((t: any) => t.bucket === "discovery"); const canTrial = !isStarter && !trialClaim && Number(plan.trial_days) > 0 && !(data.store.status === "suspended" && !data.store.billing_suspended); return <article className={"billing-plan-card" + (isCurrent ? " is-current" : "")} key={plan.id}><div className="billing-plan-header"><div><span className="eyebrow">GÓI {plan.id}</span><h3>{plan.name}</h3></div>{isCurrent && <span className="tag">Đang dùng</span>}</div><div className="billing-plan-price">{money(Number(plan.monthly_price))}<small>/ tháng</small></div><p className="small">{isStarter ? `Tự động dùng thử ${plan.trial_days} ngày cho cửa hàng đầu tiên` : canTrial ? `Còn 1 lượt dùng thử ${plan.trial_days} ngày dùng chung` : trialClaim ? "Tài khoản đã dùng hoặc đang giữ lượt trải nghiệm gói khác" : "Gói hiện không mở dùng thử"}</p><div className="billing-plan-limits">{Object.keys(billingLimitMeta).map((key) => { const meta = billingLimitMeta[key]; return <div key={key}><span>{meta.label}</span><strong>{Number(limits[key] || 0).toLocaleString("vi-VN")} {meta.unit}</strong></div>; })}</div>{reserved && <p className="small">{Number(reserved.amount) === 0 ? "Đã chọn miễn phí" : "Đã thanh toán"} · Từ {billingTime(reserved.effective_start_at)}</p>}{pending && <p className="small">Đã chọn · Chờ thanh toán</p>}<div className="button-row">{canTrial && <button className="button secondary" disabled={busy} onClick={() => void selectPlan(Number(plan.id), true)}>Dùng thử {plan.trial_days} ngày</button>}<button className="button" disabled={busy} onClick={() => void selectPlan(Number(plan.id))}>{reserved ? "Xem lịch áp dụng" : pending ? "Tiếp tục thanh toán" : isCurrent ? "Gia hạn / Thanh toán" : "Đổi sang gói này"}</button></div></article>; })}</div></section>
+    <section className="billing-plans-section"><div className="section-heading"><div><span className="eyebrow">LỰA CHỌN CỦA BẠN</span><h2>Các gói dịch vụ</h2><p className="small">Gói Khởi đầu tự động dùng thử theo số ngày admin platform cấu hình khi bạn mở cửa hàng đầu tiên. Bạn còn 1 lượt trải nghiệm dùng chung cho một gói khác trên mọi cửa hàng; lượt này không được cấp lại khi đổi gói.</p></div></div><div className="billing-plan-grid">{data.plans.map((plan: any) => { const limits = billingLimits(plan.limits); const isStarter = Number(plan.id) === 1; const isCurrent = Number(plan.id) === Number(data.subscription.plan_id); const reserved = (data.reservations || []).find((i: any) => Number(i.plan_id) === Number(plan.id)); const pending = Number(data.pending_plan?.plan_id) === Number(plan.id); const paymentLocked = Boolean(Number(data.pending_plan?.payment_started)); const lastInvoice = data.invoices.find((i: any) => Number(i.plan_id) === Number(plan.id)); const timedOut = lastInvoice?.void_reason === "payment_timeout"; const trialClaim = !isStarter && data.account_trials?.claims.find((t: any) => t.bucket === "discovery"); const canTrial = !isStarter && !trialClaim && Number(plan.trial_days) > 0 && !(data.store.status === "suspended" && !data.store.billing_suspended); return <article className={"billing-plan-card" + (isCurrent ? " is-current" : "")} key={plan.id}><div className="billing-plan-header"><div><span className="eyebrow">GÓI {plan.id}</span><h3>{plan.name}</h3></div>{isCurrent && <span className="tag">Đang dùng</span>}</div><div className="billing-plan-price">{money(Number(plan.monthly_price))}<small>/ tháng</small></div><p className="small">{isStarter ? `Tự động dùng thử ${plan.trial_days} ngày cho cửa hàng đầu tiên` : canTrial ? `Còn 1 lượt dùng thử ${plan.trial_days} ngày dùng chung` : trialClaim ? "Tài khoản đã dùng hoặc đang giữ lượt trải nghiệm gói khác" : "Gói hiện không mở dùng thử"}</p><div className="billing-plan-limits">{Object.keys(billingLimitMeta).map((key) => { const meta = billingLimitMeta[key]; return <div key={key}><span>{meta.label}</span><strong>{Number(limits[key] || 0).toLocaleString("vi-VN")} {meta.unit}</strong></div>; })}</div>{reserved && <p className="small">{Number(reserved.amount) === 0 ? "Đã chọn miễn phí" : "Đã thanh toán"} · Từ {billingTime(reserved.effective_start_at)}</p>}{pending && <p className="small">Đã chọn · Chờ thanh toán</p>}<div className="button-row">{canTrial && <button className="button secondary" disabled={busy || paymentLocked} onClick={() => void selectPlan(Number(plan.id), true)}>Dùng thử {plan.trial_days} ngày</button>}<button className="button" disabled={busy || (paymentLocked && !pending)} title={paymentLocked && !pending ? "Thanh toán hoặc hủy yêu cầu hiện tại trước khi đổi gói" : undefined} onClick={() => void selectPlan(Number(plan.id))}>{reserved ? "Xem lịch áp dụng" : pending ? "Tiếp tục thanh toán" : timedOut ? "Tiếp tục tạo phiên mới" : isCurrent ? "Gia hạn / Thanh toán" : "Đổi sang gói này"}</button></div></article>; })}</div></section>
     {preview && <BillingChangeDialog quote={preview} busy={busy} close={() => setPreview(null)} confirm={() => void start(preview.plan_id, Boolean(preview.trial), undefined, preview)} />}
-    {payment && <SubscriptionPaymentDialog payment={payment} invoice={data.invoices.find((i: any) => Number(i.id) === Number(payment.invoiceId))} serverNow={data.server_now} refresh={refresh} close={() => setPayment(null)} renew={() => void start(Number(data.subscription.plan_id), false, Number(payment.invoiceId))} busy={busy} />}
-    <section className="panel table-scroll"><h3>Hóa đơn dịch vụ</h3><table><thead><tr><th>Mã / Kỳ sử dụng</th><th>Gói</th><th>Tổng</th><th>Đã thu</th><th>Hạn</th><th>Trạng thái</th><th className="table-actions-heading" scope="col">Thao tác</th></tr></thead><tbody>{data.invoices.map((invoice: any) => <tr key={invoice.id}><td><strong>INV-{invoice.id}</strong><small>{invoice.effective_start_at ? `${billingTime(invoice.effective_start_at)} → ${billingTime(invoice.effective_end_at)}` : invoice.starts_at ? `Dự kiến: ${billingTime(invoice.starts_at)} → ${billingTime(invoice.ends_at)}` : invoice.period_key}</small></td><td>{invoice.plan_name}</td><td>{money(invoice.amount)}</td><td>{money(invoice.paid)}</td><td>{invoice.purpose === "plan_change" && invoice.status === "open" && Number(invoice.paid) === 0 ? <>Chờ đổi gói đến {billingTime(invoice.payment_deadline_at)}</> : invoice.due_at ? billingTime(invoice.due_at) : formatDate(invoice.due_date)}</td><td>{displayLabel("invoice", invoice.void_reason === "payment_timeout" ? "payment_timeout" : invoice.status)}</td><td><TableActions>{invoice.status === "open" && <TableAction icon={QrCode} disabled={busy} onClick={() => void start(Number(data.subscription.plan_id), false, Number(invoice.id))}>Thanh toán</TableAction>}</TableActions></td></tr>)}</tbody></table></section>
+    {payment && !cancelInvoice && <SubscriptionPaymentDialog payment={payment} invoice={data.invoices.find((i: any) => Number(i.id) === Number(payment.invoiceId))} refresh={refresh} close={() => setPayment(null)} restart={() => { const invoice = data.invoices.find((i: any) => Number(i.id) === Number(payment.invoiceId)); setPayment(null); void selectPlan(Number(invoice?.plan_id || payment.planId)); }} cancel={() => setCancelInvoice(data.invoices.find((i: any) => Number(i.id) === Number(payment.invoiceId)))} busy={busy} />}
+    {cancelInvoice && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="billing-cancel-title"><div className="modal-card billing-change-dialog">
+      <h2 id="billing-cancel-title">Hủy thanh toán?</h2>
+      <p>Hóa đơn INV-{cancelInvoice.id} và mã chuyển khoản sẽ bị hủy. Quyền sử dụng đã cấp được giữ nguyên.</p>
+      <p className="small">Chỉ xác nhận nếu bạn chưa chuyển tiền. Nếu đã chuyển tiền, hãy chờ ghi nhận hoặc liên hệ platform để đối soát.</p>
+      <div className="button-row"><button className="button secondary" disabled={busy} onClick={() => setCancelInvoice(null)}>Quay lại</button><button className="button" disabled={busy} onClick={() => void cancelPayment()}>{busy ? "Đang hủy…" : "Xác nhận hủy thanh toán"}</button></div>
+    </div></div>}
+    <section className="panel table-scroll"><h3>Hóa đơn dịch vụ</h3><table><thead><tr><th>Mã / Kỳ sử dụng</th><th>Gói</th><th>Tổng</th><th>Đã thu</th><th>Hạn</th><th>Trạng thái</th><th className="table-actions-heading" scope="col">Thao tác</th></tr></thead><tbody>{data.invoices.map((invoice: any) => <tr key={invoice.id}><td><strong>INV-{invoice.id}</strong><small>{invoice.effective_start_at ? `${billingTime(invoice.effective_start_at)} → ${billingTime(invoice.effective_end_at)}` : invoice.starts_at ? `Dự kiến: ${billingTime(invoice.starts_at)} → ${billingTime(invoice.ends_at)}` : invoice.period_key}</small></td><td>{invoice.plan_name}</td><td>{money(invoice.amount)}</td><td>{money(invoice.paid)}</td><td>{invoice.purpose === "plan_change" && invoice.status === "open" && Number(invoice.paid) === 0 ? <>Chờ đổi gói đến {billingTime(invoice.payment_deadline_at)}</> : invoice.due_at ? billingTime(invoice.due_at) : formatDate(invoice.due_date)}</td><td>{displayLabel("invoice", invoice.void_reason === "payment_timeout" ? "payment_timeout" : invoice.status)}</td><td><TableActions>{invoice.status === "open" && <TableAction icon={QrCode} disabled={busy} onClick={() => void start(Number(data.subscription.plan_id), false, Number(invoice.id))}>Thanh toán</TableAction>}{invoice.status === "open" && Number(invoice.paid) === 0 && <TableAction icon={X} disabled={busy} onClick={() => setCancelInvoice(invoice)}>Hủy thanh toán</TableAction>}{invoice.status === "void" && invoice.void_reason === "payment_timeout" && !data.pending_plan && data.invoices.find((i: any) => Number(i.plan_id) === Number(invoice.plan_id))?.id === invoice.id && <TableAction icon={QrCode} disabled={busy} onClick={() => void selectPlan(Number(invoice.plan_id))}>Tiếp tục tạo phiên mới</TableAction>}</TableActions></td></tr>)}</tbody></table></section>
   </div>;
 }
-function useBillingDeadline(until: string, serverNow?: string, onExpired?: () => unknown) {
+function useBillingDeadline(until: string, serverNow?: string, onExpired?: () => unknown, clockOffset?: number) {
   const deadline = parseDateTime(until, "utc").getTime();
   const [now, setNow] = useState(Date.now());
-  const offset = useRef(0), expired = useRef("");
+  const offset = useRef(clockOffset ?? 0), expired = useRef("");
   const callback = useRef(onExpired); callback.current = onExpired;
-  useEffect(() => { offset.current = serverNow ? Date.parse(serverNow) - Date.now() : 0; setNow(Date.now()); }, [serverNow]);
+  useEffect(() => { offset.current = clockOffset ?? (serverNow ? Date.parse(serverNow) - Date.now() : 0); setNow(Date.now()); }, [serverNow, clockOffset]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const seconds = Math.max(0, Math.ceil((deadline - now - offset.current) / 1000));
   useEffect(() => { if (seconds === 0 && expired.current !== until) { expired.current = until; void callback.current?.(); } }, [seconds, until]);
@@ -1744,16 +1783,32 @@ function BillingDeadline({ until, serverNow, onExpired }: { until: string; serve
   const seconds = useBillingDeadline(until,serverNow,onExpired);
   return <strong className="billing-countdown" role="timer">{seconds > 0 ? `Còn ${Math.floor(seconds / 60).toString().padStart(2,"0")}:${(seconds % 60).toString().padStart(2,"0")} để thanh toán` : "Đã hết thời gian chờ thanh toán"}</strong>;
 }
-function SubscriptionPaymentDialog({ payment, invoice, serverNow, refresh, close, renew, busy }: { payment: any; invoice: any; serverNow?: string; refresh: () => unknown; close: () => void; renew: () => void; busy: boolean }) {
-  const seconds = useBillingDeadline(payment.expiresAt,serverNow,refresh);
+function SubscriptionPaymentDialog({ payment, invoice, refresh, close, cancel, restart, busy }: { payment: any; invoice: any; refresh: () => unknown; close: () => void; cancel: () => void; restart: () => void; busy: boolean }) {
+  const seconds = useBillingDeadline(payment.expiresAt, undefined, refresh, payment.clockOffset);
   const closed = invoice?.status === "void";
   const expired = closed || seconds === 0;
-  const request = invoice?.purpose === "plan_change" && Number(invoice.paid) === 0;
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="subscription-payment-title"><div className="modal-card billing-change-dialog"><button className="modal-close" onClick={close} aria-label="Đóng thanh toán">×</button><h2 id="subscription-payment-title">Thanh toán gói dịch vụ</h2>
+  const timedOut = closed && invoice?.void_reason === "payment_timeout";
+  const partial = Number(invoice?.paid) > 0;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="subscription-payment-title"><div className="modal-card billing-change-dialog">
+    <button className="modal-close" onClick={close} aria-label="Đóng thanh toán">×</button>
+    <h2 id="subscription-payment-title">Thanh toán gói dịch vụ</h2>
     <p>INV-{payment.invoiceId} · {money(payment.amount)}</p>
-    {!expired ? <><strong className="billing-countdown" role="timer">{Math.floor(seconds / 60).toString().padStart(2,"0")}:{(seconds % 60).toString().padStart(2,"0")}</strong><img src={payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p>Nội dung: <strong>{payment.code}</strong></p><a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a></> : <div className="notice" role="status"><strong>{closed ? "Yêu cầu thanh toán đã đóng" : "QR của phiên này đã hết hạn"}</strong><p>{request || closed ? "Yêu cầu đổi gói chưa thu tiền tự hủy sau 10 phút. Quyền sử dụng đã cấp được giữ nguyên. Nếu đã chuyển tiền nhưng chưa được ghi nhận, vui lòng liên hệ platform để đối soát." : "Hóa đơn và số tiền đã nhận vẫn được giữ. Bạn có thể tạo QR mới để tiếp tục thanh toán."}</p></div>}
-    {!expired && <p className="small">{request ? "Yêu cầu đổi gói tự hủy sau 10 phút nếu chưa nhận tiền. Đóng hoặc mở lại QR không kéo dài thời hạn." : Number(invoice?.paid) > 0 ? "Hóa đơn đã nhận một phần tiền, không tự hủy khi QR hết hạn." : "Hóa đơn gia hạn được giữ khi QR hết hạn. Chọn tạo QR mới để tiếp tục thanh toán."}</p>}
-    <div className="button-row"><button className="button secondary" onClick={close}>Đóng</button>{expired && !closed && !request && <button className="button" disabled={busy} onClick={renew}>{busy ? "Đang tạo…" : "Tạo QR mới"}</button>}</div>
+    {!expired ? <>
+      <strong className="billing-countdown" role="timer">{Math.floor(seconds / 60).toString().padStart(2, "0")}:{(seconds % 60).toString().padStart(2, "0")}</strong>
+      <img src={payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} />
+      <p>Nội dung: <strong>{payment.code}</strong></p>
+      <a className="button secondary" href={payment.qrUrl} download="fleurious-subscription-qr.png">Tải mã QR</a>
+      <p className="small">{partial ? "Hóa đơn đã nhận một phần tiền, không tự hủy khi phiên hết hạn." : "Phiên tự hủy khi hết hạn nếu chưa nhận tiền. Đóng hoặc mở lại giữ nguyên hóa đơn, nội dung và thời hạn thanh toán."}</p>
+    </> : <div className="notice" role="status">
+      <strong>{timedOut ? "Phiên thanh toán đã hết hạn" : closed ? "Yêu cầu thanh toán đã đóng" : "QR của phiên này đã hết hạn"}</strong>
+      <p>{timedOut ? "Yêu cầu thanh toán cũ đã tự hủy và mã chuyển khoản cũ không còn hiệu lực. Chọn Tiếp tục tạo phiên mới để xác nhận lại và nhận mã thanh toán mới." : partial ? "Hóa đơn đã nhận một phần tiền nên được giữ để đối soát. Vui lòng liên hệ platform để xử lý số tiền còn lại." : closed ? "Yêu cầu thanh toán đã đóng. Quyền sử dụng đã cấp được giữ nguyên." : "Đang cập nhật trạng thái tự hủy của phiên thanh toán…"}</p>
+      <p className="small">Nếu đã chuyển tiền nhưng chưa được ghi nhận, vui lòng liên hệ platform để đối soát trước khi thanh toán tiếp.</p>
+    </div>}
+    <div className="button-row">
+      <button className="button secondary" onClick={close}>Đóng</button>
+      {timedOut && <button className="button" disabled={busy} onClick={restart}>Tiếp tục tạo phiên mới</button>}
+      {!expired && invoice?.status === "open" && !partial && <button className="button" disabled={busy} onClick={cancel}>Hủy thanh toán</button>}
+    </div>
   </div></div>;
 }
 function BillingChangeDialog({ quote, busy, close, confirm }: { quote: any; busy: boolean; close: () => void; confirm: () => void }) {
