@@ -7,6 +7,7 @@ import defaults from "../lib/email-defaults.json" with { type: "json" };
 import { migrateManualOrders } from "./manual-orders-schema.mjs";
 import { migrateSuppressionKey } from "./suppression-key-schema.mjs";
 import { migrateAI } from "./ai-schema.mjs";
+import { migrateCOD } from "./cod-schema.mjs";
 
 export const tenantTables = [
   "categories",
@@ -337,6 +338,7 @@ export async function migrateSaaS(c) {
     "INSERT IGNORE INTO schema_migrations(version) VALUES('saas-v1')",
   );
   await migrateManualOrders(c);
+  await migrateCOD(c);
   await migrateProductTaxonomy(c);
   await migrateAI(c);
   await migrateExperiencePlan(c);

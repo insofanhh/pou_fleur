@@ -95,8 +95,8 @@ export const paymentSchema = z.object({
   method: z.enum(["cash", "bank"]).default("cash"),
   receivedAt: z.string().datetime({ offset: true }).optional(),
 });
-// A target balance is reconciled against the ledger under the same lock used by
-// webhook payments. Never change a badge without recording the money movement.
+// Corrections retain the original receipt and append a signed adjustment.
+// They must never be reported as an actual refund or a new receipt.
 export async function setOrderPaymentBalance(
   c: PoolConnection,
   orderId: number,
@@ -109,6 +109,10 @@ export async function setOrderPaymentBalance(
       method: z.enum(["cash", "bank"]),
       version: z.number().int().positive(),
       requestKey: z.string().uuid(),
+      operation: z.enum(["movement", "correction"]).default("movement"),
+      updateBalance: z.boolean().default(true),
+      paymentMethod: z.enum(["cod", "bank"]).optional(),
+      reason: z.string().trim().max(500).default(""),
       reference: z
         .string()
         .trim()
@@ -119,6 +123,12 @@ export async function setOrderPaymentBalance(
           "Mã tham chiếu cần ít nhất 5 ký tự.",
         ),
     })
+    .transform((v) => ({
+      ...v,
+      reason: v.operation === "correction" && !v.reason
+        ? "Điều chỉnh trạng thái thanh toán ghi nhầm"
+        : v.reason,
+    }))
     .parse(input);
   // Match the store-first lock order used by SePay before touching its intents.
   await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [tenantId()]);
@@ -141,7 +151,11 @@ export async function setOrderPaymentBalance(
     if (
       previousRequest.totalCollected !== b.totalCollected ||
       previousRequest.method !== b.method ||
-      previousRequest.reference !== b.reference
+      previousRequest.reference !== b.reference ||
+      (previousRequest.operation || "movement") !== b.operation ||
+      (previousRequest.updateBalance ?? true) !== b.updateBalance ||
+      previousRequest.paymentMethod !== b.paymentMethod ||
+      (previousRequest.reason || "") !== b.reason
     )
       throw new HttpError(
         409,
@@ -157,12 +171,18 @@ export async function setOrderPaymentBalance(
   if (b.totalCollected > Number(o.total))
     throw new HttpError(400, "Số tiền đã nhận không được vượt tổng đơn.");
   const [sums]: any = await c.execute(
-    "SELECT COALESCE(SUM(IF(kind='collect',amount,-amount)),0) paid FROM order_payments WHERE order_id=?",
+    "SELECT COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) paid FROM order_payments WHERE order_id=?",
     [orderId],
   );
   const current = Number(sums[0].paid);
   const delta = b.totalCollected - current;
-  if (delta) {
+  if (!b.updateBalance && (delta || !b.paymentMethod))
+    throw new HttpError(400, "Yêu cầu chỉ đổi phương thức không được thay đổi số tiền đã nhận.");
+  // Both edits share the caller's transaction: a rejected balance change also
+  // rolls back the method, and changing only the method creates no receipt.
+  if (b.paymentMethod)
+    await changePaymentMethod(c, orderId, actor, { method: b.paymentMethod, version: o.version });
+  if (b.updateBalance && (delta || b.operation === "correction")) {
     const reference = b.reference || "BAL-" + b.requestKey;
     // A new adjustment cannot reuse an older receipt and silently skip a delta.
     const [receipts]: any = await c.execute(
@@ -174,13 +194,30 @@ export async function setOrderPaymentBalance(
         409,
         "Mã tham chiếu đã được sử dụng. Vui lòng dùng mã khác hoặc để trống.",
       );
-    await recordOrderPayment(c, orderId, actor, {
-      kind: delta > 0 ? "collect" : "refund",
-      amount: Math.abs(delta),
-      method: b.method,
-      reference,
-    });
-    if (b.totalCollected === Number(o.total))
+    if (b.operation === "correction") {
+      if (o.status === "cancelled" && delta > 0)
+        throw new HttpError(409, "Không tăng số tiền đã nhận của đơn đã hủy.");
+      await c.execute(
+        "INSERT INTO order_payments(order_id,amount,kind,reference,actor_id,method,received_at) VALUES(?,?,'correction',?,?,?,UTC_TIMESTAMP())",
+        [orderId, delta, reference, actor, b.method],
+      );
+      await c.execute(
+        "UPDATE orders SET payment_status=?,version=version+1 WHERE id=?",
+        [b.totalCollected === Number(o.total) ? "paid" : b.totalCollected > 0 ? "partially_paid" : "unpaid", orderId],
+      );
+      await c.execute(
+        "INSERT INTO order_status_events(order_id,actor_id,status,detail) VALUES(?,?,'payment_corrected',?)",
+        [orderId, actor, `${current.toLocaleString("vi-VN")} VNĐ → ${b.totalCollected.toLocaleString("vi-VN")} VNĐ. Lý do: ${b.reason}`],
+      );
+    } else {
+      await recordOrderPayment(c, orderId, actor, {
+        kind: delta > 0 ? "collect" : "refund",
+        amount: Math.abs(delta),
+        method: b.method,
+        reference,
+      });
+    }
+    if (b.operation === "movement" && b.totalCollected === Number(o.total))
       await c.execute(
         "UPDATE payment_intents SET status='paid',paid_amount=amount,paid_at=NOW() WHERE order_id=? AND status='pending'",
         [orderId],
@@ -190,7 +227,7 @@ export async function setOrderPaymentBalance(
         "UPDATE payment_intents SET status='cancelled' WHERE order_id=? AND status='pending'",
         [orderId],
       );
-  } else await reconcileOrderPaymentState(c, orderId, actor);
+  } else if (b.updateBalance) await reconcileOrderPaymentState(c, orderId, actor);
   await c.execute(
     "INSERT INTO audit_logs(user_id,action,entity,entity_id,detail) VALUES(?,'payment_balance','orders',?,?)",
     [
@@ -231,9 +268,11 @@ export async function recordOrderPayment(
     return;
   }
   const [sums]: any = await c.execute(
-    "SELECT COALESCE(SUM(IF(kind='collect',amount,-amount)),0) paid FROM order_payments WHERE order_id=?",
+    "SELECT COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) paid FROM order_payments WHERE order_id=?",
     [orderId],
   );
+  if (b.kind === "refund" && o.status !== "cancelled")
+    throw new HttpError(409, "Chỉ hoàn tiền cho đơn đã hủy. Hãy hủy đơn trước và xử lý tại mục Hoàn tiền.");
   const paid =
     Number(sums[0].paid) + (b.kind === "collect" ? b.amount : -b.amount);
   if (

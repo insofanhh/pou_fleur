@@ -14,10 +14,12 @@ import { manualOrdersAPI } from "./manual-orders";
 import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, sessionExpirySQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment, refreshBillingAccess } from "./billing";
 import { displayLabel } from "./display-labels";
 import { recordOrderPayment, changePaymentMethod, setOrderPaymentBalance } from "./order-payments";
+import { collectCOD, codReceiptSchema } from "./order-cod";
 import { orderStates } from "./order-workflow";
 import { reschedule } from "./operations";
 import { orderList } from "./order-list";
 import { orderPaymentStatusSQL } from "./order-payment-state";
+import { loadOrderRefunds, markOrderRefund } from "./order-refunds";
 import { broadcast } from "./broadcasts";
 import { platformUsers, startGhost, stopGhost } from "./platform-users";
 import { z } from "zod";
@@ -50,7 +52,7 @@ import defaults from "./email-defaults.json";
 import { changeOrder, calculate } from "./commerce";
 import { endpointHash } from "./domain-events";
 import { activeBank, platformBank, createIntent, vietQrUrl } from "./sepay";
-import { enqueueStoreLifecycleEmail } from "./email";
+import { enqueueStoreLifecycleEmail, enqueueOrderEmail } from "./email";
 import { publicAIConfig, saveAIConfig, testAIConnection } from "./ai-config";
 import { workspaceAIAPI } from "./ai";
 import { aiMonth, aiAllowance } from "./ai-policy";
@@ -712,6 +714,10 @@ export async function saasAPI(
     await storeAudit(u.id, "automation", "crm", String(b.id || "new"));
     return resultOK;
   }
+  if (key === "workspace/refunds" && method === "GET") {
+    const actor = await requirePermission("orders");
+    return { ...await loadOrderRefunds(url), can_manage: actor.role === "owner" };
+  }
   if (key === "workspace/analytics" && method === "GET") {
     await requirePermission("overview");
     const from = day.parse(
@@ -736,7 +742,7 @@ export async function saasAPI(
       throw new HttpError(400, "Chọn tối đa 62 ngày.");
     return {
       orders: await query(
-        "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE o.delivery_date BETWEEN ? AND ? ORDER BY o.delivery_date,o.delivery_slot,o.id",
+        "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind IN ('collect','correction'),p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE o.delivery_date BETWEEN ? AND ? ORDER BY o.delivery_date,o.delivery_slot,o.id",
         [from, to],
       ),
       notes: await query(
@@ -789,8 +795,11 @@ export async function saasAPI(
           reason: z.string().trim().max(500).optional(),
           date: day.optional(),
           slot: z.string().trim().min(1).max(30).optional(),
+          codOutcome: z.enum(["paid","partial","unpaid"]).optional(),
+          codPayment: codReceiptSchema.optional(),
         })
         .parse(b);
+      if(v.codPayment)await storeOwner();
       return changeOrder(orderId, v.status, actor.id, false, v.version, v);
     }
     if (path[3] === "payment-method" && method === "PATCH") {
@@ -862,6 +871,19 @@ export async function saasAPI(
         throw new HttpError(409, "Đơn đã thay đổi, hãy tải lại.");
       return resultOK;
     }
+    if (path[3] === "refund" && method === "POST") {
+      await storeOwner();
+      const c = await pool.getConnection();
+      try {
+        await c.beginTransaction();
+        const result = await markOrderRefund(c, orderId, actor.id, b);
+        await c.commit();
+        return result;
+      } catch (e) {
+        await c.rollback();
+        throw e;
+      } finally { c.release(); }
+    }
     if (path[3] === "payment-status" && method === "PATCH") {
       await storeOwner();
       const c = await pool.getConnection();
@@ -876,6 +898,12 @@ export async function saasAPI(
       } finally {
         c.release();
       }
+    }
+    if(path[3]==="cod"&&method==="POST") {
+      await storeOwner();
+      const c=await pool.getConnection();
+      try {await c.beginTransaction();const result=await collectCOD(c,orderId,actor.id,b);if(!result.duplicate)await enqueueOrderEmail(c,orderId,"order_status");await c.commit();return result;}
+      catch(e){await c.rollback();throw e;}finally{c.release();}
     }
     if (path[3] === "payment" && method === "POST") {
       await storeOwner();
@@ -1159,7 +1187,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
           if (["rejected","closed"].includes(status)) await c.execute("DELETE FROM account_trial_claims WHERE store_id=? AND starts_at IS NULL",[sid]);
           if (status === "closed") {
             const [obligations]: any = await c.execute(
-              "SELECT (SELECT COUNT(*) FROM orders WHERE store_id=? AND status NOT IN ('delivered','cancelled')) active_orders,(SELECT COUNT(*) FROM invoices WHERE store_id=? AND status='open' AND paid<amount) invoices,(SELECT COUNT(*) FROM orders o WHERE o.store_id=? AND o.status='cancelled' AND (SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id AND p.store_id=?)>0) refunds",
+              "SELECT (SELECT COUNT(*) FROM orders WHERE store_id=? AND status NOT IN ('delivered','cancelled')) active_orders,(SELECT COUNT(*) FROM invoices WHERE store_id=? AND status='open' AND paid<amount) invoices,(SELECT COUNT(*) FROM orders o WHERE o.store_id=? AND o.status='cancelled' AND (SELECT COALESCE(SUM(IF(p.kind IN ('collect','correction'),p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id AND p.store_id=?)>0) refunds",
               [sid, sid, sid, sid],
             );
             if (

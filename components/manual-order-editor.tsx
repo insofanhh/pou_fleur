@@ -1,5 +1,6 @@
 "use client";
 import DateInput from "./date-input";
+import DeliveryAddress from "./delivery-address";
 import { hanoiDateTimeInput, hanoiInputToISO, parseDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
 import {
@@ -356,6 +357,12 @@ export default function ManualOrderEditor() {
     try {
       // Always reprice at review; a background estimate is not authorization
       // to record money, and prices may have changed since it was fetched.
+      if (
+        options.requiresCoordinates &&
+        options.features?.goong &&
+        !(Number.isFinite(form.deliveryLat) && Number.isFinite(form.deliveryLng))
+      )
+        throw Error("Vui lòng chọn địa chỉ trong gợi ý để kiểm tra vùng giao của cửa hàng.");
       const priced = await api("workspace/manual-orders/quote", "POST", {
         ...form,
         collectAmount: 0,
@@ -985,12 +992,31 @@ export default function ManualOrderEditor() {
                         </Select>
                       </Field>
                     </div>
-                    {textField("address", "Địa chỉ giao hoa", {
-                      required: true,
-                      minLength: 10,
-                      maxLength: 500,
-                    })}
-                    {options.requiresCoordinates && (
+                    <DeliveryAddress
+                      label="Địa chỉ giao hoa"
+                      className="manual-field"
+                      enabled={!!options.features?.goong}
+                      value={form.address}
+                      onChange={(address) =>
+                        change({ address, deliveryLat: undefined, deliveryLng: undefined })
+                      }
+                      location={
+                        Number.isFinite(form.deliveryLat) && Number.isFinite(form.deliveryLng)
+                          ? { lat: form.deliveryLat, lng: form.deliveryLng }
+                          : null
+                      }
+                      onLocation={(point) =>
+                        change({ deliveryLat: point?.lat, deliveryLng: point?.lng })
+                      }
+                    />
+                    {options.requiresCoordinates &&
+                      options.features?.goong &&
+                      !(Number.isFinite(form.deliveryLat) && Number.isFinite(form.deliveryLng)) && (
+                        <p className="small">
+                          Chọn một địa chỉ trong gợi ý để kiểm tra vùng giao của cửa hàng.
+                        </p>
+                      )}
+                    {options.requiresCoordinates && !options.features?.goong && (
                       <>
                         <p className="small">
                           Store có giới hạn vùng giao. Nhập tọa độ địa chỉ nhận

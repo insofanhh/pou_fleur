@@ -60,6 +60,8 @@ export default function BoardToolbar({
   date,
   payment,
   source,
+  method,
+  onMethod,
   onSearch,
   onDate,
   onPayment,
@@ -70,6 +72,8 @@ export default function BoardToolbar({
   date: string;
   payment: string;
   source: string;
+  method: string;
+  onMethod: (value: string) => void;
   onSearch: (value: string) => void;
   onDate: (value: string) => void;
   onPayment: (value: string) => void;
@@ -117,6 +121,20 @@ export default function BoardToolbar({
           value={source}
           options={sourceOptions}
           onChange={onSource}
+        />
+      </div>
+      <div className="board-filter-method">
+        <FilterSelect
+          label="Phương thức"
+          value={method}
+          onChange={onMethod}
+          options={[
+            { value: "", label: "Tất cả phương thức" },
+            { value: "cod", label: "COD" },
+            { value: "bank", label: "Chuyển khoản" },
+            { value: "cod_due", label: "COD còn phải thu" },
+            { value: "cod_delivered_due", label: "COD đã giao chưa thu đủ" },
+          ]}
         />
       </div>
       <button

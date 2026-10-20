@@ -25,6 +25,13 @@ export function analyticsPeriod(from: string, to: string) {
 const balance =
   "COALESCE(receipts.balance,CASE WHEN o.payment_status='paid' THEN o.total ELSE 0 END)";
 export const analyticsQueries = {
+  cod: `SELECT COUNT(*) awaiting_count,COALESCE(SUM(GREATEST(o.total-${balance},0)),0) outstanding,
+    COALESCE(SUM(CASE WHEN o.status='delivered' THEN 1 ELSE 0 END),0) delivered_count,
+    COALESCE(SUM(CASE WHEN o.status='delivered' THEN GREATEST(o.total-${balance},0) ELSE 0 END),0) delivered_due
+    FROM orders o LEFT JOIN (SELECT order_id,SUM(IF(kind IN ('collect','correction'),amount,-amount)) balance FROM order_payments GROUP BY order_id) receipts ON receipts.order_id=o.id
+    WHERE o.payment_method='cod' AND o.status<>'cancelled' AND o.total>${balance}`,
+  codReceipts: `SELECT COALESCE(SUM(p.amount),0) collected FROM order_payments p JOIN orders o ON o.id=p.order_id
+    WHERE o.payment_method='cod' AND p.kind='collect' AND p.received_at>=CONVERT_TZ(?,'+07:00','+00:00') AND p.received_at<CONVERT_TZ(DATE_ADD(?,INTERVAL 1 DAY),'+07:00','+00:00')`,
   orders: `SELECT DATE(o.created_at) day,o.creation_source,o.sales_channel,o.status,o.payment_method,
     COUNT(*) orders_count,SUM(o.total) gross_value,
     SUM(CASE WHEN o.status<>'cancelled' THEN o.total ELSE 0 END) order_value,
@@ -36,7 +43,7 @@ export const analyticsQueries = {
     SUM(CASE WHEN o.status<>'cancelled' AND ${balance}>0 AND ${balance}<o.total THEN 1 ELSE 0 END) partial_count,
     SUM(CASE WHEN o.status<>'cancelled' AND ${balance}>=o.total THEN 1 ELSE 0 END) paid_count
     FROM orders o LEFT JOIN (
-      SELECT order_id,SUM(IF(kind='collect',amount,-amount)) balance FROM order_payments GROUP BY order_id
+      SELECT order_id,SUM(IF(kind IN ('collect','correction'),amount,-amount)) balance FROM order_payments GROUP BY order_id
     ) receipts ON receipts.order_id=o.id
     WHERE o.created_at>=? AND o.created_at<DATE_ADD(?,INTERVAL 1 DAY)
     GROUP BY DATE(o.created_at),o.creation_source,o.sales_channel,o.status,o.payment_method
@@ -91,15 +98,28 @@ export async function loadStoreAnalytics(
   options: { comparePrevious?: boolean } = {},
 ) {
   const period = analyticsPeriod(from, to);
-  const [rows, products, categories, deliveries, segments, funnel] =
-    await Promise.all([
-      read(analyticsQueries.orders, [options.comparePrevious === false ? from : period.previousFrom, to]),
-      read(analyticsQueries.products, [from, to]),
-      read(analyticsQueries.categories, [from, to]),
-      read(analyticsQueries.deliveries, [from, to]),
-      read(analyticsQueries.segments),
-      read(analyticsQueries.funnel, [storeId, from, to]),
-    ]);
+  const [
+    rows,
+    products,
+    categories,
+    deliveries,
+    segments,
+    funnel,
+    codRows,
+    codReceipts,
+  ] = await Promise.all([
+    read(analyticsQueries.orders, [
+      options.comparePrevious === false ? from : period.previousFrom,
+      to,
+    ]),
+    read(analyticsQueries.products, [from, to]),
+    read(analyticsQueries.categories, [from, to]),
+    read(analyticsQueries.deliveries, [from, to]),
+    read(analyticsQueries.segments),
+    read(analyticsQueries.funnel, [storeId, from, to]),
+    read(analyticsQueries.cod),
+    read(analyticsQueries.codReceipts, [from, to]),
+  ]);
   const summary = { ...zero(), delivered: 0, cancellations: 0 },
     previous = { ...zero(), delivered: 0, cancellations: 0 };
   const daily = Array.from({ length: period.days }, (_, i) => ({
@@ -155,6 +175,13 @@ export async function loadStoreAnalytics(
   }
   return {
     period,
+    cod: {
+      awaiting_count: Number(codRows[0]?.awaiting_count || 0),
+      outstanding: Number(codRows[0]?.outstanding || 0),
+      delivered_count: Number(codRows[0]?.delivered_count || 0),
+      delivered_due: Number(codRows[0]?.delivered_due || 0),
+      collected: Number(codReceipts[0]?.collected || 0),
+    },
     summary,
     previous,
     daily,

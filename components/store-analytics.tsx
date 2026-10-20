@@ -620,6 +620,13 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
                 Bộ đếm không tính đơn hủy. Tiền cần hoàn gồm tiền còn giữ của
                 đơn hủy và tiền nhận vượt tổng đơn.
               </p>
+              <div className="cod-monitor">
+                <h4>Theo dõi COD</h4>
+                <p>Còn phải thu: <strong>{data.cod?.awaiting_count||0} đơn · {money(data.cod?.outstanding||0)}</strong></p>
+                <p>Đã giao chưa thu đủ: <strong>{data.cod?.delivered_count||0} đơn · {money(data.cod?.delivered_due||0)}</strong></p>
+                <p>Thực thu trong kỳ: <strong>{money(data.cod?.collected||0)}</strong></p>
+                <p className="analytics-footnote">Khoản cần thu là toàn bộ đơn COD hiện tại. Thực thu lọc theo ngày nhận tiền, gồm cả đơn tạo trước kỳ; không tính sửa ghi nhầm hoặc khấu trừ khoản hoàn.</p>
+              </div>
             </Panel>
             <Panel
               title="Khối lượng giao hoa"

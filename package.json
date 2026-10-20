@@ -73,7 +73,17 @@
     "test:ai:report": "node --import tsx scripts/test-ai-report-data.ts",
     "test:ai:composer:ui": "node scripts/test-ai-composer-ui.mjs",
     "test:workspace-navigation": "node --import tsx scripts/test-billing-inprocess.ts workspace-navigation",
-    "test:workspace-navigation:ui": "node scripts/test-workspace-navigation-ui.mjs"
+    "test:workspace-navigation:ui": "node scripts/test-workspace-navigation-ui.mjs",
+    "test:manual-address:ui": "node scripts/test-manual-address-ui.mjs",
+    "test:checkout-address:ui": "node scripts/test-checkout-address-ui.mjs",
+    "test:payment-corrections": "node --import tsx scripts/test-order-payment-corrections.ts",
+    "test:payment-corrections:ui": "node scripts/test-order-payment-corrections-ui.mjs",
+    "test:payment-corrections:e2e": "node scripts/test-manual-payment-correction-e2e.mjs",
+    "db:cod": "node --env-file=.env.local scripts/migrate-cod.mjs",
+    "db:cod:tidb": "node --env-file=.env.tidb.local scripts/migrate-cod.mjs",
+    "test:cod:e2e": "node scripts/test-order-cod-e2e.mjs",
+    "test:refunds": "node --import tsx scripts/test-order-refunds.ts",
+    "test:refunds:e2e": "node scripts/test-order-refunds-e2e.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

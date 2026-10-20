@@ -65,6 +65,7 @@ const nav = [
   ["board", "Bảng xử lý đơn", ClipboardList],
   ["calendar", "Lịch giao & ghi chú", CalendarDays],
   ["orders", "Danh sách đơn hàng", Package],
+  ["refunds", "Hoàn tiền", RotateCcw],
   ["crm", "Khách hàng & CRM", ContactRound],
   ["ai", "Trợ lý AI", Bot],
   ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
@@ -95,6 +96,7 @@ const rights: Record<string, string[]> = {
     "products",
     "categories",
     "orders",
+    "refunds",
     "promotions",
     "events",
     "inquiries",
@@ -103,7 +105,7 @@ const rights: Record<string, string[]> = {
     "automations",
   ],
   editor: ["posts", "events"],
-  support: ["ai", "board", "calendar", "orders", "inquiries", "crm", "emails"],
+  support: ["ai", "board", "calendar", "orders", "refunds", "inquiries", "crm", "emails"],
 };
 const roleNames: Record<string, string> = {
   owner: "Chủ cửa hàng",

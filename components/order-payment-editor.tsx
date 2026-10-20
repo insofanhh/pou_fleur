@@ -20,13 +20,11 @@ export default function OrderPaymentEditor({
     current = Number(order.collected || 0);
   const [amount, setAmount] = useState<number | "">(current);
   const [mode, setMode] = useState("auto");
-  const [method, setMethod] = useState(
-    order.payment_method === "bank" ? "bank" : "cash",
-  );
   const [reference, setReference] = useState("");
-  const [confirmedRefund, setConfirmedRefund] = useState(false);
+  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const request = useRef<{ signature: string; key: string } | null>(null);
+  const saving = useRef(false);
   const status =
     mode === "auto" &&
     amount === current &&
@@ -45,10 +43,11 @@ export default function OrderPaymentEditor({
     !Number.isInteger(amount) ||
     Number(amount) < 0 ||
     Number(amount) > (order.status === "cancelled" ? current : total);
+  const balanceChanged = !!delta || status !== order.payment_status;
+  const canSave = !disabled && !invalid && balanceChanged;
   function selectStatus(value: string) {
     setMode(value);
     setError("");
-    setConfirmedRefund(false);
     setAmount(
       value === "paid"
         ? total
@@ -64,15 +63,18 @@ export default function OrderPaymentEditor({
       className="order-payment-editor"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (disabled || invalid || !delta || (delta < 0 && !confirmedRefund))
-          return;
+        if (!canSave || saving.current) return;
+        saving.current = true;
         onBusy(true);
         setError("");
         const payload = {
           totalCollected: Number(amount),
-          method,
+          method: order.payment_method === "bank" ? "bank" : "cash",
           reference,
           version: order.version,
+          operation: "correction",
+          reason: reason.trim(),
+          updateBalance: balanceChanged,
         };
         const signature = JSON.stringify(payload);
         if (request.current?.signature !== signature)
@@ -83,14 +85,11 @@ export default function OrderPaymentEditor({
             requestKey: request.current.key,
           });
           await onSaved();
-          toast(
-            delta < 0
-              ? "Đã ghi nhận hoàn tiền và cập nhật thanh toán."
-              : "Đã cập nhật thanh toán.",
-          );
+          toast("Đã sửa thanh toán ghi nhầm.");
         } catch (err) {
           setError((err as Error).message);
         } finally {
+          saving.current = false;
           onBusy(false);
         }
       }}
@@ -134,6 +133,11 @@ export default function OrderPaymentEditor({
           Chọn trạng thái để điền số tiền, hoặc nhập số tiền đã nhận để tự cập
           nhật trạng thái. Thay đổi có hiệu lực sau khi bấm Lưu thanh toán.
         </p>
+        <p className="small">
+          Sửa thanh toán ghi nhầm: nhập lại số tiền thực nhận. Điều chỉnh được
+          lưu trong lịch sử, không ghi nhận thu hay hoàn tiền thực tế. Đơn đã
+          hủy cần trả tiền cho khách được xử lý tại mục Hoàn tiền.
+        </p>
         <label className="field">
           Số tiền thực tế đã nhận (VNĐ)
           <input
@@ -147,26 +151,14 @@ export default function OrderPaymentEditor({
             onChange={(e) => {
               setAmount(e.target.value === "" ? "" : Number(e.target.value));
               setMode("auto");
-              setConfirmedRefund(false);
               setError("");
             }}
           />
         </label>
         <p className="small">
-          Tổng khách cần thanh toán: {money(total)}. Đã nhận sau hoàn tiền:{" "}
+          Tổng khách cần thanh toán: {money(total)}. Đang ghi nhận:{" "}
           {money(current)}.
         </p>
-        <label className="field">
-          Phương thức đã nhận / hoàn
-          <Select
-            aria-label="Phương thức đã nhận / hoàn"
-            value={method}
-            onChange={(e) => setMethod(e.target.value)}
-          >
-            <option value="cash">Tiền mặt</option>
-            <option value="bank">Chuyển khoản</option>
-          </Select>
-        </label>
         <label className="field">
           Mã tham chiếu / biên nhận
           <input
@@ -180,38 +172,28 @@ export default function OrderPaymentEditor({
         </label>
         {!invalid && !!delta && (
           <p className="small" role="status">
-            {delta > 0 ? "Sẽ ghi nhận thu thêm: " : "Sẽ ghi nhận hoàn tiền: "}
-            {money(Math.abs(delta))}.
+            Sẽ điều chỉnh số tiền về: {money(Number(amount))}.
           </p>
         )}
-        {delta < 0 && (
-          <label className="check-field">
-            <input
-              type="checkbox"
-              required
-              checked={confirmedRefund}
-              onChange={(e) => setConfirmedRefund(e.target.checked)}
-            />
-            Tôi xác nhận đã hoàn lại khoản chênh lệch cho khách. Trạng thái sẽ
-            là hoàn tiền một phần hoặc đã hoàn tiền.
-          </label>
-        )}
+        <label className="field">
+          Lý do điều chỉnh (không bắt buộc)
+          <input
+            aria-label="Lý do điều chỉnh"
+            maxLength={500}
+            placeholder="Để trống để hệ thống tự ghi lý do"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
         {order.status === "cancelled" && (
-          <p className="small">
-            Đơn đã hủy chỉ được hoàn tiền, không thu thêm.
-          </p>
+          <p className="small">Đơn đã hủy không được tăng số tiền đã nhận.</p>
         )}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
-        <button
-          className="button secondary"
-          disabled={
-            disabled || invalid || !delta || (delta < 0 && !confirmedRefund)
-          }
-        >
+        <button className="button secondary" disabled={!canSave}>
           {disabled ? "Đang lưu…" : "Lưu thanh toán"}
         </button>
       </fieldset>
