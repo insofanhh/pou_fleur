@@ -2,6 +2,7 @@ import { z } from "zod";
 import { query } from "./db";
 import { requirePermission } from "./auth";
 import { orderPaymentStatusSQL } from "./order-payment-state";
+import { analyticsQueries } from "./store-analytics";
 export const orderStatuses = [
   "pending",
   "confirmed",
@@ -44,6 +45,22 @@ export async function orderList(url: URL) {
     .parse(url.searchParams.get("limit") || 20);
   const filters = ["1=1"],
     values: any[] = [];
+  const method = z
+    .enum(["cod", "bank", "cod_due", "cod_delivered_due"])
+    .optional()
+    .parse(url.searchParams.get("method") || undefined);
+  if (method) {
+    filters.push("o.payment_method=?");
+    values.push(method === "bank" ? "bank" : "cod");
+    if (method === "cod_due" || method === "cod_delivered_due") {
+      filters.push(
+        "o.status<>'cancelled' AND o.total>0 AND " +
+          orderPaymentStatusSQL() +
+          "<>'paid'",
+      );
+      if (method === "cod_delivered_due") filters.push("o.status='delivered'");
+    }
+  }
   const source = z
     .enum(["web", "manual"])
     .optional()
@@ -80,7 +97,9 @@ export async function orderList(url: URL) {
         params,
       ),
       query<any[]>(
-        "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE " +
+        "SELECT o.*," +
+          orderPaymentStatusSQL() +
+          " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind IN ('collect','correction'),p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'line_type',line_type,'description',description,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o WHERE " +
           where +
           // Both values are bounded integers validated above. TiDB rejects
           // mysql2's DOUBLE binding for LIMIT/OFFSET in prepared statements.
@@ -96,7 +115,9 @@ export async function orderList(url: URL) {
       limit,
     };
   }
-  return url.searchParams.get("mode") === "table"
+  const [codStats] = await query<any[]>(analyticsQueries.cod);
+  const result = await (url.searchParams.get("mode") === "table"
     ? column()
-    : { columns: await Promise.all(orderStatuses.map((s) => column(s))) };
+    : { columns: await Promise.all(orderStatuses.map((s) => column(s))) });
+  return { ...result, codStats };
 }

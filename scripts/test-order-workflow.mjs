@@ -440,6 +440,14 @@ try {
     amount: 1000,
     method: "bank",
     reference: randomUUID(),
+  }, sid, 409);
+  await owner(endpoint + "/payment-status", "PATCH", {
+    totalCollected: 0,
+    method: "bank",
+    operation: "correction",
+    version: (await load(id)).version,
+    requestKey: randomUUID(),
+    reason: "Sửa thanh toán nhầm để kiểm tra quyền hủy của khách",
   });
   await change("shipping");
   await buyer("orders/" + id + "/cancel", "POST", {}, sid, 400);

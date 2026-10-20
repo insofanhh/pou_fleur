@@ -523,6 +523,7 @@ export async function manualOrdersAPI(
       currentUserId: actor.id,
       settings: store.settings,
       requiresCoordinates: store.lat !== null && store.lng !== null,
+      features: { goong: !!process.env.GOONG_API_KEY },
       staff: await query(
         "SELECT m.user_id id,u.name FROM store_memberships m JOIN users u ON u.id=m.user_id WHERE m.store_id=? AND m.status='active' AND u.active=1",
         [tenantId()],
@@ -542,7 +543,7 @@ export async function manualOrdersAPI(
   if (area === "manual-orders" && path.length === 2 && method === "GET") {
     const id = z.coerce.number().int().positive().parse(path[1]);
     const [order] = await query<any[]>(
-      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind='collect',p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected FROM orders o WHERE o.id=?",
+      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status,(SELECT u.name FROM users u WHERE u.id=o.created_by) creator_name,(SELECT COALESCE(SUM(IF(p.kind IN ('collect','correction'),p.amount,-p.amount)),0) FROM order_payments p WHERE p.order_id=o.id) collected FROM orders o WHERE o.id=?",
       [id],
     );
     if (!order) throw new HttpError(404, "Không tìm thấy đơn.");

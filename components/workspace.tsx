@@ -17,11 +17,14 @@ import { displayLabel } from "@/lib/display-labels";
 import ManualOrderEditor from "./manual-order-editor";
 import DeliveryAddress from "./delivery-address";
 import { useOrderTransition } from "./order-transition";
-import { paymentMethods, orderChannel } from "@/lib/order-workflow";
+import { orderChannel } from "@/lib/order-workflow";
 import { orderCapabilities } from "@/lib/order-capabilities";
 import OrderPaymentEditor from "./order-payment-editor";
+import OrderCODReceipt, { OrderMethodTag, CODSummary, OrderPaymentSummary, CODMonitor } from "./order-cod";
+import { codPayerLabel, codOutstanding, isPaidCOD } from "@/lib/cod-policy";
 import BoardToolbar, { OrderDraftsLink } from "./board-toolbar";
 import WorkspaceAI from "./workspace-ai";
+import WorkspaceRefunds from "./workspace-refunds";
 import { aiAllowance } from "@/lib/ai-policy";
 const statuses = [
   "pending",
@@ -37,6 +40,7 @@ export const workspaceAreas = [
   "new-order",
   "board",
   "orders",
+  "refunds",
   "calendar",
   "automations",
   "analytics",
@@ -51,6 +55,7 @@ export default function WorkspaceView({ area }: { area: string }) {
   if (area === "new-order") return <ManualOrderEditor />;
   if (area === "board") return <OrderBoard />;
   if (area === "orders") return <OrderBoard table />;
+  if (area === "refunds") return <WorkspaceRefunds />;
   if (area === "calendar") return <Calendar />;
   if (area === "automations") return <Automations />;
   if (area === "analytics") return <StoreAnalyticsReport />;
@@ -136,6 +141,7 @@ function OrderCard({
         <strong className="kanban-card-price">{money(order.total)}</strong>
         <Status value={order.payment_status} />
       </div>
+      <OrderPaymentSummary order={order} />
       {(typeof order.tags === "string"
         ? JSON.parse(order.tags)
         : order.tags || []
@@ -155,6 +161,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     [date, setDate] = useState(""),
     [payment, setPayment] = useState(""),
     [source, setSource] = useState(""),
+    [method, setMethod] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
     [pages, setPages] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -171,6 +178,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     mode: table ? "table" : "board",
     status: statusFilter,
     source,
+    method,
   });
   Object.entries(pages).forEach(([s, p]) =>
     params.set(s === "all" ? "page" : "page_" + s, String(p)),
@@ -224,7 +232,8 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
   return (
     <div data-no-fade-in>
       {!table ? <BoardToolbar
-        search={search} date={date} payment={payment} source={source}
+        search={search} date={date} payment={payment} source={source} method={method}
+        onMethod={value => {setMethod(value);setPages({});}}
         onSearch={setSearch}
         onDate={value => { setDate(value); setPages({}); }}
         onPayment={value => { setPayment(value); setPages({}); }}
@@ -280,6 +289,9 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
           <option value="web">Website</option>
           <option value="manual">Thủ công</option>
         </Select>
+        <Select aria-label="Phương thức thanh toán" value={method} onChange={e=>{setMethod(e.target.value);setPages({});}}>
+          <option value="">Tất cả phương thức</option><option value="cod">COD</option><option value="bank">Chuyển khoản</option><option value="cod_due">COD còn phải thu</option><option value="cod_delivered_due">COD đã giao chưa thu đủ</option>
+        </Select>
         {table && (
           <Select
             aria-label="Lọc trạng thái"
@@ -307,6 +319,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
           : "Kéo thẻ sang trạng thái cần chuyển, bao gồm hủy và khôi phục đơn. Trên điện thoại, mở chi tiết để chọn trạng thái."}{" "}
         Tự làm mới mỗi 30 giây khi cửa sổ đang mở.
       </p>
+      <CODMonitor stats={data?.codStats} />
       {error && data && (
         <p className="error" role="status">
           {error}
@@ -356,7 +369,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                       <Status value={o.status} />
                     </td>
                     <td>
-                      <Status value={o.payment_status} />
+                      <Status value={o.payment_status} /><OrderPaymentSummary order={o} />
                     </td>
                     <td>{money(o.total)}</td>
                     <td><TableActions><TableAction icon={Eye} onClick={() => setSelected(o)}>Chi tiết</TableAction></TableActions></td>
@@ -436,7 +449,7 @@ function OrderPanel({
   const [paymentError, setPaymentError] = useState(""),
     [busy, setBusy] = useState(false),
     [targetStatus, setTargetStatus] = useState(o.status);
-  const canAdjustPayment = orderCapabilities(user?.role || "").adjust;
+  const canAdjustPayment = user?.role === "owner";
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current!;
@@ -653,6 +666,10 @@ function OrderPanel({
           <section className="order-section order-finance">
             <h3>Giá & thanh toán</h3>
             <dl className="order-price-list">
+              {!isPaidCOD(o) && <div>
+                <dt>Phương thức thanh toán</dt>
+                <dd><OrderMethodTag order={o} /></dd>
+              </div>}
               <div>
                 <dt>Tiền sản phẩm</dt>
                 <dd>{money(Number(o.subtotal || 0))}</dd>
@@ -686,7 +703,9 @@ function OrderPanel({
                 </dd>
               </div>
             </dl>
-            {user?.role === "owner" && (
+            {codOutstanding(o)>0 && <div className="cod-detail-summary"><p className="small">{codPayerLabel(o)}</p><CODSummary order={o} /></div>}
+            {canAdjustPayment && <OrderCODReceipt key={"cod:"+o.version} order={o} disabled={busy} onBusy={setBusy} onSaved={async()=>{setOrder(await api("workspace/manual-orders/"+o.id));await Promise.all([refresh(),reloadTimeline(),reloadAssignment()]);}} />}
+            {canAdjustPayment && (
               <OrderPaymentEditor
                 key={o.id + ":" + o.version}
                 order={o}
@@ -699,59 +718,6 @@ function OrderPanel({
                 }}
               />
             )}
-            {canAdjustPayment ? (
-              <form
-                className="order-method-form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (busy) return;
-                  setBusy(true);
-                  setPaymentError("");
-                  try {
-                    const f = new FormData(e.currentTarget);
-                    await api(
-                      `workspace/orders/${o.id}/payment-method`,
-                      "PATCH",
-                      { method: f.get("method"), version: o.version },
-                    );
-                    await refresh();
-                    close();
-                    toast("Đã đổi phương thức thanh toán.");
-                  } catch (e) {
-                    setPaymentError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <label className="field">
-                  Phương thức thanh toán
-                  <Select
-                    name="method"
-                      aria-label="Phương thức thanh toán"
-                    defaultValue={o.payment_method}
-                    disabled={busy}
-                  >
-                    {Object.entries(paymentMethods).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <button className="button secondary" disabled={busy}>
-                  Lưu phương thức
-                </button>
-              </form>
-            ) : (
-              <p className="small">
-                Phương thức:{" "}
-                {paymentMethods[o.payment_method] || o.payment_method}
-              </p>
-            )}
-            <p className="small">
-              Đổi phương thức không thay đổi các giao dịch đã ghi nhận.
-            </p>
           </section>
           <section className="order-section order-message">
             <h3>Lời nhắn trên thiệp</h3>
@@ -761,6 +727,7 @@ function OrderPanel({
         {o.status === "cancelled" && Number(o.collected) > 0 && (
           <p className="order-alert">
             Đơn đã hủy còn {money(Number(o.collected))} cần xử lý hoàn tiền.
+            {" "}<Link href="/admin/refunds" className="text-link">Mở danh sách hoàn tiền</Link>
           </p>
         )}
         {o.internal_notes && (
@@ -873,64 +840,6 @@ function OrderPanel({
             </fieldset>
           </form>
         </details>
-        {user?.role === "owner" && (
-          <details className="order-secondary">
-            <summary>Ghi nhận thu / hoàn tiền</summary>
-            <form
-              className="panel"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setBusy(true);
-                try {
-                  const f = Object.fromEntries(new FormData(e.currentTarget));
-                  await api("workspace/orders/" + o.id + "/payment", "POST", {
-                    ...f,
-                    amount: Number(f.amount),
-                  });
-                  await refresh();
-                  close();
-                  toast("Đã ghi nhận thanh toán.");
-                } catch (e) {
-                  setPaymentError((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <label className="field">
-                Phương thức
-                <Select name="method">
-                  <option value="cash">Tiền mặt</option>
-                  <option value="bank">Chuyển khoản</option>
-                </Select>
-              </label>
-              <label className="field">
-                Loại
-                <Select name="kind">
-                  <option value="collect">Thu tiền</option>
-                  <option value="refund">Hoàn tiền</option>
-                </Select>
-              </label>
-              <label className="field">
-                Số tiền
-                <input
-                  name="amount"
-                  type="number"
-                  min="1"
-                  max={o.total}
-                  required
-                />
-              </label>
-              <label className="field">
-                Mã giao dịch duy nhất
-                <input name="reference" minLength={5} required />
-              </label>
-              <button className="button secondary" disabled={busy}>
-                Ghi nhận
-              </button>
-            </form>
-          </details>
-        )}
         {["pending", "confirmed", "preparing", "ready"].includes(o.status) && (
           <details className="order-secondary">
             <summary>Đổi lịch giao</summary>
@@ -985,7 +894,7 @@ function OrderPanel({
             ))}
             {data?.payments?.map((e: any) => (
               <p key={e.id}>
-                {e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
+                {e.kind === "correction" ? "Điều chỉnh ghi nhầm" : e.kind === "collect" ? "Thu" : "Hoàn"} {money(e.amount)} ·{" "}
                 {e.method === "bank" ? "Chuyển khoản" : "Tiền mặt"} ·{" "}
                 {e.reference} · {e.received_at ? formatDateTime(e.received_at, "utc") : formatDateTime(e.created_at)}
               </p>
@@ -1177,6 +1086,7 @@ function Calendar() {
                         chờ
                       </span>
                     )}
+                    {orders.some((o:any)=>codOutstanding(o)>0) && <span className="calendar-cod-tag">COD: {orders.filter((o:any)=>codOutstanding(o)>0).length} đơn</span>}
                     {notes.slice(0, 2).map((n: any) => (
                       <span
                         className="calendar-note-tag"

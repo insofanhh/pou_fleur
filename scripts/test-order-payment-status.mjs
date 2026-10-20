@@ -60,7 +60,7 @@ export async function testOrderPaymentStatus({
   const row = () => one("SELECT * FROM orders WHERE id=?", [order.id]);
   const ledger = () =>
     one(
-      "SELECT COUNT(*) n,COALESCE(SUM(IF(kind='collect',amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
+      "SELECT COUNT(*) n,COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
       [order.id],
     );
   const update = async (amount, expected = 200, extra = {}) =>
@@ -107,6 +107,7 @@ export async function testOrderPaymentStatus({
   await page.goto(`${origin}/workspace/${sid}/board?order=${order.id}`);
   const dialog = page.getByRole("dialog");
   const editor = dialog.locator(".order-payment-editor");
+  await expect(editor.getByRole("combobox", { name: "Mục đích cập nhật", exact: true })).toHaveCount(0);
   const amount = editor.getByLabel("Số tiền thực tế đã nhận (VNĐ)", {
     exact: true,
   });
@@ -137,7 +138,7 @@ export async function testOrderPaymentStatus({
   const full = await ledger();
   check(
     full.n === 2 && Number(full.balance) === 1000000,
-    "Selecting paid fills the total and records only the remaining balance",
+    "Selecting paid fills the total and records only the remaining correction",
   );
   // Reproduce the reported order: a full receipt with an outdated unpaid cache.
   await db.execute(
@@ -215,14 +216,13 @@ export async function testOrderPaymentStatus({
   await page.setViewportSize({ width: 1440, height: 1000 });
   await chooseSelect(status, "unpaid");
   await expect(amount).toHaveValue("0");
-  await expect(save).toBeDisabled();
-  await editor.getByRole("checkbox").check();
+  await expect(editor.getByRole("checkbox")).toHaveCount(0);
   await save.click();
-  await expect.poll(async () => (await row()).payment_status).toBe("refunded");
+  await expect.poll(async () => (await row()).payment_status).toBe("unpaid");
   await expect(save).toBeDisabled();
   check(
     Number((await ledger()).balance) === 0 && (await ledger()).n === 3,
-    "Returning paid money to zero requires confirmation and preserves a full refund receipt",
+    "Correcting a mistaken balance to zero creates no actual refund",
   );
   await chooseSelect(status, "paid");
   await expect(amount).toHaveValue("1000000");
@@ -255,6 +255,8 @@ export async function testOrderPaymentStatus({
     Number((await ledger()).balance) === 400000,
     "Changed retry payloads, stale versions and invalid amounts cannot alter receipts",
   );
+  await update(200000, 409);
+  await owner.call(`workspace/orders/${order.id}/status`, "PATCH", { status: "cancelled", version: (await row()).version, reason: "Khách hủy, cần hoàn tiền" }, 200, sid);
   await update(200000);
   check(
     (await row()).payment_status === "partially_refunded",
@@ -275,6 +277,7 @@ export async function testOrderPaymentStatus({
     "Partial refunds remain distinguishable from partial payments even with a stale cache",
   );
   await update(200000);
+  await owner.call(`workspace/orders/${order.id}/status`, "PATCH", { status: "pending", version: (await row()).version, reason: "Khách đặt lại để kiểm tra thu tiền", date: input.deliveryDate, slot: input.deliverySlot }, 200, sid);
   const raceVersion = (await row()).version;
   const rawUpdate = async (value, version) =>
     (
@@ -367,7 +370,7 @@ export async function testOrderPaymentStatus({
       (await ledger()).n === beforeWebhook,
     "SePay acknowledges a manually settled QR without collecting twice and rejects an obsolete QR",
   );
-  await update(0);
+  await update(0, 200, { operation: "correction" });
   const concurrentCode = await addIntent("CCC333", 1000000);
   const concurrentVersion = (await row()).version;
   const concurrent = await Promise.all([
@@ -379,7 +382,7 @@ export async function testOrderPaymentStatus({
       [400000, 1000000].includes(Number((await ledger()).balance)),
     "A simultaneous SePay transfer and manual adjustment serialize without duplicate collection or deadlocks",
   );
-  await update(0);
+  await update(0, 200, { operation: "correction" });
   const liveCode = await addIntent("DDD444", 1000000);
   const event = randomUUID();
   const firstWebhook = await webhook(liveCode, 1000000, event);

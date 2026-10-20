@@ -6,6 +6,8 @@ import { api, useShop } from "./context";
 import { needsTransitionReason } from "@/lib/order-workflow";
 import { orderLabels } from "@/lib/display-labels";
 import { money } from "./home";
+import { codOutstanding, codPayerLabel } from "@/lib/cod-policy";
+import { CODReceiptFields, codReceiptPayload } from "./order-cod";
 
 export function useOrderTransition(
   refresh: () => Promise<void>,
@@ -38,7 +40,10 @@ export function useOrderTransition(
   }
   function move(order: any, status: string) {
     if (busy || pending || status === order.status) return;
-    if (needsTransitionReason(order.status, status))
+    if (
+      needsTransitionReason(order.status, status) ||
+      (status === "delivered" && codOutstanding(order) > 0)
+    )
       setPending({ order, status });
     else
       void commit(order, status).catch(async (e) => {
@@ -64,6 +69,15 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
   const [error, setError] = useState("");
   const [slots, setSlots] = useState<string[] | null>(null);
   const restore = order.status === "cancelled";
+  // A restored COD order also needs an explicit outstanding-money outcome.
+  const codDue =
+    status === "delivered"
+      ? codOutstanding({ ...order, status: "shipping" })
+      : 0;
+  const { user } = useShop();
+  const [outcome, setOutcome] = useState("");
+  const requestKey = useRef("");
+  const needsReason = needsTransitionReason(order.status, status);
   useEffect(() => {
     const focused = document.activeElement,
       overflow = document.body.style.overflow,
@@ -121,7 +135,9 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             ? "Khôi phục đơn hàng"
             : status === "cancelled"
               ? "Hủy đơn hàng"
-              : "Chuyển về bước trước"}
+              : codDue > 0
+                ? "Hoàn tất giao hoa & thu COD"
+                : "Chuyển về bước trước"}
         </h2>
         <button
           type="button"
@@ -139,7 +155,25 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
           e.preventDefault();
           setError("");
           try {
-            await save(Object.fromEntries(new FormData(e.currentTarget)));
+            const form = new FormData(e.currentTarget);
+            if (!requestKey.current) requestKey.current = crypto.randomUUID();
+            await save({
+              ...Object.fromEntries(form),
+              ...(codDue > 0
+                ? {
+                    codOutcome: outcome,
+                    ...(outcome !== "unpaid"
+                      ? {
+                          codPayment: codReceiptPayload(
+                            form,
+                            order,
+                            requestKey.current,
+                          ),
+                        }
+                      : {}),
+                  }
+                : {}),
+            });
           } catch (e) {
             setError((e as Error).message);
           }
@@ -154,7 +188,9 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             ? "Hệ thống sẽ giữ lại tồn kho và kiểm tra lượt khuyến mãi, lịch giao trước khi khôi phục."
             : status === "cancelled"
               ? "Hệ thống sẽ trả tồn kho và lượt khuyến mãi. Tiền đã thu không tự động hoàn; ghi nhận hoàn tiền riêng sau khi xử lý."
-              : "Lịch sử thay đổi được lưu lại. Số tiền đã thu không thay đổi."}
+              : codDue > 0
+                ? "Giao thành công không tự đánh dấu đã thanh toán. Chọn đúng khoản tiền cửa hàng thực nhận."
+                : "Lịch sử thay đổi được lưu lại. Số tiền đã thu không thay đổi."}
         </p>
         {status === "cancelled" && Number(order.collected) > 0 && (
           <p className="order-alert">
@@ -191,16 +227,60 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             </label>
           </div>
         )}
-        <label className="field">
-          Lý do chuyển trạng thái
-          <textarea
-            name="reason"
-            minLength={5}
-            maxLength={500}
-            required
-            placeholder="Nhập lý do để lưu vào lịch sử đơn…"
-          />
-        </label>
+        {codDue > 0 && (
+          <fieldset className="manual-fieldset" disabled={busy}>
+            <p>
+              {codPayerLabel(order)} · Còn phải thu{" "}
+              <strong>{money(codDue)}</strong>
+            </p>
+            <label className="field">
+              Kết quả thu COD
+              <Select
+                value={outcome}
+                onChange={(e) => setOutcome(e.target.value)}
+                required
+              >
+                <option value="">Chọn kết quả thu tiền</option>
+                {user?.role === "owner" && !restore && (
+                  <>
+                    <option value="paid">Cửa hàng đã thu đủ</option>
+                    {codDue > 1 && (
+                      <option value="partial">
+                        Cửa hàng vừa thu thêm một phần
+                      </option>
+                    )}
+                  </>
+                )}
+                <option value="unpaid">Chưa nhận thêm tiền vào cửa hàng</option>
+              </Select>
+            </label>
+            {outcome && outcome !== "unpaid" && (
+              <CODReceiptFields
+                key={outcome}
+                due={codDue}
+                full={outcome === "paid"}
+                partial={outcome === "partial"}
+              />
+            )}
+            {outcome === "unpaid" && (
+              <p className="order-alert">
+                Đơn sẽ được đánh dấu đã giao và vẫn còn khoản COD cần theo dõi.
+              </p>
+            )}
+          </fieldset>
+        )}
+        {needsReason && (
+          <label className="field">
+            Lý do chuyển trạng thái
+            <textarea
+              name="reason"
+              minLength={5}
+              maxLength={500}
+              required
+              placeholder="Nhập lý do để lưu vào lịch sử đơn…"
+            />
+          </label>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}

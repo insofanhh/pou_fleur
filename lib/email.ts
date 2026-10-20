@@ -122,6 +122,10 @@ export async function enqueueOrderEmail(
       ]);
     return;
   }
+  const [receipts]:any=await c.execute("SELECT COUNT(*) n,COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",[id]);
+  const received=Number(receipts[0].n)?Number(receipts[0].balance):o.payment_status==="paid"?Number(o.total):0;
+  const codDue=o.status==="cancelled"?0:Math.max(0,Number(o.total)-received);
+  const codPayer=o.cod_payer==="recipient"?"Người nhận hoa trả tiền":o.cod_payer==="buyer"||o.delivery_mode==="self"?"Người đặt hoa trả tiền":"Cửa hàng cần xác nhận người trả tiền";
   const [storeRows]: any = await c.execute(
     "SELECT slug,name FROM stores WHERE id=?",
     [tenantId()],
@@ -154,6 +158,8 @@ export async function enqueueOrderEmail(
     delivery_slot: o.delivery_slot,
     store_name: o.store_name || storeRows[0].name,
     payment_method: o.payment_method === 'bank' ? 'Chuyển khoản ngân hàng' : 'Thanh toán khi nhận hàng (COD)',
+    cod_payer: o.payment_method === "cod" ? codPayer : "Không áp dụng",
+    cod_outstanding: o.payment_method === "cod" ? money(codDue) : money(0),
     store_url: (process.env.APP_ORIGIN || '').replace(/\/$/,'')+'/s/'+storeRows[0].slug,
     tracking_url:
       (process.env.APP_ORIGIN || "").replace(/\/$/, "") +
@@ -162,7 +168,8 @@ export async function enqueueOrderEmail(
       "/track-order",
   };
   const renderedSubject=interpolateEmail(t.subject,values);
-  const renderedBody=interpolateEmail(t.body,values);
+  const codNotice=o.payment_method==="cod" ? `\n\nThanh toán COD · ${codPayer}\nCòn phải thu: ${money(codDue)}${o.status==="cancelled"?" · Đơn đã hủy, không thu thêm tiền.":codDue>0?o.cod_payer==="buyer"&&o.delivery_mode!=="self"?". Người đặt vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao hoa; không thu tiền người nhận.":". Vui lòng chuẩn bị số tiền còn lại khi nhận hoa.":" · Đã thanh toán đủ."}` : "";
+  const renderedBody=interpolateEmail(t.body,values)+codNotice;
   // Identify the seller even when an older customized template omits store_name.
   const seller=values.store_name;
   await c.execute(

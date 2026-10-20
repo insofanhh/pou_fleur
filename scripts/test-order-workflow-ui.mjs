@@ -97,30 +97,20 @@ try {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await open();
   const before = await read();
-  const paymentSelect = nativeSelect(details, "Phương thức thanh toán");
-  const method = before.payment_method === "bank" ? "cod" : "bank";
-  await chooseSelect(paymentSelect, method);
-  await details
-    .getByRole("button", { name: "Lưu phương thức", exact: true })
-    .click();
-  await expect(details).toHaveCount(0);
+  await expect(details.getByRole("combobox", { name: "Phương thức thanh toán", exact: true })).toHaveCount(0);
+  const method = before.payment_method === "bank" ? "Chuyển khoản ngân hàng" : "Thanh toán khi nhận hoa (COD)";
+  await expect(details.locator(".order-price-list")).toContainText(method);
+  await expect(details.getByRole("button", { name: "Lưu thanh toán", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   const after = await read();
   check(
-    after.payment_method === method &&
+    after.payment_method === before.payment_method &&
       after.payment_status === before.payment_status,
-    "Payment method can be edited in order details",
+    "Payment method is read-only in order details",
   );
   await open();
-  await expect(paymentSelect).toHaveValue(method);
-  await details
-    .locator(".order-secondary")
-    .filter({ has: page.locator("summary", { hasText: "Lịch sử đơn" }) })
-    .locator("summary")
-    .click();
-  await expect(details.locator(".order-history")).toContainText(
-    "Đã đổi phương thức thanh toán",
-  );
-  check(true, "Saved payment method and history survive reopening");
+  await expect(details.locator(".order-price-list")).toContainText(method);
+  check(true, "Original payment method survives reopening");
   await chooseSelect(nativeSelect(details, "Trạng thái mới"), "shipping");
   await details
     .getByRole("button", { name: "Cập nhật trạng thái", exact: true })

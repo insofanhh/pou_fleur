@@ -1327,6 +1327,9 @@ details p {
 .payment-option input {
   accent-color: #222;
 }
+.checkout-form .payment-option + .payment-option {
+  margin-top: 12px;
+}
 .payment-option span {
   font-size: 12px;
   color: #888;

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import type { Product, Promotion } from "./types";
 import { activeBank, createIntent } from "./sepay";
+import { collectCOD } from "./order-cod";
 export const itemSchema = z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(30),
@@ -26,25 +27,43 @@ export const quoteSchema = z.object({
 const phone = z
   .string()
   .regex(/^[+0-9 ()-]{9,20}$/, "Số điện thoại không hợp lệ");
-export const checkoutSchema = quoteSchema.extend({
-  customerName: z.string().trim().min(2).max(100),
-  email: z.email().toLowerCase(),
-  phone,
-  address: z.string().trim().min(10).max(500),
-  recipientName: z.string().trim().min(2).max(100),
-  recipientPhone: phone,
-  deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  deliverySlot: z.string().min(5).max(30),
-  deliveryMode: z.enum(["self", "gift"]).default("gift"),
-  message: z.string().max(500).default(""),
-  notes: z.string().max(1000).default(""),
-  paymentMethod: z.enum(["cod", "bank"]),
-  consent: z.boolean().default(false),
-  idempotencyKey: z.string().uuid(),
-  expectedTotal: z.number().int().nonnegative().optional(),
-  deliveryLat: z.number().min(-90).max(90).optional(),
-  deliveryLng: z.number().min(-180).max(180).optional(),
-});
+export const checkoutSchema = quoteSchema
+  .extend({
+    customerName: z.string().trim().min(2).max(100),
+    email: z.email().toLowerCase(),
+    phone,
+    address: z.string().trim().min(10).max(500),
+    recipientName: z.string().trim().min(2).max(100),
+    recipientPhone: phone,
+    deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    deliverySlot: z.string().min(5).max(30),
+    deliveryMode: z.enum(["self", "gift"]).default("gift"),
+    message: z.string().max(500).default(""),
+    notes: z.string().max(1000).default(""),
+    paymentMethod: z.enum(["cod", "bank"]),
+    consent: z.boolean().default(false),
+    idempotencyKey: z.string().uuid(),
+    expectedTotal: z.number().int().nonnegative().optional(),
+    deliveryLat: z.number().min(-90).max(90).optional(),
+    deliveryLng: z.number().min(-180).max(180).optional(),
+    codPayer: z.enum(["buyer", "recipient"]).optional(),
+    codRecipientConsent: z.boolean().default(false),
+  })
+  .superRefine((b, ctx) => {
+    if (b.paymentMethod !== "cod" || b.deliveryMode !== "gift") return;
+    if (!b.codPayer)
+      ctx.addIssue({
+        code: "custom",
+        path: ["codPayer"],
+        message: "Chọn người thanh toán COD cho đơn quà tặng.",
+      });
+    if (b.codPayer === "recipient" && !b.codRecipientConsent)
+      ctx.addIssue({
+        code: "custom",
+        path: ["codRecipientConsent"],
+        message: "Vui lòng xác nhận người nhận sẽ thanh toán COD.",
+      });
+  });
 export async function calculate(
   c: PoolConnection,
   body: z.infer<typeof quoteSchema>,
@@ -221,8 +240,18 @@ export async function createOrder(
     let payment: any = null;
     if (body.paymentMethod === "bank") {
       const bank = await activeBank(tenantId(), c);
-      if (!bank) throw new HttpError(409, "Cửa hàng chưa cấu hình nhận chuyển khoản.");
-      payment = await createIntent(c, tenantId(), "order", store.owner_id, quote.total, id, null, bank);
+      if (!bank)
+        throw new HttpError(409, "Cửa hàng chưa cấu hình nhận chuyển khoản.");
+      payment = await createIntent(
+        c,
+        tenantId(),
+        "order",
+        store.owner_id,
+        quote.total,
+        id,
+        null,
+        bank,
+      );
     }
     for (const i of quote.items) {
       await c.execute(
@@ -255,13 +284,24 @@ export async function createOrder(
     );
 
     await c.execute(
-      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=?,customer_id=(SELECT id FROM customers WHERE email=?) WHERE id=?",
+      "UPDATE orders SET store_name=?,delivery_mode=?,checkout_owner=?,delivery_lat=?,delivery_lng=?,cod_payer=?,cod_recipient_consent_at=IF(?,UTC_TIMESTAMP(),NULL),customer_id=(SELECT id FROM customers WHERE email=?) WHERE id=?",
       [
         store.name,
         body.deliveryMode,
         checkoutOwner || null,
         body.deliveryLat ?? null,
         body.deliveryLng ?? null,
+        body.paymentMethod === "cod"
+          ? body.deliveryMode === "self"
+            ? "buyer"
+            : (body.codPayer ?? null)
+          : null,
+        body.paymentMethod === "cod" &&
+        body.deliveryMode === "gift" &&
+        body.codPayer === "recipient" &&
+        body.codRecipientConsent
+          ? 1
+          : 0,
         body.email,
         id,
       ],
@@ -277,8 +317,14 @@ export async function createOrder(
     );
     await emit(c, "order:" + id + ":new", {
       audience: "staff",
-      title: "Đơn hàng mới",
-      body: reference + " · " + body.customerName,
+      title: body.paymentMethod === "cod" ? "Đơn COD mới" : "Đơn hàng mới",
+      body:
+        reference +
+        " · " +
+        body.customerName +
+        (body.paymentMethod === "cod"
+          ? ` · Cần thu ${quote.total.toLocaleString("vi-VN")} VNĐ · ${body.deliveryMode === "self" || body.codPayer === "buyer" ? "Người đặt trả tiền" : "Người nhận trả tiền"}`
+          : ""),
     });
     await enqueueOrderEmail(c, id, "order_confirmation");
     await c.commit();
@@ -314,7 +360,13 @@ export async function changeOrder(
   actor: number,
   owner = false,
   version?: number,
-  options: { reason?: string; date?: string; slot?: string } = {},
+  options: {
+    reason?: string;
+    date?: string;
+    slot?: string;
+    codOutcome?: "paid" | "partial" | "unpaid";
+    codPayment?: unknown;
+  } = {},
 ) {
   const c = await pool.getConnection();
   try {
@@ -324,7 +376,9 @@ export async function changeOrder(
       tenantId(),
     ]);
     const [rows] = await c.execute(
-      "SELECT o.*," + orderPaymentStatusSQL() + " payment_status FROM orders o WHERE o.id=? FOR UPDATE",
+      "SELECT o.*," +
+        orderPaymentStatusSQL() +
+        " payment_status FROM orders o WHERE o.id=? FOR UPDATE",
       [id],
     );
     const o = (rows as any[])[0];
@@ -352,6 +406,55 @@ export async function changeOrder(
         "Trạng thái đơn hàng không thể chuyển theo cách này.",
       );
     if (status === o.status) return await c.commit().then(() => ({ ok: true }));
+    if (o.payment_method === "cod" && status === "delivered") {
+      const [sums]: any = await c.execute(
+        "SELECT COUNT(*) n,COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
+        [id],
+      );
+      const balance = Number(sums[0].balance);
+      if (o.payment_status !== "paid" && Number(o.total) > balance) {
+        if (!options.codOutcome)
+          throw new HttpError(
+            400,
+            "Chọn kết quả thu COD khi hoàn tất giao hoa.",
+          );
+        if (options.codOutcome !== "unpaid") {
+          if (o.status === "cancelled")
+            throw new HttpError(
+              409,
+              "Khôi phục đơn trước khi xác nhận thu COD.",
+            );
+          if (!options.codPayment)
+            throw new HttpError(400, "Xác nhận số tiền COD thực tế đã nhận.");
+          await collectCOD(c, id, actor, options.codPayment);
+          const [after]: any = await c.execute(
+            "SELECT COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
+            [id],
+          );
+          const paid = Number(after[0].balance);
+          if (
+            (options.codOutcome === "paid" && paid !== Number(o.total)) ||
+            (options.codOutcome === "partial" && paid >= Number(o.total))
+          )
+            throw new HttpError(
+              400,
+              "Số tiền không khớp kết quả thu COD đã chọn.",
+            );
+        } else if (options.codPayment)
+          throw new HttpError(
+            400,
+            "Không gửi giao dịch khi chọn chưa nhận tiền.",
+          );
+      } else if (options.codPayment || options.codOutcome)
+        throw new HttpError(
+          409,
+          "Đơn không còn khoản COD cần thu. Hãy làm mới.",
+        );
+    } else if (options.codPayment || options.codOutcome)
+      throw new HttpError(
+        400,
+        "Chỉ ghi kết quả COD cùng thao tác hoàn tất giao hoa.",
+      );
     const reason = options.reason?.trim() || "";
     if (!owner && needsTransitionReason(o.status, status) && reason.length < 5)
       throw new HttpError(400, "Vui lòng nhập lý do ít nhất 5 ký tự.");
@@ -435,7 +538,7 @@ export async function changeOrder(
         id,
         actor,
         status,
-        `${orderLabels[o.status]} → ${orderLabels[status]}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · Lịch giao: ${deliveryDate} ${deliverySlot}` : ""}`,
+        `${orderLabels[o.status]} → ${orderLabels[status]}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · Lịch giao: ${deliveryDate} ${deliverySlot}` : ""}${options.codOutcome === "unpaid" ? " · COD: chưa nhận thêm tiền, cần theo dõi khoản còn thiếu" : ""}`,
       ],
     );
     await emit(c, "order:" + id + ":" + (o.version + 1), {
@@ -443,6 +546,13 @@ export async function changeOrder(
       title: "Đơn " + o.reference + " · " + orderLabels[status],
       body: "Cửa hàng đã cập nhật trạng thái đơn hoa của bạn.",
     });
+    if (options.codOutcome === "unpaid")
+      await emit(c, "order:" + id + ":cod-due:" + (o.version + 1), {
+        audience: "staff",
+        title: "Đơn COD đã giao chưa thu đủ",
+        body: o.reference + " · Kiểm tra và đối soát tiền COD còn phải thu.",
+        href: "/workspace/" + tenantId() + "/orders?order=" + id,
+      });
     await enqueueOrderEmail(c, id, "order_status", o.status);
     await c.commit();
     return { ok: true };

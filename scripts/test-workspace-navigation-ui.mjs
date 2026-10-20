@@ -3,18 +3,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { chromium, webkit, expect } from "@playwright/test";
 
 const origin = process.env.TEST_ORIGIN || "http://127.0.0.1:3000";
-assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(origin), "Local UI only");
+assert(/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin), "Local UI only");
 const out = ".local/workspace-navigation-qa";
 await mkdir(out, { recursive: true });
 const checks = [];
 const check = (ok, label) => { assert(ok, label); checks.push(label); console.log("PASS", label); };
-const order = ["overview","analytics","board","calendar","orders","crm","ai","inquiries","products","categories","promotions","emails","automations","events","posts","theme","users","settings","billing","audit"];
+const order = ["overview","analytics","board","calendar","orders","refunds","crm","ai","inquiries","products","categories","promotions","emails","automations","events","posts","theme","users","settings","billing","audit"];
 const rights = {
   owner: order,
   admin: order.filter(key => !["theme","settings","billing"].includes(key)),
   manager: order.filter(key => !["posts","theme","users","settings","billing","audit"].includes(key)),
   editor: ["events","posts"],
-  support: ["board","calendar","orders","crm","ai","inquiries","emails"],
+  support: ["board","calendar","orders","refunds","crm","ai","inquiries","emails"],
 };
 for (const engine of [chromium, webkit]) {
   const browser = await engine.launch();
@@ -34,13 +34,20 @@ for (const engine of [chromium, webkit]) {
       await route.fulfill({ json: data });
     });
     const page = await context.newPage();
+    // Let Next's prefetch/navigation finish before a test forces a new document.
+    // Aborting RSC requests mid-navigation produces WebKit access-control errors.
+    const navigate = async url => {
+      await page.waitForLoadState('networkidle');
+      await page.goto(url);
+      await page.waitForLoadState('networkidle');
+    };
     page.on("pageerror", error => errors.push(error.message));
     let documents = 0;
     page.on("request", request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++; });
-    await page.goto(origin + "/workspace/1/overview");
+    await navigate(origin + "/workspace/1/overview");
     const nav = page.getByRole("navigation", { name: "Điều hướng workspace" });
-    await expect(nav.locator("a")).toHaveCount(20);
-    check(JSON.stringify(await nav.locator("a").evaluateAll(links => links.map(a => a.pathname.split('/').at(-1)))) === JSON.stringify(order), `${engine.name()}: exact workflow priority for all 20 links`);
+    await expect(nav.locator("a")).toHaveCount(21);
+    check(JSON.stringify(await nav.locator("a").evaluateAll(links => links.map(a => a.pathname.split('/').at(-1)))) === JSON.stringify(order), `${engine.name()}: exact workflow priority for all 21 links`);
     await expect(nav.locator('.workspace-nav-group')).toHaveCount(4);
     await expect(nav.getByRole('region',{name:'Vận hành hằng ngày'}).getByRole('button')).toHaveCount(0);
     await expect(nav.getByRole('link',{name:'Bảng xử lý đơn',exact:true})).toHaveAttribute('href','/workspace/1/board');
@@ -54,10 +61,12 @@ for (const engine of [chromium, webkit]) {
     await marketing.focus(); await page.keyboard.press('Enter');
     await expect(marketing).toHaveAttribute('aria-expanded','false');
     await expect(nav.getByRole('link',{name:'Tin tức',exact:true})).toHaveCount(0);
+    await page.waitForLoadState('networkidle');
     await page.reload();
+    await page.waitForLoadState('networkidle');
     await expect(marketing).toHaveAttribute('aria-expanded','false');
     check(true,`${engine.name()}: group toggles by keyboard and remembers preference after reload`);
-    await page.goto(origin+'/workspace/1/posts');
+    await navigate(origin+'/workspace/1/posts');
     await expect(marketing).toHaveAttribute('aria-expanded','true');
     await expect(nav.getByRole('link',{name:'Tin tức',exact:true})).toHaveAttribute('aria-current','page');
     check(true,`${engine.name()}: direct links automatically reveal the current group`);
@@ -101,7 +110,7 @@ for (const engine of [chromium, webkit]) {
       role=candidate;
       await page.evaluate(()=>localStorage.removeItem('fleurious.workspace.menu-groups.v1'));
       const before = requests.filter(r=>r.path==='/api/workspace/navigation-summary').length;
-      await page.goto(origin+'/workspace/1/overview');
+      await navigate(origin+'/workspace/1/overview');
       await expect(nav.locator('a')).toHaveCount(rights[candidate].length);
       check(JSON.stringify(await nav.locator('a').evaluateAll(links=>links.map(a=>a.pathname.split('/').at(-1))))===JSON.stringify(rights[candidate]),`${engine.name()}: ${candidate} retains exact allowed items in priority order`);
       check(await nav.locator('.workspace-nav-group').evaluateAll(groups=>groups.every(group=>group.querySelectorAll('a').length>0)),`${engine.name()}: ${candidate} sees no empty groups`);
@@ -110,8 +119,8 @@ for (const engine of [chromium, webkit]) {
       if(!rights[candidate].includes('overview')) await expect(page.getByRole('link',{name:'Mở workspace của bạn',exact:true})).toHaveAttribute('href','/workspace/1/'+rights[candidate][0]);
     }
     role='owner';notice={pending_invoices:0,days_remaining:null};
-    await page.goto(origin+'/workspace/1/overview');
-    await expect(nav.locator('a')).toHaveCount(20);
+    await navigate(origin+'/workspace/1/overview');
+    await expect(nav.locator('a')).toHaveCount(21);
     await expect(page.locator('.workspace-billing-notice')).toHaveCount(0);
     await expect(nav.locator('.workspace-billing-badge')).toHaveCount(0);
     check(!errors.length,`${engine.name()}: no runtime errors: ${errors.join('; ')}`);

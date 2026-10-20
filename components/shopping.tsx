@@ -605,6 +605,7 @@ export function Checkout({ data }: { data: Catalog }) {
     null,
   );
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "bank">("cod");
+  const [codPayer, setCodPayer] = useState(""), [codRecipientConsent, setCodRecipientConsent] = useState(false);
   const customerName = buyerName ?? user?.name ?? "";
   const customerPhone = buyerPhone ?? user?.phone ?? "";
   const receivingSelf = deliveryMode === "self";
@@ -650,6 +651,7 @@ export function Checkout({ data }: { data: Catalog }) {
         idempotencyKey: key.current,
         expectedTotal: quote?.total,
         paymentMethod,
+        ...(paymentMethod === "cod" ? { codPayer: receivingSelf ? "buyer" : codPayer, codRecipientConsent } : {}),
       });
       setSuccess({ ...result, email: f.email });
       setCart([]);
@@ -890,8 +892,18 @@ export function Checkout({ data }: { data: Catalog }) {
               <input type="radio" name="payment" value="bank" checked={paymentMethod === "bank"} onChange={() => setPaymentMethod("bank")} />
               Chuyển khoản ngân hàng<span>Quét mã QR VietQR, đơn sẽ cập nhật khi nhận tiền</span>
             </label>}
+            {paymentMethod === "cod" && !receivingSelf && <div className="cod-payer-fields">
+              <label className="field">Người thanh toán COD
+                <Select value={codPayer} onChange={e => {setCodPayer(e.target.value);setCodRecipientConsent(false);}} required>
+                  <option value="">Chọn người trả tiền</option>
+                  <option value="buyer">Người đặt hoa trả tiền</option>
+                  <option value="recipient">Người nhận hoa trả tiền</option>
+                </Select>
+              </label>
+              {codPayer === "recipient" && <label className="check-field"><input type="checkbox" checked={codRecipientConsent} onChange={e=>setCodRecipientConsent(e.target.checked)} required />Tôi đã thông báo và người nhận đồng ý thanh toán tiền đơn hoa khi nhận.</label>}
+            </div>}
             <p className="small">
-              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 10 phút. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : "Bạn chỉ thanh toán khi nhận hoa."}
+              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 10 phút. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : !receivingSelf && codPayer === "buyer" ? "Bạn là người trả tiền. Vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao quà; cửa hàng không thu tiền người nhận." : "Thanh toán số tiền còn lại khi nhận hoa."}
             </p>
             <label className="check-field">
               <input name="consent" type="checkbox" />

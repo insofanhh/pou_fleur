@@ -443,13 +443,14 @@
   .board-filter-toolbar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "search search" "date source" "payment payment" "drafts refresh";
+    grid-template-areas: "search search" "date source" "payment payment" "method method" "drafts refresh";
     gap: 12px 10px;
   }
   .board-filter-search { grid-area: search; }
   .board-filter-date { grid-area: date; }
   .board-filter-payment { grid-area: payment; }
   .board-filter-source { grid-area: source; }
+  .board-filter-method { grid-area: method; }
   .board-filter-drafts { grid-area: drafts; }
   .board-filter-refresh { grid-area: refresh; }
   .board-filter-toolbar input,
@@ -1854,6 +1855,9 @@
 .delivery-address-options button:focus-visible {
   background: #f3f3f3;
 }
+.delivery-address-options button[aria-selected="true"] {
+  background: #f3f3f3;
+}
 .template-home-intro {
   padding: 80px 7vw;
   display: flex;
@@ -2742,3 +2746,75 @@ body:has(.manual-orders) .ghost-banner {
   .platform-email-workspace .email-panel .email-actions > h2 { flex-basis: 100%; }
   .platform-email-workspace .email-panel .email-actions > .custom-select { min-width: 0; max-width: 100%; flex: 1; }
 }
+.refund-workspace{display:grid;gap:20px;min-width:0}
+.refund-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.refund-summary .panel{padding:20px;display:grid;gap:10px}
+.refund-summary span{font-size:12px;color:#666}.refund-summary strong{font-size:23px;letter-spacing:-.5px;overflow-wrap:anywhere}
+.refund-list{min-width:0;overflow:hidden;padding:0}
+.refund-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 12px}
+.refund-heading h2{font-size:17px;margin:0 0 8px}.refund-heading p{font-size:12px;color:#666;line-height:1.6;margin:0;max-width:650px}
+.refund-heading .button{white-space:nowrap;flex-shrink:0;padding:10px 14px;font-size:12px}
+.refund-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 24px 20px}
+.refund-search{display:flex;align-items:center;gap:8px;flex:1;min-width:220px;border:1px solid #ddd;padding:0 10px;border-radius:6px}
+.refund-search input{border:0!important;box-shadow:none!important;min-width:0;width:100%}
+.refund-toolbar>label:not(.refund-search){min-width:155px}.refund-toolbar>.muted{font-size:12px;white-space:nowrap}
+.refund-workspace .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.refund-list table{width:100%;font-size:12px}.refund-list td{vertical-align:middle}.refund-list td:first-child{min-width:165px}.refund-list td:nth-child(n+2):nth-child(-n+6){white-space:nowrap}
+.refund-list .table-actions{flex-wrap:wrap;min-width:145px}.refund-date{display:block;color:#777;font-size:10px;margin-top:5px}
+.refund-tag.pending{background:#fff3d5;color:#805a10}.refund-tag.completed{background:#e4f3ec;color:#27684e}.refund-tag.review{background:#fce8e5;color:#9b4336}
+.refund-footnote{font-size:12px;line-height:1.7;padding:0 24px 20px;margin:0}.refund-list>.error{margin:0 24px 16px}
+.refund-dialog{width:min(520px,calc(100vw - 28px));max-height:calc(100dvh - 32px);padding:0}
+.refund-dialog .modal-body{padding:20px 24px}.refund-dialog .modal-body>p{font-size:13px;line-height:1.6;margin:0 0 12px}
+.refund-dialog fieldset{border:0;padding:0;margin:18px 0 0;display:grid;gap:15px;min-width:0}
+.refund-dialog fieldset>label:not(.refund-confirm){display:grid;gap:7px;font-size:12px;min-width:0}
+.refund-dialog input:not([type=checkbox]),.refund-dialog textarea{width:100%;min-width:0}
+.refund-dialog .refund-confirm{display:flex;align-items:flex-start;gap:10px;font-size:12px;line-height:1.6}
+.refund-confirm input{width:16px;height:16px;margin-top:2px;flex-shrink:0}.refund-dialog fieldset p{margin:0;font-size:12px}
+.refund-dialog .modal-footer{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:16px 24px;border-top:1px solid #eee}
+.refund-dialog .modal-footer .button{font-size:12px;padding:10px 14px}
+@media(max-width:700px){.refund-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.refund-summary .panel{padding:15px}.refund-summary strong{font-size:19px}.refund-heading{padding:18px 16px 8px;flex-wrap:wrap}.refund-toolbar{padding:10px 16px 16px}.refund-search{flex-basis:100%;min-width:0}.refund-footnote{padding:0 16px 16px}.refund-dialog .modal-body{padding:18px}.refund-dialog .modal-heading{padding:18px}.refund-dialog .modal-heading h2{font-size:17px}.refund-dialog .modal-footer{padding:14px 18px}}
+
+/* Independent order source, payment method and receipt state. */
+.order-method-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.order-method-summary .tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.cod-monitor { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 14px 16px; margin-block: 12px 20px; border: 1px solid #e8e8e8; border-radius: 8px; background: #fff; }
+.cod-monitor-metric { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cod-monitor-metric > div { min-width: 0; }
+.cod-monitor-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 34px; height: 34px; border-radius: 6px; background: #f5f5f5; color: #555; }
+.cod-monitor-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; line-height: 1.5; color: #666; }
+.cod-monitor-label > span { font-size: 11px; color: #777; white-space: nowrap; }
+.cod-monitor-metric strong { display: block; margin-top: 3px; font-size: 15px; line-height: 1.5; font-weight: 600; color: #222; overflow-wrap: anywhere; }
+.cod-monitor-delivered .cod-monitor-icon { background: #fff6e8; color: #855500; }
+.cod-monitor-scope { font-size: 11px; line-height: 1.5; color: #777; }
+@media (max-width: 1000px) { .cod-monitor { grid-template-columns: repeat(2,minmax(0,1fr)); } .cod-monitor-scope { grid-column: 1 / -1; } }
+@media (max-width: 480px) { .cod-monitor { grid-template-columns: minmax(0,1fr); gap: 12px; padding: 12px; } }
+.calendar-cod-tag { display: block; color: #855500; font-size: 10px; margin-top: 4px; }
+.order-method-cod { background: #fff3df; color: #855500; }
+.order-method-bank { background: #e9f0ff; color: #31559b; }
+.cod-outstanding { display: block; color: #855500; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.cod-overdue { color: #b42318; font-weight: 600; }
+.cod-detail-summary { padding: 12px; margin-block: 12px; border: 1px solid #eedcbc; border-radius: 8px; background: #fffbf4; }
+.cod-receipt-fields,
+.cod-receipt .manual-fieldset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+.cod-receipt > summary { padding: 16px; }
+.cod-receipt > .small { margin: 0; padding: 0 16px; }
+.cod-receipt > form { margin-top: 12px; padding: 0 16px 16px; }
+.cod-receipt .order-form-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.cod-receipt-fields > *,
+.cod-receipt-fields .field { min-width: 0; margin: 0; }
+.cod-receipt-fields .check-field {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  margin: 0;
+}
+.cod-receipt-fields .check-field input { margin: 3px 0 0; }
+.cod-payer-fields { display: grid; gap: 12px; margin-block: 16px; }
+.board-filter-method { flex: 0 1 205px; }
+@media (max-width: 700px) { .board-filter-method { min-width: 0; } .cod-receipt-fields .order-form-grid { grid-template-columns: minmax(0,1fr); } }

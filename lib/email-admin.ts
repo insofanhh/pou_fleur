@@ -64,7 +64,7 @@ export function validateTemplate(
           "event_date",
         ].includes(k)
       : key.startsWith("order_")
-        ? ["customer_name","store_name","store_url","order_reference","order_items","order_total","payment_method","order_status","previous_status","recipient_name","delivery_address","delivery_date","delivery_slot","tracking_url"].includes(k)
+        ? ["customer_name","store_name","store_url","order_reference","order_items","order_total","payment_method","cod_payer","cod_outstanding","order_status","previous_status","recipient_name","delivery_address","delivery_date","delivery_slot","tracking_url"].includes(k)
         : !k.startsWith("campaign_") && !["promotion_code", "event_date"].includes(k),
   );
   const without = combined.replace(/{{\s*([a-z_]+)\s*}}/g, (_, k) => {

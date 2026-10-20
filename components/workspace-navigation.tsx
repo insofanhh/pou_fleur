@@ -6,7 +6,7 @@ import Link from "./routing";
 import { api } from "./context";
 
 const groups = [
-  { id: "daily", label: "Vận hành hằng ngày", keys: ["overview", "analytics", "board", "calendar", "orders", "crm", "ai", "inquiries"] },
+  { id: "daily", label: "Vận hành hằng ngày", keys: ["overview", "analytics", "board", "calendar", "orders", "refunds", "crm", "ai", "inquiries"] },
   { id: "catalog", label: "Sản phẩm", keys: ["products", "categories"] },
   { id: "marketing", label: "Tiếp thị & nội dung", keys: ["promotions", "emails", "automations", "events", "posts"] },
   { id: "management", label: "Quản trị cửa hàng", keys: ["theme", "users", "settings", "billing", "audit"] },
