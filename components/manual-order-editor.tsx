@@ -40,6 +40,10 @@ const empty = {
   discountValue: 0,
   adjustmentReason: "",
   deliveryMode: "gift",
+  fulfillmentMethod: "delivery",
+  walkInGuest: false,
+  pickupConfirmed: false,
+  pickupDebtReason: "",
   recipientName: "",
   recipientPhone: "",
   address: "",
@@ -114,6 +118,7 @@ export default function ManualOrderEditor() {
     date = params.get("date"),
     customer = params.get("customer");
   const cap = options?.capabilities || {};
+  const pickup = form.fulfillmentMethod === "pickup";
   // Quote only pricing inputs so editing contact/payment fields neither refetches
   // prices nor makes an otherwise current total unavailable.
   const pricingKey = JSON.stringify({
@@ -123,6 +128,7 @@ export default function ManualOrderEditor() {
     discountValue: form.discountValue,
     adjustmentReason: form.adjustmentReason,
     shipping: form.shipping,
+    fulfillmentMethod: form.fulfillmentMethod,
   });
   const currentTotal =
     priceEstimate?.key === pricingKey ? Number(priceEstimate.total) : undefined;
@@ -195,7 +201,7 @@ export default function ManualOrderEditor() {
         saved = await api("workspace/order-drafts/" + draftId);
         if (saved.status !== "draft")
           throw Error("Nháp đã được chuyển thành đơn hoặc lưu trữ.");
-        data = { ...data, ...saved.payload };
+        data = { ...data, ...saved.payload, pickupConfirmed: false };
       }
       if (customer && !draftId) {
         const selected = await api(
@@ -358,7 +364,7 @@ export default function ManualOrderEditor() {
       // Always reprice at review; a background estimate is not authorization
       // to record money, and prices may have changed since it was fetched.
       if (
-        options.requiresCoordinates &&
+        !pickup && options.requiresCoordinates &&
         options.features?.goong &&
         !(Number.isFinite(form.deliveryLat) && Number.isFinite(form.deliveryLng))
       )
@@ -387,6 +393,11 @@ export default function ManualOrderEditor() {
         throw Error("Tiền thu không được vượt tổng đơn.");
       if (amount > 100000000)
         throw Error("Số tiền thu mỗi lần không được vượt 100.000.000 VNĐ.");
+      if (pickup && !cap.confirm) throw Error("Bạn chưa có quyền xác nhận bàn giao tại cửa hàng.");
+      if (pickup && form.walkInGuest && amount !== priced.total)
+        throw Error("Khách lẻ cần thanh toán đủ trước khi bàn giao.");
+      if (pickup && amount < priced.total && (!cap.collect || form.pickupDebtReason.trim().length < 5))
+        throw Error("Bàn giao chưa thu đủ cần chủ cửa hàng nhập lý do từ 5 ký tự.");
       setForm((f: any) => ({ ...f, collectAmount: amount }));
       setQuote(priced);
     } catch (e) {
@@ -605,6 +616,11 @@ export default function ManualOrderEditor() {
                 {block(
                   "1. Khách hàng",
                   <>
+                    {pickup && <label className="manual-check">
+                      <input type="checkbox" checked={form.walkInGuest} onChange={e=>change({walkInGuest:e.target.checked,customerId:null,customerName:"",phone:"",email:"",separateContact:false})} />
+                      Khách lẻ — không lưu hồ sơ CRM (cần thanh toán đủ)
+                    </label>}
+                    {!form.walkInGuest && <>
                     <Field label="Tìm khách trong CRM">
                       <input
                         placeholder="Tên, số điện thoại hoặc email"
@@ -698,6 +714,7 @@ export default function ManualOrderEditor() {
                       Không tự tạo tài khoản hoặc cấp đồng ý nhận marketing cho
                       khách.
                     </p>
+                    </>}
                   </>,
                 )}
                 {block(
@@ -940,24 +957,34 @@ export default function ManualOrderEditor() {
                   </>,
                 )}
                 {block(
-                  "3. Giao hoa & lời nhắn",
+                  "3. Nhận hoa & lời nhắn",
                   <>
                     <div className="manual-mode">
                       {[
                         ["gift", "Gửi hoa tới người khách thương"],
                         ["self", "Giao cho khách"],
+                        ["pickup", "Khách nhận ngay tại cửa hàng"],
                       ].map(([value, label]) => (
                         <label key={value}>
                           <input
                             type="radio"
                             name="deliveryMode"
-                            checked={form.deliveryMode === value}
-                            onChange={() => change({ deliveryMode: value })}
+                            checked={value === "pickup" ? pickup : !pickup && form.deliveryMode === value}
+                            onChange={() => change(value === "pickup"
+                              ? { fulfillmentMethod: "pickup", deliveryMode: "self", shipping: undefined, pickupConfirmed: false }
+                              : { fulfillmentMethod: "delivery", deliveryMode: value, walkInGuest: false, pickupConfirmed: false, pickupDebtReason: "" })}
                           />
                           {label}
                         </label>
                       ))}
                     </div>
+                    {pickup ? <div className="pickup-location-card">
+                      <strong>Khách lấy tại cửa hàng · Nhận ngay</strong>
+                      <p>{options.pickupLocation?.name}<br />{options.pickupLocation?.address || "Địa chỉ cửa hàng chưa được cấu hình"}</p>
+                      <p className="small">Không đặt lịch giao. Phí giao 0 VNĐ. Đơn được hoàn tất khi bạn xác nhận đã bàn giao hoa.</p>
+                      <label className="manual-check"><input type="checkbox" checked={form.pickupConfirmed} onChange={e=>change({pickupConfirmed:e.target.checked})} required />Xác nhận khách đã nhận hoa tại cửa hàng.</label>
+                      {!cap.confirm && <p className="error">Bạn có thể lưu nháp; cần người có quyền xác nhận bàn giao hoàn tất đơn.</p>}
+                    </div> : <>
                     <div className="form-grid">
                       {form.deliveryMode === "gift" && (
                         <>
@@ -1040,6 +1067,7 @@ export default function ManualOrderEditor() {
                         </div>
                       </>
                     )}
+                    </>}
                     <Field label="Lời nhắn trên thiệp (tùy chọn)">
                       <textarea
                         maxLength={500}
@@ -1047,7 +1075,7 @@ export default function ManualOrderEditor() {
                         onChange={(e) => change({ message: e.target.value })}
                       />
                     </Field>
-                    <Field label="Ghi chú giao hàng">
+                    <Field label={pickup ? "Ghi chú nhận hoa" : "Ghi chú giao hàng"}>
                       <textarea
                         maxLength={1000}
                         value={form.notes}
@@ -1087,7 +1115,7 @@ export default function ManualOrderEditor() {
                                   ? 100
                                   : 100000000,
                             })}
-                          {textField("shipping", "Phí giao riêng (VNĐ)", {
+                          {!pickup && textField("shipping", "Phí giao riêng (VNĐ)", {
                             type: "number",
                             min: 0,
                             max: 100000000,
@@ -1103,6 +1131,9 @@ export default function ManualOrderEditor() {
                         "Lý do giảm giá / sửa phí giao",
                         { maxLength: 500, placeholder: "Không bắt buộc" },
                       )}
+                    {pickup && !form.walkInGuest && paymentStatus !== "paid" && <Field label="Lý do bàn giao chưa thu đủ">
+                      <input value={form.pickupDebtReason} onChange={e=>change({pickupDebtReason:e.target.value})} maxLength={500} placeholder="Chỉ chủ cửa hàng được xác nhận công nợ" />
+                    </Field>}
                     <Field label="Trạng thái thanh toán">
                       <Select
                         disabled={!cap.collect}
@@ -1231,7 +1262,7 @@ export default function ManualOrderEditor() {
                           ))}
                         </Select>
                       </Field>
-                      <Field label="Trạng thái ban đầu">
+                      {pickup ? <div className="manual-field"><span>Trạng thái sau khi lưu</span><strong>Đã nhận tại cửa hàng</strong></div> : <Field label="Trạng thái ban đầu">
                         <Select
                           value={form.initialStatus}
                           onChange={(e) =>
@@ -1243,7 +1274,7 @@ export default function ManualOrderEditor() {
                             <option value="confirmed">Đã xác nhận</option>
                           )}
                         </Select>
-                      </Field>
+                      </Field>}
                     </div>
                     <Field label="Nhãn (phân cách bằng dấu phẩy, tối đa 6)">
                       <input
@@ -1316,14 +1347,14 @@ export default function ManualOrderEditor() {
                     </p>
                     <hr />
                     <p>
-                      <strong>{form.customerName}</strong>
+                      <strong>{form.walkInGuest ? "Khách lẻ" : form.customerName}</strong>
                       <br />
                       {form.phone}
                     </p>
                     <p>
-                      {form.deliveryDate} · {form.deliverySlot}
+                      {pickup ? "Khách lấy tại cửa hàng · Nhận ngay" : <>{form.deliveryDate} · {form.deliverySlot}</>}
                       <br />
-                      {form.address}
+                      {pickup ? options.pickupLocation?.address : form.address}
                     </p>
                     <p className="small">
                       {form.email
@@ -1351,7 +1382,7 @@ export default function ManualOrderEditor() {
                     ) : quote ? (
                       <>
                         <Check size={16} />{" "}
-                        {form.initialStatus === "confirmed"
+                        {pickup ? "Tạo đơn & xác nhận đã nhận hoa" : form.initialStatus === "confirmed"
                           ? "Tạo và xác nhận"
                           : "Tạo đơn hàng"}
                       </>

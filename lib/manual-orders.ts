@@ -54,6 +54,10 @@ export const manualInput = z.object({
   discountValue: integer.default(0),
   adjustmentReason: z.string().trim().max(500).default(""),
   shipping: integer.optional(),
+  fulfillmentMethod: z.enum(["delivery", "pickup"]).default("delivery"),
+  walkInGuest: z.boolean().default(false),
+  pickupConfirmed: z.boolean().default(false),
+  pickupDebtReason: z.string().trim().max(500).default(""),
   deliveryMode: z.enum(["self", "gift"]).default("gift"),
   recipientName: z.string().trim().max(100).default(""),
   recipientPhone: z.string().trim().max(30).default(""),
@@ -82,8 +86,14 @@ export const normalizePhone = (s: string) => {
 function requireInput(b: Input) {
   const validPhone = (s: string) =>
     /^[+0-9 ()-]{9,20}$/.test(s) && normalizePhone(s).length >= 9;
-  if (b.customerName.length < 2 || !validPhone(b.phone))
+  if (b.walkInGuest && b.fulfillmentMethod !== "pickup")
+    throw new HttpError(400, "Khách lẻ chỉ áp dụng khi nhận ngay tại cửa hàng.");
+  if (!b.walkInGuest && (b.customerName.length < 2 || !validPhone(b.phone)))
     throw new HttpError(400, "Cần tên và số điện thoại hợp lệ của người đặt.");
+  if (b.fulfillmentMethod === "pickup") {
+    if (!b.pickupConfirmed) throw new HttpError(400, "Cần xác nhận khách đã nhận hoa tại cửa hàng.");
+    return;
+  }
   if (
     b.deliveryMode === "gift" &&
     (b.recipientName.length < 2 || !validPhone(b.recipientPhone))
@@ -101,7 +111,7 @@ function checkCapabilities(b: Input, actor: Actor) {
     throw new HttpError(403, "Chỉ chủ cửa hàng được ghi nhận thu tiền.");
   if (
     (b.discountType !== "none" ||
-      b.shipping !== undefined ||
+      (b.fulfillmentMethod !== "pickup" && b.shipping !== undefined) ||
       b.items.some((i) => i.type === "catalog" && i.price !== undefined)) &&
     !cap.adjust
   )
@@ -166,7 +176,7 @@ async function quote(c: PoolConnection, b: Input, actor: Actor, lock = false) {
     );
   }
   // Manual orders use only the entered delivery fee, never storefront rates.
-  totals.shipping = b.shipping ?? 0;
+  totals.shipping = b.fulfillmentMethod === "pickup" ? 0 : b.shipping ?? 0;
   totals.total = totals.subtotal - totals.discount + totals.shipping;
   if (totals.total > 2000000000)
     throw new HttpError(400, "Giá trị đơn vượt giới hạn.");
@@ -187,6 +197,7 @@ async function audit(
   );
 }
 async function contact(c: PoolConnection, b: Input) {
+  if (b.walkInGuest) return null;
   if (b.customerId) {
     const [rows]: any = await c.execute(
       "SELECT id FROM customers WHERE id=? FOR UPDATE",
@@ -293,13 +304,22 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
           "Nháp đã thay đổi hoặc đã chuyển thành đơn. Hãy mở lại.",
         );
     }
-    await validateFulfillment(c, store, b, undefined, true);
+    const pickup = b.fulfillmentMethod === "pickup";
+    if (!pickup) await validateFulfillment(c, store, b, undefined, true);
     const q = await quote(c, b, current, true);
     if (q.token !== request.quoteToken)
       throw new HttpError(
         409,
         "Giá đã thay đổi. Vui lòng tính lại và rà soát đơn.",
       );
+    if (pickup) {
+      if (!orderCapabilities(current.role).confirm)
+        throw new HttpError(403, "Bạn chưa có quyền xác nhận bàn giao tại cửa hàng.");
+      if (b.walkInGuest && (b.collectAmount !== q.total || b.customerId || b.email || b.phone))
+        throw new HttpError(400, "Khách lẻ cần thanh toán đủ và không gắn thông tin hồ sơ CRM.");
+      if (b.collectAmount < q.total && (current.role !== "owner" || b.pickupDebtReason.length < 5))
+        throw new HttpError(400, "Chỉ chủ cửa hàng được bàn giao khi chưa thu đủ; cần lý do từ 5 ký tự.");
+    }
     const assignedTo = b.assignedTo === undefined ? current.id : b.assignedTo;
     if (assignedTo) {
       const [ms]: any = await c.execute(
@@ -319,7 +339,8 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
       discountType: b.discountType,
       discountValue: b.discountValue,
       reason: b.adjustmentReason,
-      shippingOverride: b.shipping ?? 0,
+      shippingOverride: q.shipping,
+      ...(pickup ? { pickupDebtReason: b.pickupDebtReason } : {}),
       ghost: ghost
         ? {
             actorId: ghost.actorId,
@@ -334,17 +355,17 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
         reference,
         null,
         customerId,
-        b.customerName,
+        b.walkInGuest ? "Khách lẻ" : b.customerName,
         b.email || null,
         b.phone,
-        b.address,
-        b.deliveryMode === "self" ? b.customerName : b.recipientName,
-        b.deliveryMode === "self" ? b.phone : b.recipientPhone,
-        b.deliveryDate,
-        b.deliverySlot,
-        b.deliveryMode,
-        b.deliveryLat ?? null,
-        b.deliveryLng ?? null,
+        pickup ? store.address || "" : b.address,
+        pickup || b.deliveryMode === "self" ? b.walkInGuest ? "Khách lẻ" : b.customerName : b.recipientName,
+        pickup || b.deliveryMode === "self" ? b.phone : b.recipientPhone,
+        pickup ? hanoiDateKey() : b.deliveryDate,
+        pickup ? "Nhận ngay" : b.deliverySlot,
+        pickup ? "self" : b.deliveryMode,
+        pickup ? null : b.deliveryLat ?? null,
+        pickup ? null : b.deliveryLng ?? null,
         b.message,
         b.notes,
         b.internalNotes,
@@ -355,11 +376,11 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
         q.total,
         q.promotionId,
         request.idempotencyKey,
-        b.initialStatus,
+        pickup ? "confirmed" : b.initialStatus,
         "manual",
         b.salesChannel,
         actor.id,
-        b.initialStatus === "confirmed" ? actor.id : null,
+        pickup || b.initialStatus === "confirmed" ? actor.id : null,
         store.name,
         assignedTo,
         JSON.stringify(b.tags),
@@ -368,6 +389,10 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
       ],
     );
     const orderId = result.insertId;
+    if (pickup) await c.execute(
+      "UPDATE orders SET fulfillment_method='pickup',pickup_location_snapshot=?,cod_payer='buyer',confirmed_at=NOW() WHERE id=?",
+      [JSON.stringify({ name: store.name, address: store.address || "", phone: store.phone || "" }), orderId],
+    );
     for (const i of q.items) {
       await c.execute(
         "INSERT INTO order_items(order_id,product_id,product_name,image,size,quantity,price,line_type,original_price,description) VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -408,6 +433,10 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
           (b.collectMethod === "bank" ? "BANK-" : "CASH-") + reference,
         receivedAt: b.receivedAt,
       });
+    if (pickup) await c.execute(
+      "UPDATE orders SET status='delivered',completed_at=NOW(),picked_up_at=NOW(),shipped_at=NULL,payment_status=IF(total=0,'paid',payment_status) WHERE id=?",
+      [orderId],
+    );
     let payment: any = null;
     const remaining = q.total - Number(b.collectAmount || 0);
     if (b.collectMethod === "bank" && remaining > 0) {
@@ -416,8 +445,8 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
       payment = await createIntent(c, tenantId(), "order", actor.id, remaining, orderId, null, bank);
     }
     await c.execute(
-      "INSERT INTO order_status_events(order_id,actor_id,status) VALUES(?,?,?)",
-      [orderId, actor.id, b.initialStatus],
+      "INSERT INTO order_status_events(order_id,actor_id,status,detail) VALUES(?,?,?,?)",
+      [orderId, actor.id, pickup ? "delivered" : b.initialStatus, pickup ? "Khách đã nhận hoa ngay tại cửa hàng" + (b.pickupDebtReason ? " · Chưa thu đủ: " + b.pickupDebtReason : "") : null],
     );
     await audit(c, actor, "manual:create", "orders", orderId);
     if (aiSource) await audit(c, actor, "ai:order", "orders", orderId);
@@ -429,7 +458,7 @@ async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: 
     await emit(c, "order:" + orderId + ":new", {
       audience: "staff",
       title: "Đơn hàng mới",
-      body: reference + " · " + b.customerName,
+      body: reference + " · " + (b.walkInGuest ? "Khách lẻ" : b.customerName) + (pickup ? " · Đã nhận tại cửa hàng" : ""),
     });
     await enqueueOrderEmail(c, orderId, "order_confirmation");
     if (ghostCookie) {
@@ -524,6 +553,7 @@ export async function manualOrdersAPI(
       settings: store.settings,
       requiresCoordinates: store.lat !== null && store.lng !== null,
       features: { goong: !!process.env.GOONG_API_KEY },
+      pickupLocation: { name: store.name, address: store.address || "", phone: store.phone || "" },
       staff: await query(
         "SELECT m.user_id id,u.name FROM store_memberships m JOIN users u ON u.id=m.user_id WHERE m.store_id=? AND m.status='active' AND u.active=1",
         [tenantId()],
@@ -575,6 +605,7 @@ export async function manualOrdersAPI(
     }
     if (method === "POST" && path.length === 1) {
       const payload = manualInput.parse(body);
+      payload.pickupConfirmed = false;
       checkCapabilities(payload, actor);
       if (payload.collectAmount)
         throw new HttpError(
@@ -602,6 +633,7 @@ export async function manualOrdersAPI(
     ) {
       const version = positiveId.parse(body.version);
       const payload = manualInput.parse(body);
+      payload.pickupConfirmed = false;
       checkCapabilities(payload, actor);
       const archive = path[2] === "archive";
       if (!archive && payload.collectAmount)

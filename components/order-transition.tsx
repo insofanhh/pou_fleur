@@ -4,9 +4,9 @@ import Select from "./ui-select";
 import { useEffect, useRef, useState } from "react";
 import { api, useShop } from "./context";
 import { needsTransitionReason } from "@/lib/order-workflow";
-import { orderLabels } from "@/lib/display-labels";
+import { isPickup, orderStateLabel } from "@/lib/order-fulfillment";
 import { money } from "./home";
-import { codOutstanding, codPayerLabel } from "@/lib/cod-policy";
+import { collectionOutstanding, codPayerLabel } from "@/lib/cod-policy";
 import { CODReceiptFields, codReceiptPayload } from "./order-cod";
 
 export function useOrderTransition(
@@ -40,9 +40,12 @@ export function useOrderTransition(
   }
   function move(order: any, status: string) {
     if (busy || pending || status === order.status) return;
+    if (isPickup(order) && !["delivered","cancelled"].includes(status)) {
+      toast("Đơn nhận ngay không có bước giao hàng hoặc lịch hẹn."); return;
+    }
     if (
       needsTransitionReason(order.status, status) ||
-      (status === "delivered" && codOutstanding(order) > 0)
+      (status === "delivered" && collectionOutstanding(order) > 0)
     )
       setPending({ order, status });
     else
@@ -72,7 +75,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
   // A restored COD order also needs an explicit outstanding-money outcome.
   const codDue =
     status === "delivered"
-      ? codOutstanding({ ...order, status: "shipping" })
+      ? collectionOutstanding({ ...order, status: "shipping" })
       : 0;
   const { user } = useShop();
   const [outcome, setOutcome] = useState("");
@@ -105,7 +108,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
     };
   }, []);
   useEffect(() => {
-    if (!restore) return;
+    if (!restore || isPickup(order)) return;
     let active = true;
     api("workspace/manual-orders/options")
       .then((d) => {
@@ -136,7 +139,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             : status === "cancelled"
               ? "Hủy đơn hàng"
               : codDue > 0
-                ? "Hoàn tất giao hoa & thu COD"
+                ? isPickup(order) ? "Xác nhận nhận hoa & thu tại quầy" : "Hoàn tất giao hoa & thu COD"
                 : "Chuyển về bước trước"}
         </h2>
         <button
@@ -180,16 +183,16 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
         }}
       >
         <p>
-          <strong>{order.reference}</strong> · {orderLabels[order.status]} →{" "}
-          {orderLabels[status]}
+          <strong>{order.reference}</strong> · {orderStateLabel(order)} →{" "}
+          {orderStateLabel(order,status)}
         </p>
         <p className="small">
           {restore
-            ? "Hệ thống sẽ giữ lại tồn kho và kiểm tra lượt khuyến mãi, lịch giao trước khi khôi phục."
+            ? isPickup(order) ? "Hệ thống sẽ giữ lại tồn kho, kiểm tra lượt khuyến mãi và xác nhận khách đã nhận hoa tại cửa hàng. Không đặt lịch giao." : "Hệ thống sẽ giữ lại tồn kho và kiểm tra lượt khuyến mãi, lịch giao trước khi khôi phục."
             : status === "cancelled"
               ? "Hệ thống sẽ trả tồn kho và lượt khuyến mãi. Tiền đã thu không tự động hoàn; ghi nhận hoàn tiền riêng sau khi xử lý."
               : codDue > 0
-                ? "Giao thành công không tự đánh dấu đã thanh toán. Chọn đúng khoản tiền cửa hàng thực nhận."
+                ? "Hoàn tất đơn không tự đánh dấu đã thanh toán. Chọn đúng khoản tiền cửa hàng thực nhận."
                 : "Lịch sử thay đổi được lưu lại. Số tiền đã thu không thay đổi."}
         </p>
         {status === "cancelled" && Number(order.collected) > 0 && (
@@ -197,7 +200,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             Đã thu {money(Number(order.collected))} — cần xử lý hoàn tiền.
           </p>
         )}
-        {restore && (
+        {restore && !isPickup(order) && (
           <div className="order-form-grid">
             <label className="field">
               Ngày giao khi khôi phục
@@ -234,7 +237,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
               <strong>{money(codDue)}</strong>
             </p>
             <label className="field">
-              Kết quả thu COD
+              {isPickup(order) ? "Kết quả thu tại quầy" : "Kết quả thu COD"}
               <Select
                 value={outcome}
                 onChange={(e) => setOutcome(e.target.value)}
@@ -256,6 +259,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             </label>
             {outcome && outcome !== "unpaid" && (
               <CODReceiptFields
+                pickup={isPickup(order)}
                 key={outcome}
                 due={codDue}
                 full={outcome === "paid"}
@@ -264,12 +268,12 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
             )}
             {outcome === "unpaid" && (
               <p className="order-alert">
-                Đơn sẽ được đánh dấu đã giao và vẫn còn khoản COD cần theo dõi.
+                {isPickup(order) ? "Khách đã nhận hoa nhưng còn công nợ. Chỉ chủ cửa hàng được xác nhận và cần nhập lý do." : "Đơn sẽ được đánh dấu đã giao và vẫn còn khoản COD cần theo dõi."}
               </p>
             )}
           </fieldset>
         )}
-        {needsReason && (
+        {(needsReason || (isPickup(order) && outcome === "unpaid")) && (
           <label className="field">
             Lý do chuyển trạng thái
             <textarea
@@ -287,7 +291,7 @@ function TransitionConfirmation({ order, status, busy, close, save }: any) {
           </p>
         )}
         <div className="button-row">
-          <button className="button" disabled={busy || (restore && !slots)}>
+          <button className="button" disabled={busy || (restore && !isPickup(order) && !slots)}>
             {busy ? "Đang cập nhật…" : "Xác nhận chuyển trạng thái"}
           </button>
           <button

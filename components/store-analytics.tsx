@@ -113,7 +113,7 @@ function dateWindow(days: number) {
 type ChartMetric = "order_value" | "revenue" | "collected";
 const chartNames: Record<ChartMetric, string> = {
   order_value: "Giá trị đơn",
-  revenue: "Doanh thu đã giao",
+  revenue: "Doanh thu hoàn tất",
   collected: "Tiền đã thu ròng",
 };
 
@@ -180,7 +180,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
         "Số đơn",
         "Đơn hủy",
         "Giá trị đơn không hủy (VNĐ)",
-        "Doanh thu đã giao (VNĐ)",
+        "Doanh thu hoàn tất (VNĐ)",
         "Đã thu ròng (VNĐ)",
         "Còn phải thu (VNĐ)",
       ],
@@ -328,9 +328,9 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
             {[
               {
                 icon: Wallet,
-                title: "Doanh thu đã giao",
+                title: "Doanh thu hoàn tất",
                 value: money(summary.revenue),
-                caption: `${summary.delivered} đơn đã giao`,
+                caption: `${summary.delivered} đơn đã hoàn tất`,
                 current: summary.revenue,
                 previous: data.previous.revenue,
               },
@@ -519,7 +519,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
           </div>
           <Panel
             title="Hiệu quả kênh tiếp nhận"
-            caption="Giá trị đơn và công nợ không tính đơn hủy; doanh thu chỉ tính đơn đã giao"
+            caption="Giá trị đơn và công nợ không tính đơn hủy; doanh thu chỉ tính đơn đã hoàn tất"
           >
             <DataTable
               headers={[
@@ -527,7 +527,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
                 "Số đơn",
                 "Tỷ trọng",
                 "Giá trị đơn",
-                "Đã giao",
+                "Đã hoàn tất",
                 "Còn phải thu",
               ]}
               rows={data.sources.map((s) => {
@@ -596,7 +596,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
                 rows={data.payments.map((p) => [
                   p.method === "bank"
                     ? "Chuyển khoản"
-                    : p.method === "cod"
+                    : p.method === "counter" ? "Tại quầy" : p.method === "cod"
                       ? "Khi nhận hoa (COD)"
                       : "Khác",
                   p.orders_count,
@@ -620,6 +620,11 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
                 Bộ đếm không tính đơn hủy. Tiền cần hoàn gồm tiền còn giữ của
                 đơn hủy và tiền nhận vượt tổng đơn.
               </p>
+              {data.pickup?.orders_count > 0 && <div className="pickup-location-card">
+                <h4>Khách lấy tại cửa hàng · Trong kỳ</h4>
+                <p>{data.pickup.orders_count} đơn · Doanh thu {money(data.pickup.revenue)}</p>
+                <p>Còn phải thu tại quầy: <strong>{money(data.pickup.outstanding)}</strong></p>
+              </div>}
               <div className="cod-monitor">
                 <h4>Theo dõi COD</h4>
                 <p>Còn phải thu: <strong>{data.cod?.awaiting_count||0} đơn · {money(data.cod?.outstanding||0)}</strong></p>
@@ -630,7 +635,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
             </Panel>
             <Panel
               title="Khối lượng giao hoa"
-              caption="7 ngày nhiều đơn nhất theo ngày giao trong kỳ · Không tính đơn hủy"
+              caption="7 ngày nhiều đơn nhất theo ngày giao trong kỳ · Không tính đơn hủy hoặc nhận tại cửa hàng"
             >
               <DataTable
                 headers={["Ngày giao", "Tổng đơn", "Đã giao", "Còn lại"]}
@@ -704,7 +709,7 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
                 "Số đơn",
                 "Đơn hủy",
                 "Giá trị đơn",
-                "Doanh thu đã giao",
+                "Doanh thu hoàn tất",
                 "Đã thu ròng",
                 "Còn phải thu",
               ]}

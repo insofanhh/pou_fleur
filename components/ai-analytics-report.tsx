@@ -166,7 +166,7 @@ export default function AIAnalyticsReport({
               "Kênh tiếp nhận",
               "Số đơn",
               "Giá trị đơn",
-              "Doanh thu đã giao",
+              "Doanh thu hoàn tất",
               "Còn phải thu",
             ]}
             rows={(data.sources || []).map((s) => [
@@ -194,9 +194,9 @@ export default function AIAnalyticsReport({
         <summary>Cách tính số liệu</summary>
         <p>
           Thống kê theo đơn được tạo trong kỳ và trạng thái hiện tại. Doanh thu
-          chỉ tính đơn đã giao, gồm phí giao và giảm giá. Tiền đã thu ròng là số
+          chỉ tính đơn đã hoàn tất (giao tận nơi hoặc nhận tại cửa hàng), gồm phí giao và giảm giá. Tiền đã thu ròng là số
           thu trừ số hoàn của nhóm đơn này; không phải dòng tiền theo ngày thu.
-          Chưa bao gồm lợi nhuận. Lịch giao được tính theo ngày giao.
+          Chưa bao gồm lợi nhuận. Lịch giao được tính theo ngày giao và không bao gồm đơn nhận tại cửa hàng.
         </p>
       </details>
     </section>

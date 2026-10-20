@@ -260,7 +260,7 @@ async function handle(
         .parse(body);
       await throttle("track:" + b.email, 30);
       const [order] = await query<any[]>(
-        "SELECT reference,status,total,delivery_date,delivery_slot,created_at FROM orders WHERE reference=? AND email=?",
+        "SELECT reference,status,total,delivery_date,delivery_slot,created_at,fulfillment_method,picked_up_at,pickup_location_snapshot FROM orders WHERE reference=? AND email=?",
         [b.reference.toUpperCase(), b.email],
       );
       if (!order)

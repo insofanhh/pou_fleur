@@ -45,12 +45,15 @@ export async function orderList(url: URL) {
     .parse(url.searchParams.get("limit") || 20);
   const filters = ["1=1"],
     values: any[] = [];
+  const fulfillment = z.enum(["delivery", "pickup"]).optional().parse(url.searchParams.get("fulfillment") || undefined);
+  if (fulfillment) { filters.push("o.fulfillment_method=?"); values.push(fulfillment); }
   const method = z
     .enum(["cod", "bank", "cod_due", "cod_delivered_due"])
     .optional()
     .parse(url.searchParams.get("method") || undefined);
   if (method) {
     filters.push("o.payment_method=?");
+    if (method !== "bank") filters.push("o.fulfillment_method<>'pickup'");
     values.push(method === "bank" ? "bank" : "cod");
     if (method === "cod_due" || method === "cod_delivered_due") {
       filters.push(

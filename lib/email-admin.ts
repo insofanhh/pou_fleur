@@ -64,7 +64,7 @@ export function validateTemplate(
           "event_date",
         ].includes(k)
       : key.startsWith("order_")
-        ? ["customer_name","store_name","store_url","order_reference","order_items","order_total","payment_method","cod_payer","cod_outstanding","order_status","previous_status","recipient_name","delivery_address","delivery_date","delivery_slot","tracking_url"].includes(k)
+        ? ["customer_name","store_name","store_url","order_reference","order_items","order_total","payment_method","cod_payer","cod_outstanding","order_status","previous_status","recipient_name","delivery_address","delivery_date","delivery_slot","tracking_url","fulfillment_method","pickup_location","picked_up_at"].includes(k)
         : !k.startsWith("campaign_") && !["promotion_code", "event_date"].includes(k),
   );
   const without = combined.replace(/{{\s*([a-z_]+)\s*}}/g, (_, k) => {
@@ -75,7 +75,7 @@ export function validateTemplate(
     throw new HttpError(400, "Biến cần có dạng {{customer_name}}.");
   if (key.startsWith('order_') && !/{{\s*order_reference\s*}}/.test(combined))
     throw new HttpError(400, "Email đơn hàng phải chứa {{order_reference}}.");
-  if (key === "order_status" && !/{{\s*order_status\s*}}/.test(combined))
+  if (["order_status", "order_pickup_status"].includes(key) && !/{{\s*order_status\s*}}/.test(combined))
     throw new HttpError(400, "Mẫu cập nhật phải chứa {{order_status}}.");
 }
 async function audience(

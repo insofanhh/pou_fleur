@@ -1,9 +1,15 @@
+import { isPickup } from "./order-fulfillment";
+
 export function isPaidCOD(order: any) {
   return order.payment_method === "cod" && order.payment_status === "paid";
 }
 
 export function codOutstanding(order: any) {
-  if (order.payment_method !== "cod" || order.status === "cancelled") return 0;
+  return isPickup(order) ? 0 : collectionOutstanding(order);
+}
+
+export function collectionOutstanding(order: any) {
+  if ((order.payment_method !== "cod" && !isPickup(order)) || order.status === "cancelled") return 0;
   // Old paid badges without receipts must be reconciled before collecting again.
   if (order.payment_status === "paid") return 0;
   return Math.max(0, Number(order.total || 0) - Number(order.collected || 0));

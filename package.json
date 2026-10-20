@@ -83,7 +83,11 @@
     "db:cod:tidb": "node --env-file=.env.tidb.local scripts/migrate-cod.mjs",
     "test:cod:e2e": "node scripts/test-order-cod-e2e.mjs",
     "test:refunds": "node --import tsx scripts/test-order-refunds.ts",
-    "test:refunds:e2e": "node scripts/test-order-refunds-e2e.mjs"
+    "test:refunds:e2e": "node scripts/test-order-refunds-e2e.mjs",
+    "db:pickup": "node --env-file=.env.local scripts/migrate-pickup.mjs",
+    "db:pickup:local": "node --env-file=.env.local scripts/migrate-local-pickup.mjs",
+    "db:pickup:tidb": "node --env-file=.env.tidb.local scripts/migrate-pickup.mjs",
+    "test:pickup:e2e": "node scripts/test-order-pickup-e2e.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

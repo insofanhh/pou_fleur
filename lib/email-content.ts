@@ -15,6 +15,9 @@ export const emailVariables = {
   order_reference: "Mã đơn hàng",
   order_items: "Danh sách hoa",
   order_total: "Tổng thanh toán",
+  fulfillment_method: "Hình thức nhận hoa",
+  pickup_location: "Địa điểm nhận tại cửa hàng",
+  picked_up_at: "Thời điểm đã nhận hoa",
   payment_method: "Phương thức thanh toán",
   cod_payer: "Người thanh toán COD",
   cod_outstanding: "COD còn phải thu",
@@ -43,6 +46,9 @@ export const orderStatusNames: Record<string, string> = {
   cancelled: "Đã hủy",
 };
 export const demoEmailValues: Record<string, string> = {
+  fulfillment_method: "Khách lấy tại cửa hàng",
+  pickup_location: "Fleurious · Hà Nội",
+  picked_up_at: "20/10/2026 15:00",
   account_url: "https://example.com/account",
   reset_url: "https://example.com/reset-password?token=demo",
   invoice_period_start: "25/10/2026",

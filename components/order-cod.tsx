@@ -1,11 +1,15 @@
 "use client";
 import { useRef, useState } from "react";
-import { Banknote, Truck } from "lucide-react";
+import { Banknote, Truck, Store } from "lucide-react";
 import Select from "./ui-select";
 import { api, useShop } from "./context";
 import { money } from "./home";
-import { codOutstanding, codPayerLabel, isPaidCOD } from "@/lib/cod-policy";
-import { paymentMethods } from "@/lib/order-workflow";
+import { codOutstanding, collectionOutstanding, codPayerLabel, isPaidCOD } from "@/lib/cod-policy";
+import { isPickup, orderMethodLabel } from "@/lib/order-fulfillment";
+
+export function PickupTag({ order }: { order: any }) {
+  return isPickup(order) ? <span className="tag order-pickup-tag"><Store size={12} aria-hidden="true" />Khách lấy tại cửa hàng</span> : null;
+}
 
 export function CODMonitor({ stats }: { stats?: {
   awaiting_count: number | string;
@@ -41,7 +45,7 @@ export function OrderMethodTag({ order }: { order: any }) {
   if (isPaidCOD(order)) return null;
   return (
     <span className={"tag order-method-" + order.payment_method}>
-      {paymentMethods[order.payment_method] || "Chưa xác định"}
+      {orderMethodLabel(order)}
     </span>
   );
 }
@@ -50,7 +54,9 @@ export function OrderPaymentSummary({ order }: { order: any }) {
   return (
     <div className="order-method-summary">
       <OrderMethodTag order={order} />
-      <CODSummary order={order} />
+      {isPickup(order) && collectionOutstanding(order) > 0
+        ? <small className="cod-outstanding">Còn phải thu tại quầy: {money(collectionOutstanding(order))}</small>
+        : <CODSummary order={order} />}
     </div>
   );
 }
@@ -73,10 +79,12 @@ export function CODReceiptFields({
   due,
   full = false,
   partial = false,
+  pickup = false,
 }: {
   due: number;
   full?: boolean;
   partial?: boolean;
+  pickup?: boolean;
 }) {
   return (
     <fieldset className="manual-fieldset cod-receipt-fields">
@@ -120,8 +128,7 @@ export function CODReceiptFields({
         Tôi xác nhận cửa hàng đã thực nhận số tiền này.
       </label>
       <p className="small">
-        Chỉ ghi nhận tiền đã vào cửa hàng. Nếu đơn vị giao hàng đang giữ tiền,
-        chờ đối soát trước khi xác nhận.
+        {pickup ? "Chỉ ghi nhận số tiền cửa hàng đã thực nhận từ khách mua tại quầy." : "Chỉ ghi nhận tiền đã vào cửa hàng. Nếu đơn vị giao hàng đang giữ tiền, chờ đối soát trước khi xác nhận."}
       </p>
     </fieldset>
   );
@@ -147,14 +154,14 @@ export default function OrderCODReceipt({
     key = useRef("");
   const [error, setError] = useState(""),
     lock = useRef(false);
-  const due = codOutstanding(order);
+  const due = collectionOutstanding(order);
   if (due <= 0) return null;
   return (
     <details className="order-secondary cod-receipt">
-      <summary>Xác nhận đã thu COD</summary>
+      <summary>{isPickup(order) ? "Xác nhận đã thu tại quầy" : "Xác nhận đã thu COD"}</summary>
       <p className="small">
         {codPayerLabel(order)} · Còn phải thu {money(due)}. Giữ nguyên phương
-        thức đặt hàng là COD.
+        thức đặt hàng đã chọn.
       </p>
       <form
         onSubmit={async (e) => {
@@ -175,7 +182,7 @@ export default function OrderCODReceipt({
               ),
             );
             await onSaved();
-            toast("Đã ghi nhận thu COD.");
+            toast(isPickup(order) ? "Đã ghi nhận thu tại quầy." : "Đã ghi nhận thu COD.");
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -185,14 +192,14 @@ export default function OrderCODReceipt({
         }}
       >
         <fieldset className="manual-fieldset" disabled={disabled}>
-          <CODReceiptFields due={due} />
+          <CODReceiptFields due={due} pickup={isPickup(order)} />
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
           <button className="button secondary" disabled={disabled}>
-            Xác nhận đã thu COD
+            {isPickup(order) ? "Xác nhận đã thu tại quầy" : "Xác nhận đã thu COD"}
           </button>
         </fieldset>
       </form>

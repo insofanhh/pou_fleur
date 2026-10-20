@@ -39,6 +39,7 @@ export async function reschedule(id: number, actor: number, body: any) {
     );
     const o = rows[0];
     if (!o) throw new HttpError(404, "Không tìm thấy đơn.");
+    if (o.fulfillment_method === "pickup") throw new HttpError(409, "Đơn nhận ngay tại cửa hàng không có lịch giao để đổi.");
     if (o.version !== b.version)
       throw new HttpError(409, "Đơn vừa thay đổi. Tải lại trước khi đổi lịch.");
     if (!["pending", "confirmed", "preparing", "ready"].includes(o.status))
