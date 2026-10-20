@@ -1,3 +1,4 @@
+import { orderSessionView, expireStoreOrderSessions } from "./order-payment-sessions";
 import { hanoiDateKey } from "./date-time";
 import { isPickup, orderStateLabel } from "./order-fulfillment";
 import { tenantId } from "./tenant";
@@ -154,6 +155,7 @@ export async function createOrder(
   userId: number | null,
   checkoutOwner?: string,
 ) {
+  await expireStoreOrderSessions();
   const store = await assertStoreOpen();
   const today = hanoiDateKey();
   const date = new Date(body.deliveryDate + "T00:00:00+07:00");
@@ -186,7 +188,7 @@ export async function createOrder(
     if (!store.settings.open)
       throw new HttpError(409, "Cửa hàng đang tạm nghỉ.");
     const [existing] = await c.execute(
-      "SELECT reference,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
+      "SELECT * FROM orders WHERE idempotency_key=?",
       [body.idempotencyKey],
     );
     const previous = (existing as any[])[0];
@@ -199,7 +201,8 @@ export async function createOrder(
       )
         throw new HttpError(409, "Yêu cầu không hợp lệ.");
       await c.commit();
-      return { reference: previous.reference };
+      const [sessions]: any = await c.execute("SELECT * FROM payment_intents WHERE order_id=? AND kind='order' ORDER BY id DESC LIMIT 1", [previous.id]);
+      return { reference: previous.reference, total: previous.total, payment: sessions[0] ? orderSessionView(sessions[0], previous) : null };
     }
     await validateFulfillment(c, store, body);
     const quote = await calculate(c, body, true);
@@ -336,7 +339,7 @@ export async function createOrder(
       (e instanceof HttpError && e.status === 409)
     ) {
       const [rows] = await c.execute(
-        "SELECT reference,total,email,user_id,checkout_owner FROM orders WHERE idempotency_key=?",
+        "SELECT * FROM orders WHERE idempotency_key=?",
         [body.idempotencyKey],
       );
       const previous = (rows as any[])[0];
@@ -346,8 +349,10 @@ export async function createOrder(
         (userId
           ? previous.user_id === userId
           : checkoutOwner && previous.checkout_owner === checkoutOwner)
-      )
-        return { reference: previous.reference, total: previous.total };
+      ) {
+        const [sessions]: any = await c.execute("SELECT * FROM payment_intents WHERE order_id=? AND kind='order' ORDER BY id DESC LIMIT 1", [previous.id]);
+        return { reference: previous.reference, total: previous.total, payment: sessions[0] ? orderSessionView(sessions[0], previous) : null };
+      }
     }
     throw e;
   } finally {
@@ -368,6 +373,7 @@ export async function changeOrder(
     codPayment?: unknown;
   } = {},
 ) {
+  await expireStoreOrderSessions();
   const c = await pool.getConnection();
   try {
     await c.beginTransaction();
@@ -525,6 +531,7 @@ export async function changeOrder(
       }
     }
     if (status === "cancelled") {
+      await c.execute("UPDATE payment_intents SET status='cancelled' WHERE order_id=? AND kind='order' AND status='pending'", [id]);
       const [items] = await c.execute(
         "SELECT product_id,quantity FROM order_items WHERE order_id=? AND product_id IS NOT NULL AND line_type='catalog' ORDER BY product_id",
         [id],

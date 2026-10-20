@@ -1,3 +1,4 @@
+import { expireStoreOrderSessions } from "./order-payment-sessions";
 import { tenantId } from "./tenant";
 import { storeOwner, quota } from "./stores";
 import { z } from "zod";
@@ -110,6 +111,7 @@ export async function adminRead(area: string) {
         ? "products"
         : area,
   );
+  if (["orders", "overview", "board"].includes(area)) await expireStoreOrderSessions();
   if (area === "product-taxonomy") {
     const [categories, components] = await Promise.all([
       query("SELECT * FROM categories ORDER BY name"),

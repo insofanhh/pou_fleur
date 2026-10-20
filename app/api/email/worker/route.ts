@@ -1,3 +1,4 @@
+import { expireAllOrderSessions } from "@/lib/order-payment-sessions";
 import { processAutomations } from "@/lib/automations";
 import { processIdentityMail } from "@/lib/identity-mail";
 import { advanceBilling } from "@/lib/billing";
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const deadline = Date.now() + 45000;
+    const orderPayments = await expireAllOrderSessions();
     const billing = await advanceBilling();
     const automations = await processAutomations();
     const identity = await processIdentityMail();
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
     );
     const emails = await processAllStoreEmails(deadline);
     return NextResponse.json(
-      { automations, billing, identity, reminders, notifications, emails },
+      { orderPayments, automations, billing, identity, reminders, notifications, emails },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {

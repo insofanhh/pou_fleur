@@ -1397,6 +1397,26 @@ details p {
 .success-card .notice {
   width: 100%;
 }
+.order-qr-payment {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.order-qr-payment h3,
+.order-qr-payment p,
+.success-card .order-qr-payment p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.order-qr-payment h3 { font-size: 16px; color: #222; }
+.order-qr-payment > strong { font-size: 18px; color: #222; }
+.order-qr-payment .button-row { flex-wrap: wrap; justify-content: center; }
+.order-qr-payment .button { max-width: 100%; white-space: normal; }
+.order-qr-code { overflow-wrap: anywhere; }
 .toast {
   position: fixed;
   bottom: 24px;

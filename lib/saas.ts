@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { findBank } from "./bank-catalog";
+import { reconcileOrderSession, expireStoreOrderSessions } from "./order-payment-sessions";
 import { storeSepayAPI } from "./store-sepay";
 import { EXPERIENCE_PLAN_ID, isExperiencePlan } from "./plan-policy";
 import { recordActivity } from "./activity";
@@ -311,7 +314,7 @@ export async function saasAPI(
     await storeOwner();
     const s = await storeBy(tenantId());
     if (method === "GET")
-      return { ...s, bank: await activeBank(s.id), features: { goong: !!process.env.GOONG_API_KEY, sepay: !!process.env.SEPAY_WEBHOOK_SECRET } };
+      return { ...s, bank: await activeBank(s.id, undefined, true), features: { goong: !!process.env.GOONG_API_KEY, sepay: !!process.env.SEPAY_WEBHOOK_SECRET } };
     if (method === "PATCH") {
       const v = z
         .object({
@@ -327,7 +330,18 @@ export async function saasAPI(
           bank: z.object({ bank_code: z.string().trim().min(2).max(40), bank_name: z.string().trim().min(2).max(120), account_number: z.string().regex(/^\d{4,30}$/), account_holder: z.string().trim().min(2).max(160), enabled: z.boolean(), sepay_enabled: z.boolean(), auto_confirm_status: z.enum(["confirmed","preparing","ready"]) }).nullable().optional(),
         })
         .parse(b);
-      const r = await mutate(
+      if (v.bank) {
+        const canonical = findBank(v.bank.bank_code);
+        if (!canonical) throw new HttpError(400, "Chọn ngân hàng nhận tiền hợp lệ trong danh sách.");
+        v.bank.bank_code = canonical.bin;
+        v.bank.bank_name = canonical.name;
+      }
+      if (!v.bank && b.bank_enabled) throw new HttpError(400, "Chọn ngân hàng nhận tiền.");
+      const c = await pool.getConnection();
+      try {
+      await c.beginTransaction();
+      await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [s.id]);
+      const [r]: any = await c.execute(
         "UPDATE stores SET name=?,description=?,address=?,phone=?,lat=?,lng=?,radius_km=?,settings=?,version=version+1 WHERE id=? AND version=?",
         [
           v.name,
@@ -345,14 +359,33 @@ export async function saasAPI(
       if (!r.affectedRows)
         throw new HttpError(409, "Thông tin đã thay đổi. Hãy tải lại.");
       if (v.bank) {
-        await mutate("INSERT INTO store_bank_accounts(bank_code,bank_name,account_number,account_holder,enabled,sepay_enabled,auto_confirm_status) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE bank_code=VALUES(bank_code),bank_name=VALUES(bank_name),account_number=VALUES(account_number),account_holder=VALUES(account_holder),enabled=VALUES(enabled),sepay_enabled=VALUES(sepay_enabled),auto_confirm_status=VALUES(auto_confirm_status)", [v.bank.bank_code,v.bank.bank_name,v.bank.account_number,v.bank.account_holder,v.bank.enabled?1:0,v.bank.sepay_enabled?1:0,v.bank.auto_confirm_status]);
+        await c.execute("INSERT INTO store_bank_accounts(bank_code,bank_name,account_number,account_holder,enabled,sepay_enabled,auto_confirm_status) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE bank_code=VALUES(bank_code),bank_name=VALUES(bank_name),account_number=VALUES(account_number),account_holder=VALUES(account_holder),enabled=VALUES(enabled),sepay_enabled=VALUES(sepay_enabled),auto_confirm_status=VALUES(auto_confirm_status)", [v.bank.bank_code,v.bank.bank_name,v.bank.account_number,v.bank.account_holder,v.bank.enabled?1:0,v.bank.sepay_enabled?1:0,v.bank.auto_confirm_status]);
       }
+      await c.commit();
+      } catch (error) { await c.rollback(); throw error; }
+      finally { c.release(); }
+      // Existing QR destinations are immutable; close stale unpaid sessions.
+      const pending = await query<any[]>("SELECT reference_code FROM payment_intents WHERE kind='order' AND status='pending' ORDER BY id LIMIT 200");
+      for (const row of pending) await reconcileOrderSession(row.reference_code);
       await storeAudit(s.owner_id, "settings", "stores", String(s.id));
       return resultOK;
     }
   }
-  if (key === "payment-intents" && method === "GET") {
-    const code = z.string().regex(/^FLR-(ORD|SUB)-\d+-[A-Z0-9]+$/).parse(url.searchParams.get("code") || "");
+  if ((key === "payment-intents" && method === "GET") || (key === "payment-intents/cancel" && method === "POST")) {
+    const code = z.string().regex(/^FLR-(ORD|SUB)-\d+-[A-Z0-9]+$/).parse(method === "GET" ? url.searchParams.get("code") || "" : b.code);
+    if (code.startsWith("FLR-ORD-")) {
+      const [order] = await query<any[]>("SELECT o.user_id,o.checkout_owner,o.creation_source FROM orders o JOIN payment_intents p ON p.order_id=o.id WHERE p.reference_code=? AND p.kind='order'", [code]);
+      if (!order) throw new HttpError(404, "Không tìm thấy phiên thanh toán.");
+      const user = await currentUser();
+      const token = (await cookies()).get("fleur_checkout")?.value;
+      const owns = (user && Number(order.user_id) === user.id) || (token && order.checkout_owner === digest(token));
+      if (!owns) {
+        if (method !== "GET" && order.creation_source !== "manual") throw new HttpError(403, "Bạn không có quyền hủy phiên thanh toán này.");
+        await requirePermission("orders");
+      }
+      return reconcileOrderSession(code, method === "POST");
+    }
+    if (method !== "GET") throw new HttpError(400, "Không phải phiên thanh toán đơn hàng.");
     const rows = await query<any[]>("SELECT p.*,o.reference order_reference FROM payment_intents p LEFT JOIN orders o ON o.id=p.order_id WHERE p.reference_code=?", [code]);
     if (!rows[0]) throw new HttpError(404, "Không tìm thấy mã thanh toán.");
     return { ...rows[0], expired: parseDateTime(rows[0].expires_at, "utc").getTime() < Date.now() };
@@ -722,6 +755,7 @@ export async function saasAPI(
   }
   if (key === "workspace/analytics" && method === "GET") {
     await requirePermission("overview");
+    await expireStoreOrderSessions();
     const from = day.parse(
         url.searchParams.get("from") ||
           hanoiDateKey(Date.now() - 30 * 86400000),
@@ -735,6 +769,7 @@ export async function saasAPI(
   }
   if (key === "workspace/calendar" && method === "GET") {
     await requirePermission("orders");
+    await expireStoreOrderSessions();
     const from = day.parse(url.searchParams.get("from")),
       to = day.parse(url.searchParams.get("to"));
     if (

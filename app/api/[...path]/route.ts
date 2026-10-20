@@ -1,3 +1,4 @@
+import { expireStoreOrderSessions } from "@/lib/order-payment-sessions";
 import { enqueueAccountWelcome } from "@/lib/system-email";
 import { requestPasswordReset, processIdentityMail } from "@/lib/identity-mail";
 import { cookies } from "next/headers";
@@ -216,6 +217,8 @@ async function handle(
     } else if (key === "orders" && method === "GET") {
       const user = await currentUser();
       if (!user) throw new HttpError(401, "Vui lòng đăng nhập.");
+      const pendingStores = await withSystem(() => query<any[]>("SELECT DISTINCT o.store_id FROM orders o JOIN payment_intents p ON p.order_id=o.id WHERE o.user_id=? AND p.kind='order' AND p.status='pending' AND p.expires_at<=UTC_TIMESTAMP() LIMIT 50", [user.id]));
+      for (const row of pendingStores) await withStore(Number(row.store_id), () => expireStoreOrderSessions());
       result = await withSystem(() =>
         query(
           "SELECT o.id,o.reference,o.user_id,o.customer_name,o.email,o.phone,o.address,o.recipient_name,o.recipient_phone,o.delivery_date,o.delivery_slot,o.message,o.notes,o.payment_method," + orderPaymentStatusSQL() + " payment_status,o.status,o.subtotal,o.discount,o.shipping,o.total,o.created_at,o.store_id,o.store_name,o.delivery_mode,o.version,s.slug store_slug,s.name current_store_name,(SELECT JSON_ARRAYAGG(JSON_OBJECT('name',product_name,'quantity',quantity,'size',size,'price',price,'image',image)) FROM order_items i WHERE i.order_id=o.id) items FROM orders o JOIN stores s ON s.id=o.store_id WHERE user_id=? ORDER BY o.id DESC",
@@ -259,6 +262,7 @@ async function handle(
         })
         .parse(body);
       await throttle("track:" + b.email, 30);
+      await expireStoreOrderSessions();
       const [order] = await query<any[]>(
         "SELECT reference,status,total,delivery_date,delivery_slot,created_at,fulfillment_method,picked_up_at,pickup_location_snapshot FROM orders WHERE reference=? AND email=?",
         [b.reference.toUpperCase(), b.email],

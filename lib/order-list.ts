@@ -1,3 +1,4 @@
+import { expireStoreOrderSessions } from "./order-payment-sessions";
 import { z } from "zod";
 import { query } from "./db";
 import { requirePermission } from "./auth";
@@ -14,6 +15,7 @@ export const orderStatuses = [
 ] as const;
 export async function orderList(url: URL) {
   await requirePermission("orders");
+  await expireStoreOrderSessions();
   const q = z
     .string()
     .max(100)

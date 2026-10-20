@@ -1,3 +1,4 @@
+import { findBank } from "./bank-catalog";
 import { storeSepayCredentials, verifyStoreSepayKey } from "./store-sepay";
 import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool } from "./db";
@@ -34,10 +35,12 @@ export async function sepayCredentials(c?: any): Promise<SepayCredentials | null
   return rows[0] || null;
 }
 
-export async function activeBank(storeId: number, c?: any): Promise<BankConfig | null> {
+export async function activeBank(storeId: number, c?: any, includeDisabled = false): Promise<BankConfig | null> {
   const runner = c || pool;
-  const [rows]: any = await runner.execute("SELECT bank_code,bank_name,account_number,account_holder,enabled,sepay_enabled,auto_confirm_status FROM store_bank_accounts WHERE store_id=? AND enabled=1", [storeId]);
-  return rows[0] || null;
+  const [rows]: any = await runner.execute("SELECT bank_code,bank_name,account_number,account_holder,enabled,sepay_enabled,auto_confirm_status FROM store_bank_accounts WHERE store_id=?" + (includeDisabled ? "" : " AND enabled=1"), [storeId]);
+  if (!rows[0]) return null;
+  const canonical = findBank(rows[0].bank_code);
+  return canonical ? { ...rows[0], bank_code: canonical.bin, bank_name: canonical.name } : rows[0];
 }
 
 // Subscription fees go to the platform, never to the merchant's own account.
@@ -62,10 +65,11 @@ export async function createIntent(c: any, storeId: number, kind: "order" | "sub
     }
   }
   const code = transferCode(kind, kind === "order" ? orderId! : invoiceId!);
-  const payload = JSON.stringify({ bankCode: bank.bank_code, accountNumber: bank.account_number, accountHolder: bank.account_holder, amount, addInfo: code });
-  const [r]: any = await withStore(storeId, () => c.execute("INSERT INTO payment_intents(order_id,invoice_id,kind,reference_code,amount,expires_at,qr_payload) VALUES(?,?,?,?,?,LEAST(DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE),COALESCE(?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))),?)", [orderId, invoiceId, kind, code, amount, validUntil || null, payload]));
+  const payload = JSON.stringify({ bankCode: bank.bank_code, bankName: bank.bank_name, accountNumber: bank.account_number, accountHolder: bank.account_holder, amount, addInfo: code });
+  const minutes = kind === "order" ? 5 : 10;
+  const [r]: any = await withStore(storeId, () => c.execute("INSERT INTO payment_intents(order_id,invoice_id,kind,reference_code,amount,expires_at,qr_payload) VALUES(?,?,?,?,?,LEAST(DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? MINUTE),COALESCE(?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? MINUTE))),?)", [orderId, invoiceId, kind, code, amount, minutes, validUntil || null, minutes, payload]));
   const [rows]: any = await withStore(storeId, () => c.execute("SELECT expires_at FROM payment_intents WHERE id=?", [r.insertId]));
-  return { id: r.insertId, code, amount, expiresAt: rows[0].expires_at.replace(" ","T")+"Z", qrUrl: vietQrUrl(bank, amount, code), bank };
+  return { id: r.insertId, code, amount, serverNow: new Date().toISOString(), expiresAt: rows[0].expires_at.replace(" ","T")+"Z", qrUrl: vietQrUrl(bank, amount, code), bank };
 }
 
 export function verifyWebhook(raw: string, headers: Headers, credentials?: SepayCredentials | null) {
@@ -128,6 +132,11 @@ export async function processWebhook(raw: string, body: any, headers: Headers, s
     const [rows]: any = await pool.execute("SELECT store_id FROM payment_intents WHERE reference_code=? AND kind='subscription'", [parsed.code]);
     if (rows[0]) await expirePlanChangeRequests(rows[0].store_id);
   });
+  // Expiry commits independently of a rejected late webhook.
+  const { reconcileOrderSession } = await import("./order-payment-sessions");
+  const [sessions]: any = await withSystem(() => pool.execute("SELECT store_id FROM payment_intents WHERE reference_code=? AND kind='order'", [parsed.code]));
+  if (sessions[0] && (storeId === undefined || Number(sessions[0].store_id) === storeId))
+    await withStore(Number(sessions[0].store_id), () => reconcileOrderSession(parsed.code));
   const c = await pool.getConnection();
   let mayLog = false;
   try {

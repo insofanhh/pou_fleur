@@ -1,4 +1,5 @@
 "use client";
+import OrderQRPayment from "./order-qr-payment";
 import DateInput from "./date-input";
 import { hanoiDateKey } from "@/lib/date-time";
 import Select from "./ui-select";
@@ -624,6 +625,19 @@ export function Checkout({ data }: { data: Catalog }) {
         .then(setQuote)
         .catch((e) => setError(e.message));
   }, [cart]);
+  useEffect(() => {
+    if (!ready || cart.length || success) return;
+    const saved = sessionStorage.getItem("fleur.order-payment." + storeRef(location.pathname));
+    if (!saved) return;
+    let disposed = false;
+    try {
+      const value = JSON.parse(saved);
+      api("payment-intents?code=" + encodeURIComponent(value.code)).then(payment => {
+        if (!disposed) setSuccess({reference: value.reference, total: payment.amount, payment});
+      }).catch(() => sessionStorage.removeItem("fleur.order-payment." + storeRef(location.pathname)));
+    } catch { sessionStorage.removeItem("fleur.order-payment." + storeRef(location.pathname)); }
+    return () => { disposed = true; };
+  }, [ready, cart.length, success]);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -654,6 +668,7 @@ export function Checkout({ data }: { data: Catalog }) {
         ...(paymentMethod === "cod" ? { codPayer: receivingSelf ? "buyer" : codPayer, codRecipientConsent } : {}),
       });
       setSuccess({ ...result, email: f.email });
+      if (result.payment) sessionStorage.setItem("fleur.order-payment." + storeRef(location.pathname), JSON.stringify({reference: result.reference, code: result.payment.code}));
       setCart([]);
       sessionStorage.removeItem("fleur.promo." + storeRef(location.pathname));
     } catch (e) {
@@ -670,25 +685,25 @@ export function Checkout({ data }: { data: Catalog }) {
             <Check size={32} />
           </span>
           <span className="eyebrow">THANK YOU, WITH LOVE</span>
-          <h1>Lời thương đã được gửi.</h1>
+          <h1>{success.payment ? "Đơn hàng của bạn" : "Lời thương đã được gửi."}</h1>
           <p>
             Fleurious đã nhận đơn <strong>{success.reference}</strong>.<br />
-            Đơn đang chờ cửa hàng xác nhận và sẽ được chuẩn bị theo lịch bạn
-            chọn.
+            {success.payment ? "Xem trạng thái thanh toán bên dưới. Cửa hàng sẽ cập nhật tiến độ đơn qua email." : "Đơn đang chờ cửa hàng xác nhận và sẽ được chuẩn bị theo lịch bạn chọn."}
           </p>
           <div className="notice">
-            {success.payment ? <>Vui lòng quét mã QR để thanh toán · {money(success.total || quote?.total || 0)}<br /><img src={success.payment.qrUrl} alt="Mã QR thanh toán" style={{ width: 220, maxWidth: "100%" }} /></> : <>Thanh toán khi nhận hoa · {money(success.total || quote?.total || 0)}</>}
+            {success.payment ? <OrderQRPayment payment={success.payment}/> : <>Thanh toán khi nhận hoa · {money(success.total || quote?.total || 0)}</>}
             <br />
             Vui lòng lưu mã đơn để tra cứu. Cửa hàng sẽ gửi cập nhật đơn qua
             email đã cung cấp.
           </div>
+          {success.payment && <Link className="button secondary" href="/shop" onClick={() => sessionStorage.removeItem("fleur.order-payment." + storeRef(location.pathname))}>Tiếp tục chọn hoa</Link>}
           <Link
             className="button"
             href={
               "/track-order?reference=" +
               success.reference +
               "&email=" +
-              encodeURIComponent(success.email)
+              encodeURIComponent(success.email || "")
             }
           >
             Theo dõi đơn hàng <ArrowRight size={18} />
@@ -903,7 +918,7 @@ export function Checkout({ data }: { data: Catalog }) {
               {codPayer === "recipient" && <label className="check-field"><input type="checkbox" checked={codRecipientConsent} onChange={e=>setCodRecipientConsent(e.target.checked)} required />Tôi đã thông báo và người nhận đồng ý thanh toán tiền đơn hoa khi nhận.</label>}
             </div>}
             <p className="small">
-              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 10 phút. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : !receivingSelf && codPayer === "buyer" ? "Bạn là người trả tiền. Vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao quà; cửa hàng không thu tiền người nhận." : "Thanh toán số tiền còn lại khi nhận hoa."}
+              {paymentMethod === "bank" ? "Mã QR có hiệu lực trong 5 phút. Chưa nhận tiền khi hết hạn, đơn tự hủy. Hệ thống sẽ tự xác nhận qua SePay khi tiền vào tài khoản." : !receivingSelf && codPayer === "buyer" ? "Bạn là người trả tiền. Vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao quà; cửa hàng không thu tiền người nhận." : "Thanh toán số tiền còn lại khi nhận hoa."}
             </p>
             <label className="check-field">
               <input name="consent" type="checkbox" />
