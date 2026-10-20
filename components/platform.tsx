@@ -1,5 +1,6 @@
 "use client";
 import DateInput from "./date-input";
+import { aiAllowance } from "@/lib/ai-policy";
 import { DashboardBrand } from "@/components/brand";
 import { useDashboardSidebar, SidebarControls, SidebarMobileClose, SidebarBackdrop } from "./dashboard-sidebar";
 
@@ -29,6 +30,7 @@ import {
   Mail,
   Search,
   Ban,
+  Bot,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 
@@ -37,7 +39,7 @@ function PlatformPlans({ plans, toast, refresh }: { plans: any[]; toast: (messag
   return <form className="panel" onSubmit={async e => {
     e.preventDefault(); if(busy) return; const f = new FormData(e.currentTarget); setBusy(true);
     try {
-      for (const p of plans) await api("platform/plans/"+p.id,"PATCH",{name:String(f.get(p.id+"-name")).trim(),monthly_price:Number(f.get(p.id+"-price")),trial_days:Number(f.get(p.id+"-trial")),limits:{products:Number(f.get(p.id+"-products")),staff:Number(f.get(p.id+"-staff")),storage_mb:Number(f.get(p.id+"-storage_mb")),email_sends:Number(f.get(p.id+"-email_sends"))}});
+      for (const p of plans) await api("platform/plans/"+p.id,"PATCH",{name:String(f.get(p.id+"-name")).trim(),monthly_price:Number(f.get(p.id+"-price")),trial_days:Number(f.get(p.id+"-trial")),limits:{products:Number(f.get(p.id+"-products")),staff:Number(f.get(p.id+"-staff")),storage_mb:Number(f.get(p.id+"-storage_mb")),email_sends:Number(f.get(p.id+"-email_sends")),ai_messages:Number(f.get(p.id+"-ai_messages"))}});
       toast("Đã lưu cấu hình. Cửa hàng đã đăng ký giữ ưu đãi được cấp."); await refresh();
     } catch(err) { toast((err as Error).message); } finally { setBusy(false); }
   }}>
@@ -45,7 +47,7 @@ function PlatformPlans({ plans, toast, refresh }: { plans: any[]; toast: (messag
     <div className="platform-plan-list">{plans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; return <article className="platform-plan-card" key={p.id}>
       <div className="platform-plan-card-header"><div><h4>{p.name}</h4><p className="small">{p.pending_offers || 0} cửa hàng chờ duyệt · {p.trialing_stores || 0} đang dùng thử</p></div><span className="plan-price">{money(Number(p.monthly_price))}<small>/tháng</small></span></div>
       <div className="platform-plan-fields"><label className="field">Tên gói<input required name={p.id+"-name"} defaultValue={p.name}/></label><label className="field">Giá / tháng<input required name={p.id+"-price"} type="number" min="0" max="100000000" defaultValue={p.monthly_price}/></label><label className="field">Dùng thử (ngày)<input required name={p.id+"-trial"} type="number" min="0" max="90" defaultValue={p.trial_days}/><small>{Number(p.id)===1 ? "Tự động áp dụng cho cửa hàng đầu tiên" : "Lượt trải nghiệm dùng chung"}</small></label></div>
-      <div className="platform-limit-box"><strong>Hạn mức sử dụng</strong><div className="platform-limit-grid">{[["products","Sản phẩm đang bán",100000],["staff","Nhân sự hoạt động",10000],["storage_mb","Dung lượng (MB)",1000000],["email_sends","Email cửa hàng / tháng",1000000]].map(([key,label,max]) => <label className="field" key={key}>{label}<input required type="number" min="1" max={Number(max)} name={p.id+"-"+key} defaultValue={limits[key] || 1}/></label>)}</div></div>
+      <div className="platform-limit-box"><strong>Hạn mức sử dụng</strong><div className="platform-limit-grid">{[["products","Sản phẩm đang bán",100000],["staff","Nhân sự hoạt động",10000],["storage_mb","Dung lượng (MB)",1000000],["email_sends","Email cửa hàng / tháng",1000000],["ai_messages","Lượt AI / tháng",100000]].map(([key,label,max]) => <label className="field" key={key}>{label}<input required type="number" min={key === "ai_messages" ? 0 : 1} max={Number(max)} name={p.id+"-"+key} defaultValue={key === "ai_messages" ? aiAllowance(Number(p.id), limits) : (limits[key] ?? 1)}/></label>)}</div></div>
       <p className="small">Giá và quyền lợi đã cam kết được giữ theo phiên bản; cấu hình mới áp dụng khi đăng ký hoặc chọn gói cho kỳ tiếp theo. 0 ngày: không dùng thử. Giá 0 VNĐ: vẫn miễn phí sau thử.</p>
     </article>; })}</div>
   </form>;
@@ -73,6 +75,39 @@ function TrialExtension({ detail, action }: { detail:any; action:(path:string, m
 
 function PlatformSepay({ sepay, setSepay, sepayBusy, setSepayBusy, toast }: { sepay: any; setSepay: (value: any) => void; sepayBusy: boolean; setSepayBusy: (value: boolean) => void; toast: (message: string) => void }) {
   return <div className="panel"><div className="flex-between"><h3>SePay webhook</h3><button className="button secondary" disabled={sepayBusy} onClick={async()=>{setSepayBusy(true);try{const r=await api("platform/sepay/credentials");setSepay(r)}catch(e){toast((e as Error).message)}finally{setSepayBusy(false)}}}>Kiểm tra cấu hình</button></div>{sepay && <><p className="small">Webhook URL: <code>{sepay.webhookUrl}</code></p>{sepay.configured ? <p>Đã tạo credential · API key kết thúc bằng <strong>••••{sepay.api_last4}</strong> · secret kết thúc bằng <strong>••••{sepay.secret_last4}</strong></p> : <p>Chưa có credential. Hãy tạo mới để dán vào SePay.</p>}<button className="button" disabled={sepayBusy} onClick={async()=>{setSepayBusy(true);try{const r=await api("platform/sepay/credentials","POST",{});setSepay(r);toast("Đã tạo credential SePay. Hãy copy và lưu ngay.")}catch(e){toast((e as Error).message)}finally{setSepayBusy(false)}}}>{sepay?.configured ? "Tạo lại credential" : "Tạo credential"}</button>{sepay?.webhookSecret && <div className="notice"><p><strong>Webhook secret</strong></p><input readOnly value={sepay.webhookSecret} onFocus={e=>e.currentTarget.select()}/><button className="button secondary" onClick={()=>navigator.clipboard.writeText(sepay.webhookSecret)}>Copy secret</button><p><strong>API key</strong></p><input readOnly value={sepay.apiKey} onFocus={e=>e.currentTarget.select()}/><button className="button secondary" onClick={()=>navigator.clipboard.writeText(sepay.apiKey)}>Copy API key</button><p className="small">Credential chỉ hiển thị đầy đủ một lần. Nếu tạo lại, credential cũ sẽ bị vô hiệu hóa.</p></div>}</> }</div>;
+}
+
+function PlatformAI({ config, refresh, toast }: { config: any; refresh: () => Promise<void>; toast: (message: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
+  return <form className="panel" onSubmit={async e => {
+    e.preventDefault(); if (busy) return;
+    const form = e.currentTarget, f = new FormData(form);
+    setBusy(true);
+    try {
+      await api("platform/ai", "PATCH", { enabled: f.get("enabled") === "on", model: String(f.get("model")), maxOutputTokens: Number(f.get("maxOutputTokens")), ...(String(f.get("apiKey") || "") ? { apiKey: String(f.get("apiKey")) } : {}), removeKey: f.get("removeKey") === "on" });
+      const keyInput = form.querySelector<HTMLInputElement>('input[name="apiKey"]'); if (keyInput) keyInput.value = "";
+      toast("Đã lưu cấu hình trợ lý DeepSeek."); await refresh();
+    } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  }}>
+    <div className="section-heading"><div><h3><Bot size={19} /> Trợ lý AI DeepSeek</h3><p className="small">Có trong gói Khởi đầu, Studio và Atelier; hạn mức do admin platform cấu hình. API key được mã hóa phía server, không hiển thị lại trong trình duyệt.</p></div><button className="button" disabled={busy || !config?.encryptionReady}>{busy ? "Đang lưu…" : "Lưu cấu hình"}</button></div>
+    <div className="form-grid">
+      <label className="field">Model<select name="model" defaultValue={config?.model || "deepseek-flash"}><option value="deepseek-flash">DeepSeek Flash · tác vụ thường xuyên</option><option value="deepseek-v4-pro">DeepSeek V4 Pro · phân tích phức tạp</option></select></label>
+      <label className="field">Giới hạn output token<input name="maxOutputTokens" type="number" min="256" max="3000" defaultValue={config?.maxOutputTokens || 1400} /></label>
+    </div>
+    <label className="field">API key DeepSeek {config?.configured && <small>Đã cấu hình; nhập key mới nếu cần thay thế.</small>}<input name="apiKey" type="password" autoComplete="new-password" placeholder={config?.configured ? "Giữ nguyên key hiện tại" : "Nhập API key phía server"} /></label>
+    <label className="platform-user-check"><input name="enabled" type="checkbox" defaultChecked={!!config?.enabled} disabled={!config?.configured} />Bật trợ lý AI cho các store thuộc Khởi đầu, Studio và Atelier</label>
+    <label className="platform-user-check"><input name="removeKey" type="checkbox" disabled={!config?.configured} />Xóa key đã lưu và tắt kết nối</label>
+    {!config?.encryptionReady && <p className="error">Thiếu CREDENTIAL_ENCRYPTION_KEY (tối thiểu 32 ký tự) hoặc CRON_SECRET đủ dài trên server.</p>}
+    <p className="small">Nhắc việc nền: scheduler gọi <code>/api/ai/reminders</code> mỗi phút bằng header Authorization: Bearer CRON_SECRET. Vercel Hobby cần scheduler ngoài để nhắc sát giờ; worker hiện có hằng ngày vẫn xử lý bù. Không đưa secret vào URL.</p>
+    {config?.configured && <button type="button" className="button secondary" disabled={testBusy} onClick={async () => { setTestBusy(true); try { const r = await api("platform/ai/test", "POST", {}); toast(`Kết nối DeepSeek thành công · ${r.inputTokens + r.outputTokens} token kiểm tra.`); } catch (e) { toast((e as Error).message); } finally { setTestBusy(false); } }}>{testBusy ? "Đang kiểm tra…" : "Kiểm tra kết nối"}</button>}
+  </form>;
+}
+function PlatformAIIssues({ toast }: { toast: (s: string) => void }) {
+  const [rows, setRows] = useState<any[]>([]), [busy, setBusy] = useState("");
+  const load = async () => setRows(await api("platform/ai/issues"));
+  useEffect(() => { void load().catch(e => toast(e.message)); }, []);
+  return <section className="panel"><h3>Báo lỗi từ trợ lý AI</h3><p className="small">Ticket do nhân viên cửa hàng xác nhận gửi. AI không tự sửa hệ thống.</p>{!rows.length ? <p>Chưa có báo lỗi.</p> : rows.map(r => <article className="ai-attention" key={r.id}><div><strong>{r.title}</strong><p>{r.store_name} · {r.user_name} · {formatDateTime(r.created_at)}</p><p>{r.content}</p><small>{r.page} · {r.status === "new" ? "Mới" : r.status === "reviewing" ? "Đang xử lý" : "Đã giải quyết"}</small></div><select aria-label={"Trạng thái " + r.title} value={r.status} disabled={!!busy} onChange={async e => { setBusy(r.id); try { await api("platform/ai/issues/" + r.id, "PATCH", { status: e.target.value }); await load(); } catch (err) { toast((err as Error).message); } finally { setBusy(""); } }}><option value="new">Mới</option><option value="reviewing">Đang xử lý</option><option value="resolved">Đã giải quyết</option></select></article>)}</section>;
 }
 export default function Platform({
   area: initialArea = "overview",
@@ -372,6 +407,7 @@ export default function Platform({
               </div>
               {!!data.paymentIssues?.length && <section className="panel table-scroll"><h3>Giao dịch cần đối soát</h3><p className="small">Các giao dịch chưa áp dụng được không tự cộng kỳ sử dụng. Kiểm tra ngân hàng và hóa đơn trước khi xác nhận thủ công.</p><table><thead><tr><th>Mã giao dịch SePay</th><th>Lý do</th><th>Thời điểm</th></tr></thead><tbody>{data.paymentIssues.map((i:any)=><tr key={i.provider_event_id}><td>{i.provider_event_id}</td><td>{i.error_message}</td><td>{formatDateTime(i.received_at)}</td></tr>)}</tbody></table></section>}
               <PlatformSepay sepay={sepay} setSepay={setSepay} sepayBusy={sepayBusy} setSepayBusy={setSepayBusy} toast={toast} />
+              <PlatformAI key={JSON.stringify(data.deepseek)} config={data.deepseek} refresh={refresh} toast={toast} /><PlatformAIIssues toast={toast} />
               <form className="panel" key={JSON.stringify(data.billingBank)} onSubmit={async (e) => {
                 e.preventDefault(); const values = Object.fromEntries(new FormData(e.currentTarget));
                 try { await api("platform/config", "PATCH", { billingBank: { ...values, enabled: values.enabled === "on" } }); toast("Đã lưu ngân hàng nhận phí dịch vụ."); await refresh(); } catch (error) { toast((error as Error).message); }

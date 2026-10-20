@@ -1,0 +1,17 @@
+import { migrateStarterAI } from "./starter-ai-schema.mjs";
+// Additive and rerunnable. No customer/order/payment data is rewritten.
+export async function migrateAI(c) {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS ai_conversations(id CHAR(36) PRIMARY KEY,store_id INT NOT NULL,user_id INT NOT NULL,role_scope VARCHAR(30) NOT NULL,title VARCHAR(100) NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,INDEX ai_history(store_id,user_id,updated_at))`,
+    `CREATE TABLE IF NOT EXISTS ai_runs(id CHAR(36) PRIMARY KEY,store_id INT NOT NULL,user_id INT NOT NULL,conversation_id CHAR(36) NOT NULL,request_hash CHAR(64) NOT NULL,month_key CHAR(7) NOT NULL,model VARCHAR(80) NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'running',input_tokens INT NOT NULL DEFAULT 0,output_tokens INT NOT NULL DEFAULT 0,error_code VARCHAR(50) NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,finished_at DATETIME NULL,lease_until DATETIME NOT NULL,INDEX ai_quota(store_id,month_key,status),INDEX ai_lease(store_id,status,lease_until))`,
+    `CREATE TABLE IF NOT EXISTS ai_messages(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,conversation_id CHAR(36) NOT NULL,run_id CHAR(36) NOT NULL,role VARCHAR(20) NOT NULL,content TEXT NOT NULL,cards JSON NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX ai_thread(store_id,conversation_id,id))`,
+    `CREATE TABLE IF NOT EXISTS ai_tool_calls(id BIGINT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,run_id CHAR(36) NOT NULL,tool_name VARCHAR(100) NOT NULL,status VARCHAR(20) NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX ai_tool_run(store_id,run_id))`,
+    `CREATE TABLE IF NOT EXISTS ai_action_drafts(id CHAR(36) PRIMARY KEY,store_id INT NOT NULL,user_id INT NOT NULL,conversation_id CHAR(36) NOT NULL,run_id CHAR(36) NOT NULL,kind VARCHAR(30) NOT NULL,payload JSON NOT NULL,preview JSON NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'pending',result JSON NULL,expires_at DATETIME NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY ai_run_action(run_id,kind),INDEX ai_pending(store_id,user_id,status))`,
+    `CREATE TABLE IF NOT EXISTS workspace_reminders(id CHAR(36) PRIMARY KEY,store_id INT NOT NULL,user_id INT NOT NULL,created_by INT NOT NULL,title VARCHAR(160) NOT NULL,content TEXT NOT NULL,due_at DATETIME NOT NULL,order_id INT NULL,order_day DATE NULL,order_slot VARCHAR(40) NULL,status VARCHAR(20) NOT NULL DEFAULT 'scheduled',generation INT NOT NULL DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,INDEX reminder_due(store_id,status,due_at))`,
+    `CREATE TABLE IF NOT EXISTS ai_issue_reports(id CHAR(36) PRIMARY KEY,store_id INT NOT NULL,user_id INT NOT NULL,title VARCHAR(160) NOT NULL,content TEXT NOT NULL,page VARCHAR(200) NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'new',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,INDEX ai_issues(store_id,status))`,
+    `CREATE TABLE IF NOT EXISTS store_ai_settings(store_id INT PRIMARY KEY,knowledge TEXT NOT NULL,remind_minutes INT NOT NULL DEFAULT 60,enabled BOOLEAN NOT NULL DEFAULT 1,version INT NOT NULL DEFAULT 1,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
+  ];
+  for (const sql of statements) await c.query(sql);
+  await migrateStarterAI(c);
+  await c.query("INSERT IGNORE INTO schema_migrations(version) VALUES('store-ai-v1')");
+}

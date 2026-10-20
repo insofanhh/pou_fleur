@@ -1,6 +1,6 @@
 # Chính sách dùng thử theo tài khoản
 
-Chính sách cập nhật ngày 19/10/2026. Gói Khởi đầu là quyền onboarding cố định
+Chính sách cập nhật ngày 20/10/2026. Gói Khởi đầu là quyền onboarding cố định
 cho cửa hàng đầu tiên; tài khoản chỉ còn một lượt trải nghiệm có thể tự chọn
 cho các gói còn lại.
 
@@ -31,7 +31,7 @@ Không có chuẩn chung bắt buộc mọi SaaS phải cho một hoặc hai lư
 - Nếu đăng ký trực tiếp gói khác, lượt `discovery` được xử lý theo cấu hình gói; quyền onboarding Khởi đầu vẫn chỉ phát sinh khi tài khoản đăng ký gói Khởi đầu lần đầu.
 - Đăng ký store giữ lượt trong transaction và chốt phiên bản gói/ngày thử, nhưng chỉ đếm ngày khi được duyệt. Store khác của cùng tài khoản không được giữ cùng lượt. Từ chối/đóng store chưa bắt đầu sẽ trả lượt giữ; lượt đã bắt đầu không hoàn lại.
 - Khi đăng ký từ workspace: xem trước giá sau thử, hạn mức, ngày bắt đầu/kết thúc, bảo toàn kỳ đã mua và cảnh báo vượt quota. Xác nhận mới giữ lượt; preview không ghi dữ liệu. Báo giá có hạn 15 phút, kiểm tra lại dưới khóa tài khoản và store.
-- Kỳ thử mới nối sau quyền hiện tại, các kỳ đã mua và lượt thử đã xếp lịch. Không cắt ngắn hoặc cho chồng lấn kỳ đã cấp. Nếu đang hết quyền, bắt đầu ngay sau xác nhận. Lượt đã giữ không tự được chuyển sang gói khác hoặc cấp lại bằng cách hủy; UI nêu rõ trước xác nhận.
+- Khi đang dùng thử Khởi đầu hoặc kỳ miễn phí, xác nhận discovery sẽ đổi gói và hạn mức ngay. Lượt Khởi đầu kết thúc và không được hoàn lại; gói mới nhận đúng N ngày snapshot tính từ lúc xác nhận, không cộng phần thử cũ. Nếu đang hết quyền, cũng bắt đầu ngay. Nếu có thời gian đã trả tiền, discovery nối sau toàn bộ các kỳ đã mua, giữ nguyên sổ thanh toán. Lượt đã giữ không tự được chuyển sang gói khác hoặc cấp lại bằng cách hủy; UI nêu rõ trước xác nhận.
 - Có thể dùng quyền onboarding và lượt `discovery` trên cùng store hoặc ở các store khác nhau; tổng là một quyền starter tự động và một lượt discovery theo owner. Nhân viên không có quyền đăng ký thử. Store bị platform đóng băng không được dùng lượt mới để vượt khóa.
 - Có hóa đơn thu một phần hoặc công nợ lịch sử: yêu cầu xử lý trước. Hóa đơn tương lai chưa thu và kỳ miễn phí chưa bắt đầu được thay bằng lượt thử, hủy QR và nhắc liên quan cùng transaction. Không xóa ledger hoặc sửa kỳ đã nhận tiền.
 - Ngày starter lấy từ `plans.trial_days` và được snapshot theo phiên bản gói tại đăng ký. Với discovery, ngày thử cũng là snapshot phiên bản gói tại đăng ký; một ngày bằng 24 giờ UTC. Thay ngày/giá/hạn mức chỉ áp dụng lượt đăng ký mới. 0 ngày tắt trial và không tiêu lượt. Cấu hình thay đổi khi đang preview yêu cầu xem lại.
@@ -49,6 +49,8 @@ Giới hạn theo tài khoản không nhận diện tuyệt đối một cá nh�
 
 Migration `account-trials-v1` ghi nhận các lần thử cũ theo owner/nhóm, ưu tiên lịch sử sớm nhất, và giữ offer đang chờ duyệt. Các trial cũ đã cấp được giữ nguyên kể cả nhiều store từng cùng nhận một nhóm; không thu hồi quyền đã cấp, nhưng owner không được nhận lại nhóm đó. Khi admin đổi `trial_days`, giá trị mới chỉ áp dụng đăng ký starter/discovery mới; không kéo dài hoặc rút ngắn trial cũ. Không đổi thời gian/giá hóa đơn hoặc ledger khi migration.
 
+Sửa lỗi xếp lịch ngày 20/10: khi kiểm tra quyền truy cập, discovery chưa bắt đầu và đang xếp sau một kỳ Khởi đầu còn hạn sẽ được đưa lên ngay, với đúng số ngày đã chốt. Không sửa lịch nếu có kỳ trả tiền còn hạn, công nợ/thu một phần, QR thanh toán đang chờ, store bị platform khóa hoặc toàn bộ cửa sổ thử đã qua. Hóa đơn gia hạn chưa thu và không có QR của lịch cũ được vô hiệu hóa cùng nhắc thanh toán; mail bắt đầu dùng thử có khóa chống gửi trùng. Không cần đổi schema cho bản sửa này.
+
 Local: `node --env-file=.env.local scripts/migrate-local-trial.mjs` sao lưu, thử restore/migration hai lần và đối chiếu business data trước khi cập nhật. TiDB/production cần backup và restore drill rồi chạy migration SaaS theo quy trình hiện có trước khi deploy code; không tự deploy trong lần này.
 
 ## Kiểm thử
@@ -57,6 +59,7 @@ Chỉ dùng QA MySQL port 3310, `fleur_saas_test`, production snapshot port 3005
 
 ```powershell
 npm run test:account-trials -- --ui
+npm run test:account-trials -- --db-only
 npm run test:timeout-migration
 npm run test:trial-billing -- --ui
 npm run test:plan-changes -- --ui
@@ -66,3 +69,5 @@ npm test
 ```
 
 Các bài thử dùng ngân hàng giả và SMTP mock, không chuyển tiền hoặc gửi mail thật. Ảnh QA: `.local/account-trial-qa/`.
+
+Ngày 20/10, 41 kiểm tra trực tiếp database QA thành công với `--db-only`, gồm chuyển ngay, sửa lịch cũ, giữ N ngày snapshot, không reset khi tải lại, không gửi trùng mail, bảo toàn kỳ trả tiền/QR và tranh lượt đồng thời. Chế độ này không khởi chạy hoặc thay thế các kiểm thử HTTP/UI.

@@ -334,13 +334,44 @@ export async function accountTrialAvailability(
   });
 }
 
-// Scheduled trials never overlap paid coverage or replace an active entitlement.
+// Trial/free time does not delay discovery. Cash-paid coverage always does.
+function discoveryStart(sub: any, invoices: any[], time: string) {
+  return [time,
+    ...(!sub.trial_ends_at && Number(sub.monthly_price) > 0 && endOf(sub) ? [endOf(sub)!] : []),
+    ...invoices.filter(i => i.status === "paid" && Number(i.amount) > 0 && i.effective_end_at > time).map(i => i.effective_end_at),
+  ].sort().at(-1)!;
+}
+
+// Repair discovery claims queued behind the onboarding trial by the old policy.
+// Never move a purchased period, restart an elapsed claim, or alter a live QR.
+async function bringForwardDiscovery(c: PoolConnection, sid: number, sub: any, time: string) {
+  if (Number(sub.plan_id) !== 1 || !sub.trial_ends_at || sub.trial_ends_at <= time) return;
+  const [claims]: any = await c.execute("SELECT * FROM account_trial_claims WHERE store_id=? AND bucket='discovery' AND activated_at IS NULL AND starts_at>? AND ends_at>? FOR UPDATE", [sid, time, time]);
+  const claim = claims[0];
+  if (!claim) return;
+  const [stores]: any = await c.execute("SELECT owner_id,status,billing_suspended FROM stores WHERE id=?", [sid]);
+  if (Number(stores[0]?.owner_id) !== Number(claim.user_id) || !["approved", "suspended"].includes(stores[0]?.status) || (stores[0]?.status === "suspended" && !stores[0]?.billing_suspended)) return;
+  const [invoices]: any = await c.execute("SELECT * FROM invoices WHERE store_id=? AND status<>'void' FOR UPDATE", [sid]);
+  if (discoveryStart(sub, invoices, time) > time || invoices.some((i: any) => i.status === "open" && (Number(i.paid) > 0 || (i.starts_at || i.period_start || "") < time))) return;
+  const [payments]: any = await c.execute("SELECT pi.id FROM payment_intents pi JOIN invoices i ON i.id=pi.invoice_id AND i.store_id=pi.store_id WHERE i.store_id=? AND i.status='open' LIMIT 1", [sid]);
+  if (payments.length) return;
+  for (const i of invoices.filter((i: any) => i.status === "open" || (i.status === "paid" && Number(i.amount) === 0 && !i.activated_at))) {
+    await c.execute("UPDATE invoices SET status='void',void_reason='trial_selected' WHERE id=?", [i.id]);
+    await cancelReminders(c, sid, i.id, "ACCOUNT_TRIAL_STARTED");
+  }
+  await c.execute("UPDATE account_trial_claims SET starts_at=?,ends_at=? WHERE user_id=? AND bucket='discovery'", [time, addDays(time, Number(claim.trial_days)), claim.user_id]);
+  await c.execute("UPDATE email_outbox SET status='cancelled',last_error='TRIAL_STARTED_IMMEDIATELY' WHERE store_id=? AND dedupe_key=? AND status IN ('pending','failed')", [sid, `subscription_trial_reserved:trial-${claim.user_id}-discovery`]);
+  await c.execute("INSERT INTO audit_logs(store_id,user_id,action,entity,entity_id,detail) VALUES(?,?,'account_trial_brought_forward','subscriptions',?,?)", [sid, claim.user_id, String(sid), JSON.stringify({ previousStart: claim.starts_at, startsAt: time, trialDays: claim.trial_days })]);
+}
+
+// Scheduled trials never overlap paid coverage. Discovery can replace onboarding.
 async function activateAccountTrial(
   c: PoolConnection,
   sid: number,
   time: string,
 ) {
-  await subscription(c, sid);
+  const before = await subscription(c, sid);
+  await bringForwardDiscovery(c, sid, before, time);
   const [rows]: any = await c.execute(
     "SELECT * FROM account_trial_claims WHERE store_id=? AND activated_at IS NULL AND starts_at<=? AND ends_at>? ORDER BY starts_at",
     [sid, time, time],
@@ -354,8 +385,13 @@ async function activateAccountTrial(
       );
       continue;
     }
+    if (claim.bucket === "discovery" && sub.trial_ends_at) {
+      // End the old free entitlement; it stays consumed and cannot resume later.
+      await c.execute("UPDATE account_trial_claims SET ends_at=LEAST(ends_at,?) WHERE store_id=? AND bucket='starter' AND activated_at IS NOT NULL", [claim.starts_at, sid]);
+      await c.execute("UPDATE trial_claims SET ends_at=LEAST(ends_at,?) WHERE store_id=?", [claim.starts_at, sid]);
+    }
     await c.execute(
-      "UPDATE subscriptions SET plan_id=?,plan_version_id=?,registration_plan_version_id=?,trial_days_granted=?,active_trial_bucket=?,billing_policy=1,status='trialing',trial_started_at=?,trial_ends_at=?,access_started_at=?,access_ends_at=?,current_period_start=DATE(?),current_period_end=DATE(?),period_end=DATE(?),version=version+1 WHERE store_id=?",
+      "UPDATE subscriptions SET plan_id=?,plan_version_id=?,registration_plan_version_id=?,trial_days_granted=?,active_trial_bucket=?,billing_policy=1,status='trialing',cancel_at_period_end=0,trial_started_at=?,trial_ends_at=?,access_started_at=?,access_ends_at=?,current_period_start=DATE(?),current_period_end=DATE(?),period_end=DATE(?),version=version+1 WHERE store_id=?",
       [
         claim.plan_id,
         claim.plan_version_id,
@@ -381,6 +417,7 @@ async function activateAccountTrial(
       [sid, claim.trial_days, claim.starts_at, claim.ends_at],
     );
     const plan = await versionPlan(c, claim.plan_version_id);
+    await c.execute("UPDATE notifications SET title='Đã bắt đầu dùng thử',body=? WHERE store_id=? AND event_key=?", [`Gói ${plan.name}: ${formatBillingTime(claim.starts_at)} → ${formatBillingTime(claim.ends_at)}. Lượt dùng thử đã có hiệu lực.`, sid, `trial:reserved:${claim.user_id}:${claim.bucket}`]);
     await notice(
       c,
       sid,
@@ -479,7 +516,7 @@ export async function previewAccountTrial(
     );
     const start = [
       time,
-      endOf(sub) || time,
+      discoveryStart(sub, invoices, time),
       ...retained.map((i: any) => i.effective_end_at),
       ...claims
         .filter(
@@ -495,7 +532,7 @@ export async function previewAccountTrial(
       [sid, sid, sid],
     );
     const token = createHash("sha256")
-      .update(JSON.stringify({ sub, store: stores[0], claims, plan, invoices }))
+      .update(JSON.stringify({ policy: "immediate-discovery-v2", sub, store: stores[0], claims, plan, invoices }))
       .digest("hex");
     return {
       token,
@@ -506,6 +543,8 @@ export async function previewAccountTrial(
       current_plan: sub.name,
       trial_days: Number(plan.trial_days),
       starts_at: start,
+      starts_immediately: start === time,
+      replaces_current_trial: start === time && !!sub.trial_ends_at && sub.trial_ends_at > time,
       ends_at: addDays(start, Number(plan.trial_days)),
       amount: 0,
       paid: 0,
@@ -569,6 +608,7 @@ export async function reserveAccountTrial(
       "INSERT INTO audit_logs(store_id,user_id,action,entity,entity_id,detail) VALUES(?,?,'account_trial_reserved','subscriptions',?,?)",
       [sid, actor, String(sid), JSON.stringify(offer)],
     );
+    if (!offer.starts_immediately) {
     await notice(
       c,
       sid,
@@ -577,13 +617,16 @@ export async function reserveAccountTrial(
       `Gói ${offer.plan_name}: ${formatBillingTime(offer.starts_at)} → ${formatBillingTime(offer.ends_at)}. Không tự trích tiền; gia hạn cần thanh toán.`,
     );
     await mail(c,{id:`trial-${actor}-${trialBucket(planId)}`,store_id:sid,plan_name:offer.plan_name,amount:0,paid:0,trial_days:offer.trial_days,period_start:offer.starts_at,period_end:offer.ends_at},"subscription_trial_reserved");
+    }
     await activateAccountTrial(c, sid, await clock(c));
     await reconcileBilling(c, sid);
+    const [claims]: any = await c.execute("SELECT starts_at,ends_at,activated_at FROM account_trial_claims WHERE user_id=? AND bucket=?", [actor, trialBucket(planId)]);
     return {
       ok: true,
       trial: true,
-      starts_at: offer.starts_at,
-      ends_at: offer.ends_at,
+      activated: !!claims[0]?.activated_at,
+      starts_at: claims[0].starts_at,
+      ends_at: claims[0].ends_at,
     };
   });
 }

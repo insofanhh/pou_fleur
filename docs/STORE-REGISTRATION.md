@@ -19,6 +19,14 @@ node --env-file=.env.local scripts/migrate-store-registration.mjs
 
 Migration cũng được gọi bởi `scripts/saas-schema.mjs`. Trước khi deploy code lên production, cần chạy migration này trên đúng DB production. Script chặn DB từ xa mặc định; chỉ dùng `--production-backup-verified` sau khi đã xác minh bản sao lưu/khôi phục theo quy trình migration của dự án. Không chạy seed/reset dữ liệu để thêm bảng này.
 
+## Sửa lỗi production ngày 20/10/2026
+
+`/start` báo “Chưa thể kiểm tra quyền mở cửa hàng” do TiDB thiếu bảng `store_registration_claims`; hàm kiểm tra quyền gặp `ER_NO_SUCH_TABLE` (1146), không phải tài khoản đã có cửa hàng. Giữ nguyên cơ chế chặn form khi chưa kiểm tra được, không bỏ qua giới hạn đăng ký trùng.
+
+Đã sao lưu 61 bảng, khôi phục vào database QA riêng và đối chiếu dấu vân tay dữ liệu. Thử migration hai lần trên bản khôi phục: kết quả ổn định và các bảng cũ không đổi. Sau đó chạy riêng `scripts/migrate-store-registration.mjs` trên production, tạo bảng và ghi nhận danh tính từ cửa hàng có sẵn. Đối chiếu sau cập nhật: users/stores/products/orders/order_items/subscriptions/invoices/billing_payments không thay đổi; kiểm tra thực tế hàm xác minh trên TiDB trả `eligible=true` cho mẫu tài khoản chưa có store và `eligible=false` cho mẫu chủ store. Không tạo tài khoản, cửa hàng hoặc phiên đăng nhập thử trên production.
+
+Backup và báo cáo thao tác lưu ngoài Git tại `.local/backups/` và `.local/start-production-backup-report.json`. `scripts/verify-tidb.mjs` đã bổ sung kiểm tra bảng này để phát hiện thiếu migration trước khi triển khai tiếp.
+
 ## Kiểm thử
 
 ```powershell

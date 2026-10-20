@@ -1,5 +1,6 @@
 "use client";
 import DateInput from "./date-input";
+import dynamic from "next/dynamic";
 import Brand, { DashboardBrand } from "@/components/brand";
 import { useDashboardSidebar, SidebarControls, SidebarMobileClose, SidebarBackdrop } from "./dashboard-sidebar";
 
@@ -50,14 +51,17 @@ import {
   Mail,
   RotateCcw,
   EyeOff,
+  Bot,
 } from "lucide-react";
 import type { Catalog } from "@/lib/types";
 import { api, useShop } from "./context";
 import { money } from "./home";
 import { Status, statusNames } from "./pages";
+const WorkspaceAIWidget = dynamic(() => import("./workspace-ai-widget"), { ssr: false });
 const nav = [
   ["overview", "Tổng quan", LayoutDashboard],
   ["analytics", "Phân tích dữ liệu", TrendingUp],
+  ["ai", "Trợ lý AI", Bot],
   ["board", "Đơn hàng · Kanban", ClipboardList],
   ["calendar", "Lịch giao & ghi chú", CalendarDays],
   ["theme", "Giao diện cửa hàng", Layers],
@@ -82,6 +86,7 @@ const rights: Record<string, string[]> = {
     .map((n) => n[0])
     .filter((k) => !["settings", "theme", "billing"].includes(k)),
   manager: [
+    "ai",
     "overview",
     "analytics",
     "board",
@@ -97,7 +102,7 @@ const rights: Record<string, string[]> = {
     "automations",
   ],
   editor: ["posts", "events"],
-  support: ["board", "calendar", "orders", "inquiries", "crm", "emails"],
+  support: ["ai", "board", "calendar", "orders", "inquiries", "crm", "emails"],
 };
 const roleNames: Record<string, string> = {
   owner: "Chủ cửa hàng",
@@ -338,6 +343,7 @@ export default function Admin({ data }: { data: Catalog }) {
   }
   return (
     <div className={"admin-shell" + (sidebar.collapsed ? " sidebar-collapsed" : "") + (sidebar.motion ? " sidebar-animate" : "")}>
+      {allowed.includes("ai") && <WorkspaceAIWidget key={`${data.store?.id}:${user.id}:${user.role}`} />}
       <SidebarBackdrop open={mobile} close={() => setMobile(false)} />
       <aside id="dashboard-sidebar" aria-label="Menu workspace" inert={sidebar.narrow && !mobile} className={"admin-sidebar " + (mobile ? "mobile-open" : "")}>
         <SidebarMobileClose close={() => setMobile(false)} />
@@ -432,7 +438,7 @@ export default function Admin({ data }: { data: Catalog }) {
               )}
             </div>
           )}
-          <div className="admin-heading">
+          <div className="admin-heading" style={area === "ai" ? { display: "none" } : undefined}>
             <div>
               <div className="eyebrow">FLEURIOUS FLORAL STUDIO</div>
               <h1>
