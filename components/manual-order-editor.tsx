@@ -1,4 +1,5 @@
 "use client";
+import OrderQRPayment from "./order-qr-payment";
 import DateInput from "./date-input";
 import DeliveryAddress from "./delivery-address";
 import { hanoiDateTimeInput, hanoiInputToISO, parseDateTime } from "@/lib/date-time";
@@ -101,6 +102,10 @@ export default function ManualOrderEditor() {
         const current = await api("payment-intents?code=" + encodeURIComponent(paymentModal.code));
         if (active && current.status === "paid") {
           toast("Đã nhận thanh toán qua SePay.");
+          setPaymentModal(null);
+          router.replace("/admin/board?order=" + paymentModal.orderId);
+        } else if (active && ["expired", "cancelled"].includes(current.status)) {
+          toast("Mã QR đã hết hiệu lực. Kiểm tra trạng thái đơn trước khi thu tiền.");
           setPaymentModal(null);
           router.replace("/admin/board?order=" + paymentModal.orderId);
         }
@@ -458,7 +463,7 @@ export default function ManualOrderEditor() {
   function downloadReceipt() {
     if (!paymentModal) return;
     const esc = (s: string) => s.replace(/[&<>"']/g, (x) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[x]!));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1100" viewBox="0 0 900 1100"><rect width="100%" height="100%" fill="white"/><text x="60" y="90" font-family="Arial" font-size="34" font-weight="700">HÓA ĐƠN TẠM TÍNH</text><text x="60" y="145" font-family="Arial" font-size="24">Fleurious · ${esc(paymentModal.reference)}</text><text x="60" y="205" font-family="Arial" font-size="28" font-weight="700">Số tiền: ${money(Number(paymentModal.amount))}</text><text x="60" y="255" font-family="Arial" font-size="22">Nội dung chuyển khoản: ${esc(paymentModal.code)}</text><image href="${esc(paymentModal.qrUrl)}" x="250" y="320" width="400" height="400"/><text x="60" y="800" font-family="Arial" font-size="22">Vui lòng chuyển đúng số tiền và nội dung.</text><text x="60" y="850" font-family="Arial" font-size="20">Mã QR có hiệu lực trong 10 phút.</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1100" viewBox="0 0 900 1100"><rect width="100%" height="100%" fill="white"/><text x="60" y="90" font-family="Arial" font-size="34" font-weight="700">HÓA ĐƠN TẠM TÍNH</text><text x="60" y="145" font-family="Arial" font-size="24">Fleurious · ${esc(paymentModal.reference)}</text><text x="60" y="205" font-family="Arial" font-size="28" font-weight="700">Số tiền: ${money(Number(paymentModal.amount))}</text><text x="60" y="255" font-family="Arial" font-size="22">Nội dung chuyển khoản: ${esc(paymentModal.code)}</text><image href="${esc(paymentModal.qrUrl)}" x="250" y="320" width="400" height="400"/><text x="60" y="800" font-family="Arial" font-size="22">Vui lòng chuyển đúng số tiền và nội dung.</text><text x="60" y="850" font-family="Arial" font-size="20">Mã QR hết hạn: ${esc(new Date(paymentModal.expiresAt).toLocaleString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh"}))}</text></svg>`;
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); const a = document.createElement("a"); a.href = url; a.download = paymentModal.reference + "-hoa-don-qr.svg"; a.click(); URL.revokeObjectURL(url);
   }
   function closePaymentModal() {
@@ -501,7 +506,7 @@ export default function ManualOrderEditor() {
     );
   return (
     <div className="manual-orders" data-no-fade-in>
-      {paymentModal && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={closePaymentModal} aria-label="Đóng">×</button><h2>Thanh toán đơn {paymentModal.reference}</h2><p>Mã QR có hiệu lực trong 10 phút · {new Intl.NumberFormat("vi-VN").format(paymentModal.amount)} VNĐ</p><img src={paymentModal.qrUrl} alt="Mã QR thanh toán" style={{ width: 280, maxWidth: "100%" }} /><p className="small">Nội dung chuyển khoản: <strong>{paymentModal.code}</strong></p><div className="button-row"><button className="button secondary" onClick={downloadReceipt}>Tải hóa đơn + mã QR</button><button className="button" onClick={async () => { try { await api("workspace/orders/" + paymentModal.orderId + "/payment", "POST", { kind: "collect", amount: paymentModal.amount, method: "bank", reference: "MANUAL-" + paymentModal.code }); toast("Đã ghi nhận thanh toán."); setPaymentModal(null); router.replace("/admin/board?order=" + paymentModal.orderId); } catch (e) { setError((e as Error).message); } }}>Đã nhận tiền thủ công</button></div></div></div>}
+      {paymentModal && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card"><button className="modal-close" onClick={closePaymentModal} aria-label="Đóng">×</button><h2>Thanh toán đơn {paymentModal.reference}</h2><OrderQRPayment payment={paymentModal}/><div className="button-row"><button className="button secondary" onClick={downloadReceipt}>Tải hóa đơn + mã QR</button><button className="button" onClick={async () => { try { await api("workspace/orders/" + paymentModal.orderId + "/payment", "POST", { kind: "collect", amount: paymentModal.amount, method: "bank", reference: "MANUAL-" + paymentModal.code }); toast("Đã ghi nhận thanh toán."); setPaymentModal(null); router.replace("/admin/board?order=" + paymentModal.orderId); } catch (e) { setError((e as Error).message); } }}>Đã nhận tiền thủ công</button></div></div></div>}
       <div className="manual-nav">
         <Link href="/admin/board" className="text-link">
           <ArrowLeft size={16} /> Đơn hàng

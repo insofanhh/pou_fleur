@@ -1,4 +1,5 @@
 "use client";
+import StoreBankFields from "./store-bank-fields";
 import { isExperiencePlan, planRank } from "@/lib/plan-policy";
 import { isPickup, orderStateLabel, pickupLocation } from "@/lib/order-fulfillment";
 import DateInput from "./date-input";
@@ -1259,6 +1260,7 @@ function StoreSettings() {
           setBusy(true);
           const f: any = Object.fromEntries(new FormData(e.currentTarget));
           try {
+            if (!f.bank_code && (f.bank_enabled === "on" || String(f.account_number || "").trim())) throw new Error("Chọn ngân hàng nhận tiền trong danh sách.");
             await api("workspace/settings", "PATCH", {
               name: f.name,
               description: f.description,
@@ -1374,7 +1376,7 @@ function StoreSettings() {
           />
           Nhận đơn mới
         </label>
-        <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><div className="form-grid">{[["bank_code","Mã ngân hàng / BIN",data.bank?.bank_code||""],["bank_name","Tên ngân hàng",data.bank?.bank_name||""],["account_number","Số tài khoản",data.bank?.account_number||""],["account_holder","Chủ tài khoản",data.bank?.account_holder||""]].map(([name,label,value])=><label className="field" key={name}>{label}<input name={name} defaultValue={value}/></label>)}</div><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<Select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></Select></label></div>
+        <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><StoreBankFields bank={data.bank}/><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<Select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></Select></label></div>
         <StoreSepaySettings />
         <button className="button store-settings-save" disabled={busy}>
           Lưu cấu hình

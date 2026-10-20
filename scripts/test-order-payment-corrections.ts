@@ -24,7 +24,7 @@ async function main() {
   try {
     const tables = {
       stores: "id INT PRIMARY KEY",
-      orders: "id INT PRIMARY KEY,store_id INT,total INT,payment_status VARCHAR(30),status VARCHAR(30),version INT,created_at DATETIME,creation_source VARCHAR(20),sales_channel VARCHAR(20),payment_method VARCHAR(20)",
+      orders: "id INT PRIMARY KEY,store_id INT,total INT,payment_status VARCHAR(30),status VARCHAR(30),version INT,created_at DATETIME,creation_source VARCHAR(20),sales_channel VARCHAR(20),payment_method VARCHAR(20),fulfillment_method VARCHAR(20) DEFAULT 'delivery'",
       order_payments: "id INT AUTO_INCREMENT PRIMARY KEY,store_id INT,order_id INT,amount INT,kind VARCHAR(20),reference VARCHAR(100),actor_id INT,method VARCHAR(20),received_at DATETIME,UNIQUE KEY(store_id,reference)",
       audit_logs: "id INT AUTO_INCREMENT PRIMARY KEY,store_id INT,user_id INT,action VARCHAR(50),entity VARCHAR(50),entity_id VARCHAR(50),detail JSON",
       order_status_events: "id INT AUTO_INCREMENT PRIMARY KEY,store_id INT,order_id INT,actor_id INT,status VARCHAR(50),detail TEXT",
@@ -35,7 +35,7 @@ async function main() {
       created.push(prefix + name);
     }
     await db.execute("INSERT INTO stores VALUES(1),(2)");
-    await db.execute("INSERT INTO orders VALUES(1,1,1187000,'paid','pending',1,'2026-10-20','manual','phone','cash'),(2,2,1187000,'paid','pending',1,'2026-10-20','manual','phone','bank'),(3,1,1187000,'paid','pending',1,'2026-10-20','manual','phone','cash')");
+    await db.execute("INSERT INTO orders(id,store_id,total,payment_status,status,version,created_at,creation_source,sales_channel,payment_method) VALUES(1,1,1187000,'paid','pending',1,'2026-10-20','manual','phone','cash'),(2,2,1187000,'paid','pending',1,'2026-10-20','manual','phone','bank'),(3,1,1187000,'paid','pending',1,'2026-10-20','manual','phone','cash')");
     await db.execute("INSERT INTO order_payments(store_id,order_id,amount,kind,reference,actor_id,method) VALUES(1,1,1187000,'collect','ORIGINAL',10,'cash'),(2,2,1187000,'collect','OTHER-STORE',20,'bank')");
     await db.execute("INSERT INTO payment_intents(store_id,order_id,status,amount) VALUES(1,1,'pending',1187000)");
     const c = { execute: (sql: string, values: unknown[]) => db.execute(scopedSQL(sql), values) } as any;
