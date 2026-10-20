@@ -3,6 +3,7 @@ import type { PoolConnection } from "mysql2/promise";
 import { HttpError } from "./auth";
 import { tenantId } from "./tenant";
 import { recordOrderPayment } from "./order-payments";
+import { isPickup } from "./order-fulfillment";
 
 export const codReceiptSchema = z.object({
   amount: z.number().int().positive().max(2000000000),
@@ -64,8 +65,8 @@ export async function collectCOD(
       409,
       "Đơn vừa thay đổi. Hãy làm mới và kiểm tra số tiền còn phải thu.",
     );
-  if (o.payment_method !== "cod" || o.status === "cancelled")
-    throw new HttpError(409, "Chỉ thu COD cho đơn COD chưa hủy.");
+  if ((o.payment_method !== "cod" && !isPickup(o)) || o.status === "cancelled")
+    throw new HttpError(409, "Chỉ thu tiền cho đơn COD hoặc nhận tại quầy chưa hủy.");
   const [sums]: any = await c.execute(
     "SELECT COUNT(*) n,COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
     [orderId],
@@ -106,7 +107,7 @@ export async function collectCOD(
     amount: b.amount,
     method: b.method,
     // Preserve a bank reference in the shared ledger so SePay also detects it.
-    reference: b.reference || "COD-" + b.requestKey,
+    reference: b.reference || (isPickup(o) ? "COUNTER-" : "COD-") + b.requestKey,
     ...(b.receivedAt ? { receivedAt: b.receivedAt } : {}),
   });
   await c.execute(
@@ -118,7 +119,7 @@ export async function collectCOD(
     [
       orderId,
       actor,
-      `Đã thu COD ${b.amount.toLocaleString("vi-VN")} VNĐ · ${b.method === "cash" ? "Tiền mặt" : "Chuyển khoản"}${b.reference ? " · " + b.reference : ""}${b.note ? " · " + b.note : ""}`,
+      `Đã thu ${isPickup(o) ? "tại quầy" : "COD"} ${b.amount.toLocaleString("vi-VN")} VNĐ · ${b.method === "cash" ? "Tiền mặt" : "Chuyển khoản"}${b.reference ? " · " + b.reference : ""}${b.note ? " · " + b.note : ""}`,
     ],
   );
   await c.execute(

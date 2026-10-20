@@ -61,6 +61,8 @@ export default function BoardToolbar({
   payment,
   source,
   method,
+  fulfillment,
+  onFulfillment,
   onMethod,
   onSearch,
   onDate,
@@ -73,6 +75,8 @@ export default function BoardToolbar({
   payment: string;
   source: string;
   method: string;
+  fulfillment: string;
+  onFulfillment: (value: string) => void;
   onMethod: (value: string) => void;
   onSearch: (value: string) => void;
   onDate: (value: string) => void;
@@ -100,7 +104,7 @@ export default function BoardToolbar({
         </span>
       </label>
       <label className="board-filter-date">
-        <span className="board-filter-label">Ngày giao</span>
+        <span className="board-filter-label">Ngày giao / nhận</span>
         <DateInput
           type="date"
           value={date}
@@ -137,13 +141,19 @@ export default function BoardToolbar({
           ]}
         />
       </div>
+      <div className="board-filter-fulfillment">
+        <FilterSelect label="Nhận hoa" value={fulfillment} onChange={onFulfillment} options={[
+          { value: "", label: "Tất cả hình thức" }, { value: "delivery", label: "Giao tận nơi" }, { value: "pickup", label: "Lấy tại cửa hàng" },
+        ]} />
+      </div>
       <button
         type="button"
         className="board-filter-refresh"
+        aria-label="Làm mới"
+        title="Làm mới"
         onClick={onRefresh}
       >
         <RotateCw size={15} aria-hidden="true" />
-        Làm mới
       </button>
     </div>
   );

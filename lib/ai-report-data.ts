@@ -11,7 +11,7 @@ export async function loadAIReport(from: string, to: string, storeId: number, re
     period: comparePrevious ? period : currentPeriod,
     summary, products, sources, deliveries, comparePrevious,
     ...(comparePrevious ? { previous } : {}),
-    definition: "Nhóm đơn tạo trong kỳ, trạng thái/số dư hiện tại. Doanh thu là tổng đơn đã giao gồm phí và giảm giá; tiền đã thu ròng là số thu trừ số hoàn của nhóm đơn. Không phải dòng tiền theo ngày thu, chưa có dữ liệu lợi nhuận. Lịch giao tính theo ngày giao.",
+    definition: "Nhóm đơn tạo trong kỳ, trạng thái/số dư hiện tại. Doanh thu là tổng đơn đã hoàn tất (giao tận nơi hoặc nhận tại cửa hàng) gồm phí và giảm giá; tiền đã thu ròng là số thu trừ số hoàn của nhóm đơn. Không phải dòng tiền theo ngày thu, chưa có dữ liệu lợi nhuận. Lịch giao tính theo ngày giao và không bao gồm đơn nhận tại cửa hàng.",
   };
 }
 

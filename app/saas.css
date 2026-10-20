@@ -319,10 +319,11 @@
   font-weight: 500;
   line-height: 16px;
 }
-.board-filter-search { flex: 1 1 220px; }
-.board-filter-date { flex: 0 0 158px; }
-.board-filter-payment { flex: 0 0 190px; }
-.board-filter-source { flex: 0 0 150px; }
+.board-filter-search { flex: 1 1 145px; }
+.board-filter-date { flex: 0 1 132px; }
+.board-filter-payment { flex: 0 1 145px; }
+.board-filter-source { flex: 0 1 118px; }
+.board-filter-fulfillment { flex: 0 1 140px; }
 .board-filter-search-control {
   position: relative;
   display: flex;
@@ -436,14 +437,14 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.board-filter-refresh { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+.board-filter-refresh { flex: 0 0 40px; width: 40px; padding: 0; background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
 .board-filter-drafts:hover { background: #ededf0; }
 .board-filter-refresh:hover { background: #3a3a3c; }
 @media (max-width: 700px) {
   .board-filter-toolbar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: "search search" "date source" "payment payment" "method method" "drafts refresh";
+    grid-template-areas: "search search" "date source" "payment payment" "method method" "fulfillment fulfillment" "drafts refresh";
     gap: 12px 10px;
   }
   .board-filter-search { grid-area: search; }
@@ -451,8 +452,9 @@
   .board-filter-payment { grid-area: payment; }
   .board-filter-source { grid-area: source; }
   .board-filter-method { grid-area: method; }
+  .board-filter-fulfillment { grid-area: fulfillment; }
   .board-filter-drafts { grid-area: drafts; }
-  .board-filter-refresh { grid-area: refresh; }
+  .board-filter-refresh { grid-area: refresh; width: 44px; justify-self: end; }
   .board-filter-toolbar input,
   .board-filter-trigger,
   .board-filter-drafts,
@@ -2816,5 +2818,13 @@ body:has(.manual-orders) .ghost-banner {
 }
 .cod-receipt-fields .check-field input { margin: 3px 0 0; }
 .cod-payer-fields { display: grid; gap: 12px; margin-block: 16px; }
-.board-filter-method { flex: 0 1 205px; }
+.board-filter-method { flex: 0 1 150px; }
 @media (max-width: 700px) { .board-filter-method { min-width: 0; } .cod-receipt-fields .order-form-grid { grid-template-columns: minmax(0,1fr); } }
+
+/* Immediate counter handoff shares the dashboard form and tag spacing. */
+.pickup-location-card { padding: 16px; margin-block: 12px; border: 1px solid #d7e6dc; border-radius: 8px; background: #f5faf6; min-width: 0; overflow-wrap: anywhere; }
+.pickup-location-card p { margin-block: 8px; }
+.pickup-location-card .manual-check { display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+.pickup-location-card input[type="checkbox"] { flex: 0 0 16px; width: 16px; margin-top: 3px; }
+.order-pickup-tag { display: inline-flex; align-items: center; gap: 5px; background: #edf5ef; color: #376747; border: 1px solid #d4e5d9; max-width: 100%; white-space: normal; }
+@media (min-width: 1200px) { .board-filter-toolbar { gap: 10px; flex-wrap: nowrap; } }

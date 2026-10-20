@@ -29,10 +29,10 @@ export const analyticsQueries = {
     COALESCE(SUM(CASE WHEN o.status='delivered' THEN 1 ELSE 0 END),0) delivered_count,
     COALESCE(SUM(CASE WHEN o.status='delivered' THEN GREATEST(o.total-${balance},0) ELSE 0 END),0) delivered_due
     FROM orders o LEFT JOIN (SELECT order_id,SUM(IF(kind IN ('collect','correction'),amount,-amount)) balance FROM order_payments GROUP BY order_id) receipts ON receipts.order_id=o.id
-    WHERE o.payment_method='cod' AND o.status<>'cancelled' AND o.total>${balance}`,
+    WHERE o.payment_method='cod' AND o.fulfillment_method<>'pickup' AND o.status<>'cancelled' AND o.total>${balance}`,
   codReceipts: `SELECT COALESCE(SUM(p.amount),0) collected FROM order_payments p JOIN orders o ON o.id=p.order_id
-    WHERE o.payment_method='cod' AND p.kind='collect' AND p.received_at>=CONVERT_TZ(?,'+07:00','+00:00') AND p.received_at<CONVERT_TZ(DATE_ADD(?,INTERVAL 1 DAY),'+07:00','+00:00')`,
-  orders: `SELECT DATE(o.created_at) day,o.creation_source,o.sales_channel,o.status,o.payment_method,
+    WHERE o.payment_method='cod' AND o.fulfillment_method<>'pickup' AND p.kind='collect' AND p.received_at>=CONVERT_TZ(?,'+07:00','+00:00') AND p.received_at<CONVERT_TZ(DATE_ADD(?,INTERVAL 1 DAY),'+07:00','+00:00')`,
+  orders: `SELECT DATE(o.created_at) day,o.creation_source,o.sales_channel,o.status,o.payment_method,o.fulfillment_method,
     COUNT(*) orders_count,SUM(o.total) gross_value,
     SUM(CASE WHEN o.status<>'cancelled' THEN o.total ELSE 0 END) order_value,
     SUM(CASE WHEN o.status='delivered' THEN o.total ELSE 0 END) revenue,
@@ -46,7 +46,7 @@ export const analyticsQueries = {
       SELECT order_id,SUM(IF(kind IN ('collect','correction'),amount,-amount)) balance FROM order_payments GROUP BY order_id
     ) receipts ON receipts.order_id=o.id
     WHERE o.created_at>=? AND o.created_at<DATE_ADD(?,INTERVAL 1 DAY)
-    GROUP BY DATE(o.created_at),o.creation_source,o.sales_channel,o.status,o.payment_method
+    GROUP BY DATE(o.created_at),o.creation_source,o.sales_channel,o.status,o.payment_method,o.fulfillment_method
     ORDER BY day`,
   products: `SELECT i.product_id,i.product_name name,i.line_type,SUM(i.quantity) quantity,
     SUM(i.quantity*i.price) item_value,COUNT(DISTINCT o.id) orders_count
@@ -61,7 +61,7 @@ export const analyticsQueries = {
   deliveries: `SELECT o.delivery_date day,COUNT(*) orders_count,
     SUM(CASE WHEN o.status='delivered' THEN 1 ELSE 0 END) delivered,
     SUM(CASE WHEN o.status<>'delivered' THEN 1 ELSE 0 END) remaining
-    FROM orders o WHERE o.delivery_date BETWEEN ? AND ? AND o.status<>'cancelled'
+    FROM orders o WHERE o.delivery_date BETWEEN ? AND ? AND o.status<>'cancelled' AND o.fulfillment_method<>'pickup'
     GROUP BY o.delivery_date ORDER BY orders_count DESC,day LIMIT 7`,
   segments: "SELECT segment,COUNT(*) count FROM customers GROUP BY segment",
   funnel:
@@ -137,6 +137,7 @@ export async function loadStoreAnalytics(
     { status: string; count: number; value: number }
   >();
   const payments = new Map<string, Measures & { method: string }>();
+  const pickup = { orders_count: 0, revenue: 0, outstanding: 0 };
   for (const row of rows) {
     // mysql dateStrings is enabled; normalize Date too for test/read adapters.
     const key = hanoiDateKey(row.day);
@@ -150,6 +151,11 @@ export async function loadStoreAnalytics(
     if (row.status === "cancelled")
       target.cancellations += Number(row.orders_count);
     if (!current) continue;
+    if (row.fulfillment_method === "pickup" && row.status !== "cancelled") {
+      pickup.orders_count += Number(row.orders_count);
+      pickup.revenue += Number(row.revenue);
+      pickup.outstanding += Number(row.outstanding);
+    }
     const d = byDay.get(key)!;
     add(d, row);
     if (row.status === "cancelled") d.cancellations += Number(row.orders_count);
@@ -166,15 +172,17 @@ export async function loadStoreAnalytics(
     const status = statuses.get(row.status)!;
     status.count += Number(row.orders_count);
     status.value += Number(row.gross_value);
-    if (!payments.has(row.payment_method))
-      payments.set(row.payment_method, {
+    const paymentKey = row.fulfillment_method === "pickup" && row.payment_method === "cod" ? "counter" : row.payment_method;
+    if (!payments.has(paymentKey))
+      payments.set(paymentKey, {
         ...zero(),
-        method: row.payment_method,
+        method: paymentKey,
       });
-    add(payments.get(row.payment_method)!, row);
+    add(payments.get(paymentKey)!, row);
   }
   return {
     period,
+    pickup,
     cod: {
       awaiting_count: Number(codRows[0]?.awaiting_count || 0),
       outstanding: Number(codRows[0]?.outstanding || 0),

@@ -1,5 +1,6 @@
 "use client";
 import { isExperiencePlan, planRank } from "@/lib/plan-policy";
+import { isPickup, orderStateLabel, pickupLocation } from "@/lib/order-fulfillment";
 import DateInput from "./date-input";
 import { hanoiDateKey, formatDateTime, formatDate, parseDateTime } from "@/lib/date-time";
 import { APP_TIME_ZONE_LABEL } from "@/lib/regional";
@@ -20,7 +21,7 @@ import { useOrderTransition } from "./order-transition";
 import { orderChannel } from "@/lib/order-workflow";
 import { orderCapabilities } from "@/lib/order-capabilities";
 import OrderPaymentEditor from "./order-payment-editor";
-import OrderCODReceipt, { OrderMethodTag, CODSummary, OrderPaymentSummary, CODMonitor } from "./order-cod";
+import OrderCODReceipt, { OrderMethodTag, CODSummary, OrderPaymentSummary, CODMonitor, PickupTag } from "./order-cod";
 import { codPayerLabel, codOutstanding, isPaidCOD } from "@/lib/cod-policy";
 import BoardToolbar, { OrderDraftsLink } from "./board-toolbar";
 import WorkspaceAI from "./workspace-ai";
@@ -142,6 +143,7 @@ function OrderCard({
         <Status value={order.payment_status} />
       </div>
       <OrderPaymentSummary order={order} />
+      <PickupTag order={order} />
       {(typeof order.tags === "string"
         ? JSON.parse(order.tags)
         : order.tags || []
@@ -162,6 +164,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     [payment, setPayment] = useState(""),
     [source, setSource] = useState(""),
     [method, setMethod] = useState(""),
+    [fulfillment, setFulfillment] = useState(""),
     [statusFilter, setStatusFilter] = useState(""),
     [pages, setPages] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -179,6 +182,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
     status: statusFilter,
     source,
     method,
+    fulfillment,
   });
   Object.entries(pages).forEach(([s, p]) =>
     params.set(s === "all" ? "page" : "page_" + s, String(p)),
@@ -234,6 +238,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
       {!table ? <BoardToolbar
         search={search} date={date} payment={payment} source={source} method={method}
         onMethod={value => {setMethod(value);setPages({});}}
+        fulfillment={fulfillment} onFulfillment={value=>{setFulfillment(value);setPages({});}}
         onSearch={setSearch}
         onDate={value => { setDate(value); setPages({}); }}
         onPayment={value => { setPayment(value); setPages({}); }}
@@ -292,6 +297,9 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
         <Select aria-label="Phương thức thanh toán" value={method} onChange={e=>{setMethod(e.target.value);setPages({});}}>
           <option value="">Tất cả phương thức</option><option value="cod">COD</option><option value="bank">Chuyển khoản</option><option value="cod_due">COD còn phải thu</option><option value="cod_delivered_due">COD đã giao chưa thu đủ</option>
         </Select>
+        <Select aria-label="Hình thức nhận hoa" value={fulfillment} onChange={e=>{setFulfillment(e.target.value);setPages({});}}>
+          <option value="">Tất cả hình thức nhận</option><option value="delivery">Giao tận nơi</option><option value="pickup">Lấy tại cửa hàng</option>
+        </Select>
         {table && (
           <Select
             aria-label="Lọc trạng thái"
@@ -335,7 +343,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                 <tr>
                   <th>Mã đơn</th>
                   <th>Khách hàng</th>
-                  <th>Ngày giao</th>
+                  <th>Ngày giao / nhận</th>
                   <th>Trạng thái</th>
                   <th>Thanh toán</th>
                   <th>Tổng</th>
@@ -366,7 +374,8 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
                       <small>{o.delivery_slot}</small>
                     </td>
                     <td>
-                      <Status value={o.status} />
+                      <Status value={o.status} label={orderStateLabel(o)} />
+                      <PickupTag order={o} />
                     </td>
                     <td>
                       <Status value={o.payment_status} /><OrderPaymentSummary order={o} />
@@ -505,7 +514,7 @@ function OrderPanel({
         <div className="order-overview">
           <div>
             <span className="order-caption">Tiến trình đơn</span>
-            <Status value={o.status} />
+            <Status value={o.status} label={orderStateLabel(o)} />
           </div>
           <div>
             <span className="order-caption">Thanh toán</span>
@@ -530,9 +539,9 @@ function OrderPanel({
               onChange={(e) => setTargetStatus(e.target.value)}
               aria-label="Trạng thái mới"
             >
-              {statuses.map((s) => (
+              {statuses.filter(s=>!isPickup(o) || ["delivered","cancelled"].includes(s)).map((s) => (
                 <option key={s} value={s}>
-                  {statusNames[s]}
+                  {orderStateLabel(o,s)}
                 </option>
               ))}
             </Select>
@@ -546,12 +555,12 @@ function OrderPanel({
         </form>
         <div className="order-detail-grid">
           <section className="order-section">
-            <h3>Giao hoa</h3>
+            <h3>{isPickup(o) ? "Khách lấy tại cửa hàng" : "Giao hoa"}</h3>
             <p className="order-delivery-time">
               <strong>
                 {String(o.delivery_date).split("-").reverse().join("/")}
               </strong>
-              <span>{o.delivery_slot}</span>
+              <span>{isPickup(o) ? "Nhận ngay" : o.delivery_slot}</span>
             </p>
             <dl className="order-facts">
               <div>
@@ -560,16 +569,17 @@ function OrderPanel({
               </div>
               <div>
                 <dt>Điện thoại</dt>
-                <dd>{o.recipient_phone || o.phone}</dd>
+                <dd>{o.recipient_phone || o.phone || "Chưa cung cấp"}</dd>
               </div>
               <div>
-                <dt>Địa chỉ</dt>
-                <dd>{o.address}</dd>
+                <dt>{isPickup(o) ? "Địa điểm nhận" : "Địa chỉ"}</dt>
+                <dd>{isPickup(o) ? <>{pickupLocation(o).name}<br />{pickupLocation(o).address || "Tại cửa hàng"}</> : o.address}</dd>
               </div>
+              {isPickup(o) && o.picked_up_at && <div><dt>Đã nhận lúc</dt><dd>{formatDateTime(o.picked_up_at)}</dd></div>}
             </dl>
             {o.notes && (
               <p className="order-note">
-                <strong>Ghi chú giao hàng</strong>
+                <strong>{isPickup(o) ? "Ghi chú nhận hoa" : "Ghi chú giao hàng"}</strong>
                 <br />
                 {o.notes}
               </p>
@@ -840,7 +850,7 @@ function OrderPanel({
             </fieldset>
           </form>
         </details>
-        {["pending", "confirmed", "preparing", "ready"].includes(o.status) && (
+        {!isPickup(o) && ["pending", "confirmed", "preparing", "ready"].includes(o.status) && (
           <details className="order-secondary">
             <summary>Đổi lịch giao</summary>
             <form
@@ -885,7 +895,7 @@ function OrderPanel({
           <div className="order-history">
             {data?.events?.map((e: any) => (
               <p key={e.id} className="timeline-entry">
-                <strong>{statusNames[e.status] || e.status}</strong> ·{" "}
+                <strong>{orderStateLabel(o,e.status)}</strong> ·{" "}
                 {formatDateTime(e.created_at)}
                 {e.detail && (
                   <span className="order-event-detail">{e.detail}</span>
@@ -985,7 +995,7 @@ function Calendar() {
             }}
           />
         )}
-        <p>Ngày giao hoa · {APP_TIME_ZONE_LABEL}</p>
+        <p>Ngày giao / nhận hoa · {APP_TIME_ZONE_LABEL}</p>
       </div>
       {!data ? (
         <Loading error={error} />
@@ -1086,6 +1096,7 @@ function Calendar() {
                         chờ
                       </span>
                     )}
+                    {orders.some((o:any)=>isPickup(o)) && <span className="tag order-pickup-tag">Tại quầy: {orders.filter((o:any)=>isPickup(o)).length} đơn</span>}
                     {orders.some((o:any)=>codOutstanding(o)>0) && <span className="calendar-cod-tag">COD: {orders.filter((o:any)=>codOutstanding(o)>0).length} đơn</span>}
                     {notes.slice(0, 2).map((n: any) => (
                       <span

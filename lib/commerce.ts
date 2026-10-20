@@ -1,7 +1,7 @@
 import { hanoiDateKey } from "./date-time";
+import { isPickup, orderStateLabel } from "./order-fulfillment";
 import { tenantId } from "./tenant";
 import { needsTransitionReason, orderStates } from "./order-workflow";
-import { orderLabels } from "./display-labels";
 import { orderPaymentStatusSQL } from "./order-payment-state";
 import { validateFulfillment } from "./fulfillment";
 import { assertStoreOpen } from "./stores";
@@ -406,7 +406,9 @@ export async function changeOrder(
         "Trạng thái đơn hàng không thể chuyển theo cách này.",
       );
     if (status === o.status) return await c.commit().then(() => ({ ok: true }));
-    if (o.payment_method === "cod" && status === "delivered") {
+    if (isPickup(o) && !["delivered", "cancelled"].includes(status))
+      throw new HttpError(400, "Đơn nhận ngay chỉ có thể xác nhận đã nhận tại cửa hàng hoặc hủy.");
+    if ((o.payment_method === "cod" || isPickup(o)) && status === "delivered") {
       const [sums]: any = await c.execute(
         "SELECT COUNT(*) n,COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?",
         [id],
@@ -456,15 +458,29 @@ export async function changeOrder(
         "Chỉ ghi kết quả COD cùng thao tác hoàn tất giao hoa.",
       );
     const reason = options.reason?.trim() || "";
+    if (isPickup(o) && status === "delivered" && o.payment_status !== "paid") {
+      const [balanceRows]: any = await c.execute("SELECT COALESCE(SUM(IF(kind IN ('collect','correction'),amount,-amount)),0) balance FROM order_payments WHERE order_id=?", [id]);
+      if (Number(balanceRows[0].balance) < Number(o.total)) {
+        const [members]: any = await c.execute("SELECT role FROM store_memberships WHERE store_id=? AND user_id=? AND status='active'", [tenantId(), actor]);
+        if (members[0]?.role !== "owner" || reason.length < 5)
+          throw new HttpError(403, "Chỉ chủ cửa hàng được bàn giao chưa thu đủ; cần nhập lý do.");
+      }
+    }
     if (!owner && needsTransitionReason(o.status, status) && reason.length < 5)
       throw new HttpError(400, "Vui lòng nhập lý do ít nhất 5 ký tự.");
     let deliveryDate = o.delivery_date,
       deliverySlot = o.delivery_slot;
+    if (isPickup(o) && status === "delivered") {
+      const [members]: any = await c.execute("SELECT role FROM store_memberships WHERE store_id=? AND user_id=? AND status='active'",[tenantId(),actor]);
+      if (!["owner","admin","manager"].includes(members[0]?.role))
+        throw new HttpError(403,"Bạn chưa có quyền xác nhận bàn giao tại cửa hàng.");
+    }
     if (o.status === "cancelled") {
       const store = await assertStoreOpen(c);
       deliveryDate = options.date || o.delivery_date;
       deliverySlot = options.slot || o.delivery_slot;
-      await validateFulfillment(
+      if (isPickup(o)) { deliveryDate = hanoiDateKey(); deliverySlot = "Nhận ngay"; }
+      else await validateFulfillment(
         c,
         store,
         {
@@ -525,8 +541,8 @@ export async function changeOrder(
         );
     }
     await c.execute(
-      "UPDATE orders SET status=?,version=version+1,delivery_date=?,delivery_slot=?,completed_at=IF(?='delivered',COALESCE(completed_at,NOW()),NULL),confirmed_at=IF(? IN ('confirmed','preparing','ready','shipping','delivered'),COALESCE(confirmed_at,NOW()),NULL),shipped_at=IF(? IN ('shipping','delivered'),COALESCE(shipped_at,NOW()),NULL) WHERE id=?",
-      [status, deliveryDate, deliverySlot, status, status, status, id],
+      "UPDATE orders SET status=?,version=version+1,delivery_date=?,delivery_slot=?,completed_at=IF(?='delivered',COALESCE(completed_at,NOW()),NULL),confirmed_at=IF(? IN ('confirmed','preparing','ready','shipping','delivered'),COALESCE(confirmed_at,NOW()),NULL),shipped_at=IF(fulfillment_method='pickup',NULL,IF(? IN ('shipping','delivered'),COALESCE(shipped_at,NOW()),NULL)),picked_up_at=IF(fulfillment_method='pickup' AND ?='delivered',COALESCE(picked_up_at,NOW()),NULL) WHERE id=?",
+      [status, deliveryDate, deliverySlot, status, status, status, status, id],
     );
     await c.execute(
       "INSERT INTO audit_logs(user_id,action,entity,entity_id) VALUES(?,?,?,?)",
@@ -538,19 +554,19 @@ export async function changeOrder(
         id,
         actor,
         status,
-        `${orderLabels[o.status]} → ${orderLabels[status]}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · Lịch giao: ${deliveryDate} ${deliverySlot}` : ""}${options.codOutcome === "unpaid" ? " · COD: chưa nhận thêm tiền, cần theo dõi khoản còn thiếu" : ""}`,
+        `${orderStateLabel(o)} → ${orderStateLabel(o, status)}${reason ? ": " + reason : ""}${o.status === "cancelled" ? ` · ${isPickup(o) ? "Nhận tại cửa hàng" : "Lịch giao"}: ${deliveryDate} ${deliverySlot}` : ""}${options.codOutcome === "unpaid" ? " · Chưa nhận thêm tiền, cần theo dõi khoản còn thiếu" : ""}`,
       ],
     );
     await emit(c, "order:" + id + ":" + (o.version + 1), {
       userId: o.user_id,
-      title: "Đơn " + o.reference + " · " + orderLabels[status],
+      title: "Đơn " + o.reference + " · " + orderStateLabel(o, status),
       body: "Cửa hàng đã cập nhật trạng thái đơn hoa của bạn.",
     });
     if (options.codOutcome === "unpaid")
       await emit(c, "order:" + id + ":cod-due:" + (o.version + 1), {
         audience: "staff",
-        title: "Đơn COD đã giao chưa thu đủ",
-        body: o.reference + " · Kiểm tra và đối soát tiền COD còn phải thu.",
+        title: isPickup(o) ? "Đơn nhận tại quầy còn công nợ" : "Đơn COD đã giao chưa thu đủ",
+        body: o.reference + (isPickup(o) ? " · Theo dõi khoản còn phải thu tại quầy." : " · Kiểm tra và đối soát tiền COD còn phải thu."),
         href: "/workspace/" + tenantId() + "/orders?order=" + id,
       });
     await enqueueOrderEmail(c, id, "order_status", o.status);

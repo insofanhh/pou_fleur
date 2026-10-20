@@ -1,5 +1,6 @@
 "use client";
-import { formatDate } from "@/lib/date-time";
+import { isPickup, orderStateLabel, pickupLocation } from "@/lib/order-fulfillment";
+import { formatDate, formatDateTime } from "@/lib/date-time";
 import { orderLabels, displayLabel } from "@/lib/display-labels";
 import { loginDestination } from "@/lib/login-redirect";
 import Link, { useLocalPath, useScopedRouter } from "./routing";
@@ -32,10 +33,10 @@ import { api, useShop } from "./context";
 import { Breadcrumb, Empty, Field } from "./shopping";
 import { money, ProductCard } from "./home";
 export const statusNames = orderLabels;
-export function Status({ value }: { value: string }) {
+export function Status({ value, label }: { value: string; label?: string }) {
   return (
     <span className={"status status-" + value}>
-      {statusNames[value] || "Chưa xác định"}
+      {label || statusNames[value] || "Chưa xác định"}
     </span>
   );
 }
@@ -391,10 +392,10 @@ export function Account() {
                         {o.reference} ·{" "}
                         <Link href={"/s/" + o.store_slug}>{o.store_name}</Link>
                       </strong>
-                      <Status value={o.status} />
+                      <Status value={o.status} label={orderStateLabel(o)} />
                     </div>
                     <p className="small">
-                      Giao ngày {o.delivery_date} · {o.delivery_slot}
+                      {isPickup(o) ? "Nhận tại cửa hàng" : "Giao ngày"} {o.delivery_date} · {o.delivery_slot}
                     </p>
                     {(typeof o.items === "string"
                       ? JSON.parse(o.items)
@@ -786,16 +787,16 @@ export function Track() {
         <div className="order-card">
           <div className="flex-between">
             <h3>{order.reference}</h3>
-            <Status value={order.status} />
+            <Status value={order.status} label={orderStateLabel(order)} />
           </div>
           <p>
-            Ngày giao: {order.delivery_date}
+            {isPickup(order) ? "Ngày nhận tại cửa hàng" : "Ngày giao"}: {order.delivery_date}
             <br />
             Khung giờ: {order.delivery_slot}
             <br />
             Tổng tiền: {money(order.total)}
           </p>
-          <div className="order-progress">
+          {isPickup(order) ? <p>Khách lấy tại cửa hàng · {pickupLocation(order).name}<br />{pickupLocation(order).address}<br />{order.picked_up_at ? "Đã nhận lúc: " + formatDateTime(order.picked_up_at) : ""}</p> : <div className="order-progress">
             {["pending", "confirmed", "preparing", "shipping", "delivered"].map(
               (s, i) => (
                 <div
@@ -818,7 +819,7 @@ export function Track() {
                 </div>
               ),
             )}
-          </div>
+          </div>}
         </div>
       )}
     </main>

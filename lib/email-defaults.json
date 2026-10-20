@@ -35,6 +35,20 @@
     "body": "Chào {{customer_name}},\n\n{{campaign_message}}\n\nCắt chéo gốc hoa, thay nước sạch mỗi ngày và đặt hoa ở nơi thoáng mát để giữ hoa tươi lâu hơn.\n\nFleurious luôn sẵn lòng lắng nghe bạn."
   },
   {
+    "key": "order_pickup_confirmation",
+    "name": "Xác nhận nhận hoa tại cửa hàng",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Đơn {{order_reference}} đã nhận tại cửa hàng",
+    "body": "Chào {{customer_name}},\n\nCảm ơn bạn đã mua hoa tại {{store_name}}. Khách đã nhận đơn {{order_reference}} tại cửa hàng.\n\n{{order_items}}\n\nTổng thanh toán: {{order_total}}\nPhương thức: {{payment_method}}\nĐịa điểm nhận: {{pickup_location}}\nThời điểm nhận: {{picked_up_at}}\nTrạng thái: {{order_status}}\n\nTra cứu đơn tại {{tracking_url}}."
+  },
+  {
+    "key": "order_pickup_status",
+    "name": "Cập nhật đơn nhận hoa tại cửa hàng",
+    "kind": "transactional",
+    "subject": "{{store_name}} · Đơn {{order_reference}} · {{order_status}}",
+    "body": "Chào {{customer_name}},\n\nCửa hàng vừa cập nhật đơn {{order_reference}}.\n\nHình thức: Khách lấy tại cửa hàng\nTrạng thái: {{order_status}}\nĐịa điểm nhận: {{pickup_location}}\nTổng thanh toán: {{order_total}}\n\nTra cứu đơn tại {{tracking_url}}."
+  },
+  {
     "key": "crm_birthday",
     "name": "Chúc mừng sinh nhật",
     "kind": "marketing",

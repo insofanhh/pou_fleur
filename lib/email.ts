@@ -4,10 +4,12 @@ import nodemailer from "nodemailer";
 import { randomUUID } from "node:crypto";
 import type { PoolConnection } from "mysql2/promise";
 import { pool, mutate } from "./db";
-import { emailHTML, interpolateEmail, orderStatusNames } from "./email-content";
+import { emailHTML, interpolateEmail } from "./email-content";
 import { systemTemplate } from "./system-email";
 import { formatMoney as money } from "./money";
 import { emailAllowance, isPlatformEmail } from './email-policy';
+import { isPickup, orderStateLabel, orderMethodLabel, pickupLocation } from './order-fulfillment';
+import { formatDateTime } from './date-time';
 
 export function emailConfiguration() {
   const missing = [
@@ -106,14 +108,16 @@ export async function enqueueOrderEmail(
   key: "order_confirmation" | "order_status",
   previousStatus = "",
 ) {
+  const [orders] = await c.execute("SELECT * FROM orders WHERE id=?", [id]);
+  const o = (orders as any[])[0];
+  if (!o) return;
+  const templateKey = isPickup(o) ? key === "order_confirmation" ? "order_pickup_confirmation" : "order_pickup_status" : key;
   const [templates] = await c.execute(
     "SELECT * FROM email_templates WHERE template_key=? AND active=1",
-    [key],
+    [templateKey],
   );
   const t = (templates as any[])[0];
   if (!t) return;
-  const [orders] = await c.execute("SELECT * FROM orders WHERE id=?", [id]);
-  const o = (orders as any[])[0];
   if (!o?.email) {
     if (o)
       await c.execute("UPDATE orders SET email_skip_reason=? WHERE id=?", [
@@ -150,16 +154,19 @@ export async function enqueueOrderEmail(
       )
       .join("\n"),
     order_total: money(o.total),
-    order_status: orderStatusNames[o.status] || o.status,
-    previous_status: orderStatusNames[previousStatus] || previousStatus,
+    order_status: orderStateLabel(o),
+    previous_status: previousStatus ? orderStateLabel(o,previousStatus) : "",
+    fulfillment_method: isPickup(o) ? "Khách lấy tại cửa hàng" : "Giao tận nơi",
+    pickup_location: [pickupLocation(o).name,pickupLocation(o).address].filter(Boolean).join(" · "),
+    picked_up_at: formatDateTime(o.picked_up_at),
     recipient_name: o.recipient_name,
     delivery_address: o.address,
     delivery_date: String(o.delivery_date).slice(0, 10),
     delivery_slot: o.delivery_slot,
     store_name: o.store_name || storeRows[0].name,
-    payment_method: o.payment_method === 'bank' ? 'Chuyển khoản ngân hàng' : 'Thanh toán khi nhận hàng (COD)',
-    cod_payer: o.payment_method === "cod" ? codPayer : "Không áp dụng",
-    cod_outstanding: o.payment_method === "cod" ? money(codDue) : money(0),
+    payment_method: orderMethodLabel(o),
+    cod_payer: !isPickup(o) && o.payment_method === "cod" ? codPayer : "Không áp dụng",
+    cod_outstanding: !isPickup(o) && o.payment_method === "cod" ? money(codDue) : money(0),
     store_url: (process.env.APP_ORIGIN || '').replace(/\/$/,'')+'/s/'+storeRows[0].slug,
     tracking_url:
       (process.env.APP_ORIGIN || "").replace(/\/$/, "") +
@@ -168,7 +175,7 @@ export async function enqueueOrderEmail(
       "/track-order",
   };
   const renderedSubject=interpolateEmail(t.subject,values);
-  const codNotice=o.payment_method==="cod" ? `\n\nThanh toán COD · ${codPayer}\nCòn phải thu: ${money(codDue)}${o.status==="cancelled"?" · Đơn đã hủy, không thu thêm tiền.":codDue>0?o.cod_payer==="buyer"&&o.delivery_mode!=="self"?". Người đặt vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao hoa; không thu tiền người nhận.":". Vui lòng chuẩn bị số tiền còn lại khi nhận hoa.":" · Đã thanh toán đủ."}` : "";
+  const codNotice=isPickup(o) ? `\n\n${orderMethodLabel(o)} · Còn phải thu: ${money(codDue)}${o.status==="cancelled"?" · Đơn đã hủy, không thu thêm tiền.":codDue>0?". Vui lòng thanh toán phần còn lại theo thỏa thuận với cửa hàng.":" · Đã thanh toán đủ."}` : o.payment_method==="cod" ? `\n\nThanh toán COD · ${codPayer}\nCòn phải thu: ${money(codDue)}${o.status==="cancelled"?" · Đơn đã hủy, không thu thêm tiền.":codDue>0?o.cod_payer==="buyer"&&o.delivery_mode!=="self"?". Người đặt vui lòng thống nhất cách thanh toán với cửa hàng trước khi giao hoa; không thu tiền người nhận.":". Vui lòng chuẩn bị số tiền còn lại khi nhận hoa.":" · Đã thanh toán đủ."}` : "";
   const renderedBody=interpolateEmail(t.body,values)+codNotice;
   // Identify the seller even when an older customized template omits store_name.
   const seller=values.store_name;
@@ -176,7 +183,7 @@ export async function enqueueOrderEmail(
     "INSERT INTO email_outbox(dedupe_key,template_key,kind,recipient,order_id,subject,body) VALUES(?,?,'transactional',?,?,?,?) ON DUPLICATE KEY UPDATE dedupe_key=dedupe_key",
     [
       key + ":" + id + (key === "order_status" ? ":" + o.version : ""),
-      key,
+      templateKey,
       o.email,
       id,
       (renderedSubject.includes(seller) ? renderedSubject : seller+' · '+renderedSubject)

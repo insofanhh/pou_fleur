@@ -8,6 +8,7 @@ import { migrateManualOrders } from "./manual-orders-schema.mjs";
 import { migrateSuppressionKey } from "./suppression-key-schema.mjs";
 import { migrateAI } from "./ai-schema.mjs";
 import { migrateCOD } from "./cod-schema.mjs";
+import { migratePickup } from "./pickup-schema.mjs";
 
 export const tenantTables = [
   "categories",
@@ -339,6 +340,7 @@ export async function migrateSaaS(c) {
   );
   await migrateManualOrders(c);
   await migrateCOD(c);
+  await migratePickup(c);
   await migrateProductTaxonomy(c);
   await migrateAI(c);
   await migrateExperiencePlan(c);

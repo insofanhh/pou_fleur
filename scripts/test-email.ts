@@ -84,6 +84,9 @@ async function main() {
     );
     await c.query("CREATE TABLE identity_mail(id INT AUTO_INCREMENT PRIMARY KEY,recipient VARCHAR(190),subject VARCHAR(240),body TEXT,status VARCHAR(20) DEFAULT 'pending',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP); ALTER TABLE users ADD COLUMN active INT DEFAULT 1");
     await migratePlatformEmail(c);
+    // Keep the mail fixture in step with the shared order payment ledger and
+    // fulfillment fields without depending on a production database snapshot.
+    await c.query("CREATE TABLE order_payments(id INT AUTO_INCREMENT PRIMARY KEY,store_id INT NOT NULL,order_id INT NOT NULL,kind VARCHAR(30),amount INT); ALTER TABLE orders ADD COLUMN payment_method VARCHAR(20) DEFAULT 'cod',ADD COLUMN payment_status VARCHAR(30) DEFAULT 'unpaid',ADD COLUMN delivery_mode VARCHAR(20) DEFAULT 'gift',ADD COLUMN cod_payer VARCHAR(20) NULL,ADD COLUMN fulfillment_method VARCHAR(20) NOT NULL DEFAULT 'delivery',ADD COLUMN pickup_location_snapshot JSON NULL,ADD COLUMN picked_up_at DATETIME NULL");
     const conn = await appPool.getConnection();
     try {
       await conn.beginTransaction();
@@ -390,6 +393,17 @@ async function main() {
       check((await emailAllowance(appPool,2)).used===1,'Second-store mail increments only the second-store counter');
     });
     check((await emailAllowance(appPool,1)).used===countBefore,'Other-store sends do not change first-store usage');
+    await c.query("UPDATE email_outbox SET status='cancelled' WHERE status='pending'");
+    const pickupUsageBefore = (await emailAllowance(appPool, 1)).used;
+    await c.query("INSERT INTO orders(id,reference,customer_name,email,total,status,recipient_name,address,delivery_date,delivery_slot,store_id,store_name,version,fulfillment_method,pickup_location_snapshot,picked_up_at,payment_status) VALUES(3,'FLPICKUP','Khách tại quầy','pickup@example.test',100000,'delivered','Khách tại quầy','10 Phố Hoa','2026-10-20','Nhận ngay',1,'Fleur',1,'pickup',JSON_OBJECT('name','Fleur','address','10 Phố Hoa'),NOW(),'paid')");
+    await c.query("INSERT INTO order_payments(store_id,order_id,kind,amount) VALUES(1,3,'collect',100000)");
+    const pickupConnection = await appPool.getConnection();
+    try { await mail.enqueueOrderEmail(pickupConnection, 3, "order_confirmation"); }
+    finally { pickupConnection.release(); }
+    let pickupMessage: any;
+    await mail.processEmails(1, async m => { pickupMessage = m; return "pickup-qa-sent"; });
+    check(pickupMessage?.template_key === "order_pickup_confirmation" && pickupMessage.body.includes("Đã nhận tại cửa hàng") && !pickupMessage.body.includes("COD"), "Pickup email uses the shared worker with counter-specific content");
+    check((await emailAllowance(appPool, 1)).used === pickupUsageBefore + 1 && (await withStore(2, () => emailAllowance(appPool, 2))).used === 1, "Pickup delivery consumes exactly one store email slot and preserves other-store usage");
     console.log(
       "All " + checks + " email checks passed. No external email sent.",
     );
