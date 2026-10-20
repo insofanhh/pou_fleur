@@ -1269,6 +1269,7 @@ function StoreSettings() {
               version: data.version,
               settings: {
                 ...data.settings,
+                shipping: Number(f.shipping),
                 free_shipping: Number(f.free_shipping),
                 lead_minutes: Number(f.lead_minutes),
                 advance_days: Number(f.advance_days),
@@ -1307,6 +1308,7 @@ function StoreSettings() {
             ["name", "Tên cửa hàng", data.name, "text"],
             ["phone", "Điện thoại", data.phone, "text"],
             ["radius_km", "Bán kính giao (km)", data.radius_km, "number"],
+            ["shipping", "Phí giao (VNĐ)", data.settings.shipping, "number"],
             [
               "free_shipping",
               "Miễn phí giao từ (VNĐ)",
