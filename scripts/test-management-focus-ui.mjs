@@ -14,12 +14,18 @@ let identity = { id: 999999, name: "Focus QA", email: "focus@example.test", role
 let authReads = 0;
 const reads = new Map();
 const writes = [];
+let activityWrites = 0;
 const errors = [];
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
   await context.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path === "/api/activity" && request.method() === "POST") {
+      activityWrites++;
+      await route.fulfill({ status: 200, json: { ok: true } });
+      return;
+    }
     if (request.method() !== "GET") {
       writes.push(path);
       await route.fulfill({ status: 400, json: { error: "Focus regression must not mutate data" } });
@@ -72,6 +78,7 @@ try {
     await watch(selector);
     const beforeReads = reads.get(endpoint);
     const beforeAuth = authReads;
+    const beforeActivity = activityWrites;
     const beforeDocuments = documents;
     const account = page.locator(".admin-sidebar .admin-user strong");
     const beforeName = await account.textContent();
@@ -84,6 +91,7 @@ try {
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(reads.get(endpoint), beforeReads, endpoint + " must not refetch for an unchanged identity");
     assert.equal(documents, beforeDocuments, "Window focus must not reload the document");
+    assert.equal(activityWrites, beforeActivity, "Window focus must not fabricate activity");
     assert.deepEqual(await page.evaluate((selector) => ({ removed: window.focusWatch.removed, loading: window.focusWatch.loading, same: window.focusWatch.element === document.querySelector(selector) }), selector), { removed: false, loading: false, same: true });
   }
 
@@ -140,6 +148,7 @@ try {
   await expect(page.locator(".admin-table-panel")).toHaveCount(0);
   console.log("PASS permission revocation and logout still remove restricted content");
   assert.deepEqual(writes, [], "No mutating API calls during regression");
+  assert(activityWrites > 0, "Signed-in page navigation records activity separately from business writes");
   assert.deepEqual(errors, [], "No client runtime errors");
 } finally {
   await browser.close();

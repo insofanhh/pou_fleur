@@ -8,10 +8,10 @@ import { pool } from "../lib/db";
 let checks = 0;
 function check(v: unknown, title: string) { assert(v, title); console.log("PASS", title); checks++; }
 async function main() {
-  check(aiPlanAllowed(1) && aiPlanAllowed(2) && aiPlanAllowed(3) && !aiPlanAllowed(4) && !aiPlanAllowed(0), "Stable plan IDs allow Starter, Studio and Atelier only");
+  check(aiPlanAllowed(1) && aiPlanAllowed(2) && aiPlanAllowed(3) && aiPlanAllowed(4) && !aiPlanAllowed(5) && !aiPlanAllowed(0), "Stable plan IDs allow Free, Starter, Studio and Atelier only");
   check(defaultAIAllowance(1) === 50 && defaultAIAllowance(2) === 300 && defaultAIAllowance(3) === 1500, "Default monthly allowances 50/300/1500");
   check(aiAllowance(1, {}) === 50 && aiAllowance(2, {}) === 300 && aiAllowance(3, {}) === 1500, "Legacy missing quotas use tier defaults");
-  check(aiAllowance(1, { ai_messages: 0 }) === 0 && aiAllowance(1, { ai_messages: 27 }) === 27 && aiAllowance(4, { ai_messages: 20 }) === 0, "Explicit zero and custom quotas remain authoritative");
+  check(aiAllowance(1, { ai_messages: 0 }) === 0 && aiAllowance(1, { ai_messages: 27 }) === 27 && aiAllowance(4, { ai_messages: 20 }) === 20 && aiAllowance(5, { ai_messages: 20 }) === 0, "Explicit zero and custom quotas remain authoritative");
   check([-1, 1.5, 100001, "invalid", Infinity].every(value => aiAllowance(1, { ai_messages: value }) === 0), "Invalid persisted quotas fail closed");
   check(aiMonth(Date.parse("2026-10-31T17:00:00Z")) === "2026-11", "Quota month uses Hanoi midnight");
   check(normalizeAICurrency("215.000 ₫ và 200000đ, đơn hàng") === "215.000 VNĐ và 200000 VNĐ, đơn hàng", "AI currency output follows VNĐ convention");

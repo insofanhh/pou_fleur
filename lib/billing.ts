@@ -8,8 +8,9 @@ import { interpolateEmail } from "./email-content";
 import { formatMoney } from "./money";
 import type { PoolConnection } from "mysql2/promise";
 import { createHash } from "node:crypto";
+import { EXPERIENCE_PLAN_ID, isExperiencePlan, paidTrialUsed, planRank } from "./plan-policy";
 
-const sessionExpirySQL = (alias: string) => `(SELECT MAX(pi.expires_at) FROM payment_intents pi WHERE pi.store_id=${alias}.store_id AND pi.invoice_id=${alias}.id AND pi.kind='subscription' AND pi.status='pending')`;
+export const sessionExpirySQL = (alias: string) => `(SELECT MAX(pi.expires_at) FROM payment_intents pi WHERE pi.store_id=${alias}.store_id AND pi.invoice_id=${alias}.id AND pi.kind='subscription' AND pi.status='pending')`;
 
 // Anniversary billing, including months shorter than the anchor day.
 export function nextBillingDate(
@@ -129,7 +130,7 @@ async function mail(c: PoolConnection, i: any, key: string) {
         ? formatBillingTime(i.due_at || stamp(i.due_date))
         : "",
     invoice_period_start: i.period_start ? formatBillingTime(stamp(i.period_start)) : "",
-    invoice_period_end: i.period_end
+    invoice_period_end: isExperiencePlan(i.plan_id) ? "Không giới hạn ngày" : i.period_end
       ? formatBillingTime(stamp(i.period_end))
       : "",
     trial_days: String(i.trial_days || ""),
@@ -192,7 +193,7 @@ function endOf(sub: any): string | null {
 }
 // Catalog IDs are the service tiers (Khởi đầu, Studio, Atelier); editable
 // prices do not change which tier is an upgrade.
-const isUpgrade = (planId: number, sub: any) => Number(planId) > Number(sub.plan_id);
+const isUpgrade = (planId: number, sub: any) => planRank(planId) > planRank(sub.plan_id);
 
 async function upgradeWindow(c: PoolConnection, sid: number, sub: any, time: string, invoiceId = 0) {
   const [future]: any = await c.execute(
@@ -264,7 +265,7 @@ async function versionPlan(c: PoolConnection, versionId: number) {
 export async function captureRegistrationPlan(
   c: PoolConnection,
   sid: number,
-  planId = 1,
+  planId = EXPERIENCE_PLAN_ID,
   expectedVersion?: number,
 ) {
   const [owners]: any = await c.execute(
@@ -289,10 +290,11 @@ export async function captureRegistrationPlan(
       409,
       "Ưu đãi gói đã thay đổi. Vui lòng xem lại giá và số ngày thử trước khi đăng ký lại.",
     );
-  // Plan 1 is the first-store onboarding trial. Its duration is the current
-  // platform-configured value; the selected plan version and day count are
-  // snapshotted so later catalog edits do not change a pending registration.
-  let days = Number(plans[0].trial_days || 0);
+  // Free never consumes the single account-wide paid-plan trial. Snapshot
+  // paid offers now, but start their clock only after approval.
+  let days = isExperiencePlan(planId) ? 0 : Number(plans[0].trial_days || 0);
+  const [priorClaims]: any = await c.execute("SELECT plan_id FROM account_trial_claims WHERE user_id=?", [ownerId]);
+  if (paidTrialUsed(priorClaims)) days = 0;
   if (days > 0) {
     await c.execute(
       "INSERT IGNORE INTO account_trial_claims(user_id,bucket,store_id,plan_id,plan_version_id,trial_days) VALUES(?,?,?,?,?,?)",
@@ -310,8 +312,7 @@ export async function captureRegistrationPlan(
   );
 }
 
-export const trialBucket = (planId: number) =>
-  Number(planId) === 1 ? "starter" : "discovery";
+export const trialBucket = (_planId: number) => "discovery";
 export async function accountTrialAvailability(
   userId: number,
   runner: any = pool,
@@ -321,14 +322,11 @@ export async function accountTrialAvailability(
       "SELECT t.*,p.name plan_name FROM account_trial_claims t LEFT JOIN plan_versions p ON p.id=t.plan_version_id WHERE t.user_id=? ORDER BY t.claimed_at",
       [userId],
     );
-    const discoveryClaim = claims.find((claim: any) => claim.bucket === "discovery");
+    const used = paidTrialUsed(claims);
     return {
-      // Starter is an automatic onboarding entitlement, not a selectable
-      // workspace trial. Only the shared discovery entitlement is available
-      // for self-service trial selection.
       total: 1,
-      available: discoveryClaim ? 0 : 1,
-      discovery_available: !discoveryClaim,
+      available: used ? 0 : 1,
+      discovery_available: !used,
       claims,
     };
   });
@@ -450,10 +448,10 @@ export async function previewAccountTrial(
   actor: number,
 ) {
   return withSystem(async () => {
-    if (Number(planId) === 1)
+    if (isExperiencePlan(planId))
       throw new HttpError(
         409,
-        "Gói Khởi đầu được cấp tự động theo số ngày admin cấu hình khi mở cửa hàng đầu tiên; không đăng ký lại dùng thử từ workspace.",
+        "Gói Trải nghiệm miễn phí không giới hạn ngày, không cần đăng ký dùng thử.",
       );
     const sub = await subscription(c, sid),
       time = await clock(c);
@@ -478,10 +476,10 @@ export async function previewAccountTrial(
       "SELECT * FROM account_trial_claims WHERE user_id=?",
       [actor],
     );
-    if (claims.some((t: any) => t.bucket === trialBucket(planId)))
+    if (paidTrialUsed(claims))
       throw new HttpError(
         409,
-        "Tài khoản đã dùng hoặc đang giữ lượt thử của nhóm gói này. Khởi đầu có 1 lượt; các gói còn lại dùng chung 1 lượt.",
+        "Tài khoản đã dùng hoặc đang giữ lượt dùng thử. Khởi đầu, Studio và Atelier dùng chung 1 lượt; Gói Trải nghiệm không tiêu lượt này.",
       );
     const [plans]: any = await c.execute(
       "SELECT v.* FROM plans p JOIN plan_versions v ON v.id=(SELECT MAX(id) FROM plan_versions WHERE plan_id=p.id) WHERE p.id=? AND p.active=1 FOR UPDATE",
@@ -532,7 +530,7 @@ export async function previewAccountTrial(
       [sid, sid, sid],
     );
     const token = createHash("sha256")
-      .update(JSON.stringify({ policy: "immediate-discovery-v2", sub, store: stores[0], claims, plan, invoices }))
+      .update(JSON.stringify({ policy: "free-entry-single-paid-trial-v3", sub, store: stores[0], claims, plan, invoices }))
       .digest("hex");
     return {
       token,
@@ -687,20 +685,21 @@ async function activatePaidCoverage(
   // Bring forward paid upgrades made under the old end-of-period policy.
   // Prefer the highest purchased tier so lower prepaid tiers cannot replace it.
   const [upgrades]: any = await c.execute(
-    "SELECT i.* FROM invoices i JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.purpose='plan_change' AND i.applied_at IS NOT NULL AND i.activated_at IS NULL AND i.effective_start_at>? AND v.plan_id>? ORDER BY v.plan_id DESC,i.effective_end_at DESC LIMIT 1 FOR UPDATE",
-    [sid, time, sub.plan_id],
+    "SELECT i.* FROM invoices i JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.purpose='plan_change' AND i.applied_at IS NOT NULL AND i.activated_at IS NULL AND i.effective_start_at>? AND (CASE WHEN v.plan_id=4 THEN 0 ELSE v.plan_id END)>? ORDER BY (CASE WHEN v.plan_id=4 THEN 0 ELSE v.plan_id END) DESC,i.effective_end_at DESC LIMIT 1 FOR UPDATE",
+    [sid, time, planRank(sub.plan_id)],
   );
   if (upgrades[0]) {
     const [receipts]: any = await c.execute("SELECT MAX(received_at) received_at FROM billing_payments WHERE invoice_id=?", [upgrades[0].id]);
     await promoteUpgrade(c, sid, sub, upgrades[0], receipts[0]?.received_at || time);
   }
   const [periods]: any = await c.execute(
-    "SELECT * FROM invoices WHERE store_id=? AND status='paid' AND applied_at IS NOT NULL AND activated_at IS NULL AND effective_start_at<=? AND effective_end_at>? ORDER BY effective_end_at DESC LIMIT 1 FOR UPDATE",
+    "SELECT i.* FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? AND i.status='paid' AND i.applied_at IS NOT NULL AND i.activated_at IS NULL AND i.effective_start_at<=? AND (i.effective_end_at>? OR v.plan_id=4) ORDER BY i.effective_end_at DESC LIMIT 1 FOR UPDATE",
     [sid, time, time],
   );
   const i = periods[0];
   if (!i) return;
   const plan = i.plan_version_id ? await versionPlan(c, i.plan_version_id) : null;
+  const free = isExperiencePlan(plan?.plan_id || sub.plan_id);
   // Never downgrade an already longer entitlement when a delayed webhook arrives.
   if (!endOf(sub) || i.effective_end_at >= endOf(sub)! || (plan && isUpgrade(plan.plan_id, sub))) {
     const local = new Date(instant(i.effective_start_at) + 7 * 3600000);
@@ -716,16 +715,16 @@ async function activatePaidCoverage(
         i.plan_version_id,
         Number(i.amount) === 0 ? "free" : "active",
         i.effective_start_at,
-        i.effective_end_at,
+        free ? null : i.effective_end_at,
         i.effective_start_at,
-        i.effective_end_at,
-        i.effective_end_at,
+        free ? null : i.effective_end_at,
+        free ? null : i.effective_end_at,
         anchor,
         sid,
       ],
     );
     if(plan && Number(plan.plan_id)!==Number(sub.plan_id))
-      await mail(c,{...i,period_start:i.effective_start_at,period_end:i.effective_end_at},"subscription_changed");
+      await mail(c,{...i,plan_id:plan.plan_id,period_start:i.effective_start_at,period_end:i.effective_end_at},"subscription_changed");
   }
   await c.execute(
     "UPDATE invoices SET activated_at=UTC_TIMESTAMP() WHERE id=?",
@@ -749,14 +748,22 @@ export async function activateApprovedStore(c: PoolConnection, sid: number) {
       if (sub.status !== "pending_activation") return;
       const days = Number(sub.trial_days_granted || 0);
       const plan = await versionPlan(c, sub.registration_plan_version_id);
+      if (isExperiencePlan(plan.plan_id)) {
+        await c.execute("UPDATE subscriptions SET status='free',trial_days_granted=0,active_trial_bucket=NULL,trial_started_at=NULL,trial_ends_at=NULL,access_started_at=?,access_ends_at=NULL,current_period_start=NULL,current_period_end=NULL,period_end=NULL,cancel_at_period_end=0,version=version+1 WHERE store_id=?", [time,sid]);
+        await mail(c,{id:`free-${sid}`,store_id:sid,plan_id:plan.plan_id,plan_name:plan.name,amount:0,paid:0,period_start:time},"subscription_registered");
+        return;
+      }
       const [owners]: any = await c.execute(
         "SELECT owner_id FROM stores WHERE id=?",
         [sid],
       );
-      const ownerId = owners[0].owner_id,
-        bucket = trialBucket(plan.plan_id);
+      const ownerId = owners[0].owner_id;
       await c.execute("SELECT id FROM users WHERE id=? FOR UPDATE", [ownerId]);
-      if (days > 0) {
+      // Honor reservations issued under the old starter/discovery policy.
+      const [held]: any = await c.execute("SELECT bucket FROM account_trial_claims WHERE user_id=? AND store_id=? AND plan_version_id=? AND starts_at IS NULL", [ownerId,sid,plan.version_id]);
+      const bucket = held[0]?.bucket || trialBucket(plan.plan_id);
+      const [prior]: any = await c.execute("SELECT bucket FROM account_trial_claims WHERE user_id=?", [ownerId]);
+      if (days > 0 && (held.length || !paidTrialUsed(prior))) {
         await c.execute(
           "INSERT IGNORE INTO account_trial_claims(user_id,bucket,store_id,plan_id,plan_version_id,trial_days) VALUES(?,?,?,?,?,?)",
           [ownerId, bucket, sid, plan.plan_id, plan.version_id, days],
@@ -821,6 +828,28 @@ export function formatBillingTime(value: string) {
   return formatDateTime(value, "utc");
 }
 
+async function fallbackToExperience(c: PoolConnection, sid: number, sub: any, time: string) {
+  const [versions]: any = await c.execute("SELECT * FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1", [EXPERIENCE_PLAN_ID]);
+  const plan = versions[0];
+  if (!plan || Number(plan.monthly_price) !== 0 || Number(plan.trial_days) !== 0)
+    throw new HttpError(409, "Gói Trải nghiệm chưa được cấu hình đúng. Vui lòng liên hệ platform.");
+  // Legacy invoices inferred their plan from the current subscription. Pin that
+  // identity before changing it so a late receipt cannot activate the Free tier.
+  const [previousVersions]: any = await c.execute("SELECT id FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1", [sub.plan_id]);
+  const previousVersion = sub.plan_version_id || previousVersions[0]?.id;
+  if (previousVersion) await c.execute("UPDATE invoices SET plan_version_id=? WHERE store_id=? AND plan_version_id IS NULL AND (status='open' OR (status='paid' AND activated_at IS NULL))", [previousVersion,sid]);
+  // Keep all receipts, unpaid balances and historical trial claims. Free access
+  // is independent of debt; settlement of the original invoice still buys time.
+  await c.execute("UPDATE subscriptions SET plan_id=?,plan_version_id=?,registration_plan_version_id=?,billing_policy=1,status='free',trial_days_granted=0,active_trial_bucket=NULL,trial_started_at=NULL,trial_ends_at=NULL,access_started_at=?,access_ends_at=NULL,current_period_start=NULL,current_period_end=NULL,period_end=NULL,billing_anchor_day=NULL,cancel_at_period_end=0,version=version+1 WHERE store_id=?", [EXPERIENCE_PLAN_ID,plan.id,plan.id,time,sid]);
+  await c.execute("UPDATE email_outbox SET status='cancelled',last_error='EXPERIENCE_FALLBACK' WHERE store_id=? AND template_key IN ('subscription_renewal_5d','subscription_renewal_1d','subscription_trial_expired','subscription_suspended') AND status IN ('pending','failed')", [sid]);
+  // A manual platform suspension remains in force.
+  await c.execute("UPDATE stores SET status='approved',billing_suspended=0,suspension_reason=NULL,version=version+1 WHERE id=? AND status='suspended' AND billing_suspended=1", [sid]);
+  const reason = sub.cancel_at_period_end ? "renewal_cancelled" : sub.trial_ends_at ? "trial_expired" : "payment_overdue";
+  await c.execute("INSERT INTO audit_logs(store_id,action,entity,entity_id,detail) VALUES(?,'subscription_free_fallback','subscriptions',?,?)", [sid,String(sid),JSON.stringify({reason,previousPlanId:sub.plan_id,previousPlanVersionId:sub.plan_version_id,previousEnd:endOf(sub),planVersionId:plan.id})]);
+  await notice(c,sid,`billing:free-fallback:${sid}:${sub.version}`,"Đã chuyển về gói Trải nghiệm",`Quyền sử dụng gói ${sub.name} đã kết thúc. Cửa hàng tiếp tục sử dụng gói ${plan.name} miễn phí không giới hạn ngày với hạn mức của gói. Bạn có thể thanh toán để sử dụng lại gói trả phí.`);
+  await mail(c,{id:`free-fallback-${sid}-${sub.version}`,store_id:sid,plan_id:EXPERIENCE_PLAN_ID,plan_name:plan.name,amount:0,paid:0,period_start:time},"subscription_changed");
+}
+
 export async function reconcileBilling(c: PoolConnection, sid: number) {
   return withSystem(async () => {
     const time = await clock(c);
@@ -838,13 +867,19 @@ export async function reconcileBilling(c: PoolConnection, sid: number) {
       "SELECT * FROM invoices WHERE store_id=? AND status='open' AND paid<amount AND COALESCE(due_at,DATE_ADD(due_date,INTERVAL 1 DAY))<=? ORDER BY due_date,id LIMIT 1",
       [sid, time],
     );
-    // Trial/paid entitlement is the source of truth, never a future unpaid invoice.
-    const restricted =
-      expired ||
-      sub.status === "awaiting_payment" ||
-      sub.status === "cancelled" ||
-      (!expiry && debts.length) ||
-      (Number(sub.billing_policy) === 0 && debts.length);
+    if (isExperiencePlan(sub.plan_id)) {
+      // Old unpaid invoices remain collectible without freezing the Free tier.
+      await c.execute("UPDATE stores SET status='approved',billing_suspended=0,suspension_reason=NULL,version=version+1 WHERE id=? AND status='suspended' AND billing_suspended=1", [sid]);
+      return;
+    }
+    if (expired || (!expiry && (debts.length || sub.status === "cancelled"))) {
+      await fallbackToExperience(c,sid,sub,time);
+      return;
+    }
+    // Purchased access is kept until its boundary, even when renewal is stopped
+    // or an unrelated historical invoice is overdue. Only an initial unpaid
+    // signup before its payment deadline can still await activation here.
+    const restricted = !expiry && sub.status === "awaiting_payment";
     if (restricted) {
       const reason = sub.trial_ends_at
         ? "Thời gian dùng thử đã hết. Vui lòng thanh toán để tiếp tục sử dụng cửa hàng."
@@ -889,7 +924,7 @@ export async function reconcileBilling(c: PoolConnection, sid: number) {
             : "subscription_suspended",
         );
       }
-    } else if (expiry && expiry > time) {
+    } else if ((expiry && expiry > time) || (isExperiencePlan(sub.plan_id) && sub.access_started_at)) {
       if (["restricted", "past_due"].includes(sub.status))
         await c.execute(
           "UPDATE subscriptions SET status=?,version=version+1 WHERE store_id=?",
@@ -954,16 +989,16 @@ async function applyPaidInvoice(
   );
   await cancelReminders(c, i.store_id, i.id, "INVOICE_SETTLED");
   await activatePaidCoverage(c, i.store_id, await clock(c));
-  const settled={...i,period_start:start,period_end:end};
-  await mail(c, settled, "subscription_payment_received");
+  const settled={...i,plan_id:target?.plan_id,period_start:start,period_end:end};
+  if (Number(i.amount) > 0) await mail(c, settled, "subscription_payment_received");
   const [previous]: any=await c.execute("SELECT COUNT(*) n FROM invoices WHERE store_id=? AND id<>? AND applied_at IS NOT NULL",[i.store_id,i.id]);
   await mail(c,settled,i.purpose === "plan_change" ? "subscription_change_confirmed" : Number(previous[0].n) ? "subscription_renewed" : "subscription_registered");
   await notice(
     c,
     i.store_id,
     `billing:paid:${i.id}`,
-    `Đã thanh toán hóa đơn INV-${i.id}`,
-    `Kỳ đã thanh toán: ${formatBillingTime(start)} → ${formatBillingTime(end)}.`,
+    Number(i.amount) > 0 ? `Đã thanh toán hóa đơn INV-${i.id}` : "Đã xác nhận gói miễn phí",
+    isExperiencePlan(target?.plan_id) ? `Gói ${target.name} miễn phí không giới hạn ngày, áp dụng từ ${formatBillingTime(start)}.` : `Kỳ đã xác nhận: ${formatBillingTime(start)} → ${formatBillingTime(end)}.`,
   );
 }
 export async function recordInvoicePayment(
@@ -1057,6 +1092,8 @@ export async function prepareSubscriptionInvoice(
     await activatePaidCoverage(c, sid, await clock(c));
     const sub = await subscription(c, sid),
       time = await clock(c);
+    if (isExperiencePlan(planId) && isExperiencePlan(sub.plan_id))
+      throw new HttpError(409,"Cửa hàng đang dùng Gói Trải nghiệm miễn phí không giới hạn ngày, không cần gia hạn.");
     const [futureTrials]: any = await c.execute(
       "SELECT * FROM account_trial_claims WHERE store_id=? AND activated_at IS NULL AND ends_at>? ORDER BY ends_at DESC LIMIT 1",
       [sid, time],
@@ -1185,6 +1222,10 @@ export async function prepareSubscriptionInvoice(
       start,
       upgrade ? `upgrade:${planId}:${start}` : `cycle:${start}`,
     );
+    if (!samePlan && i.status === "paid") {
+      await c.execute("UPDATE invoices SET purpose='plan_change' WHERE id=?", [i.id]);
+      i.purpose = "plan_change";
+    }
     if (
       !samePlan &&
       (upgrade || !(upcomingTrial && Number(upcomingTrial.plan_id) === Number(planId))) &&
@@ -1380,7 +1421,7 @@ export async function previewSubscriptionChange(
       paid: Number(i.paid),
       amount_due: Math.max(0, Number(i.amount) - Number(i.paid)),
       starts_at: i.effective_start_at || i.starts_at,
-      ends_at: i.effective_end_at || i.ends_at,
+      ends_at: isExperiencePlan(target.plan_id) ? null : i.effective_end_at || i.ends_at,
       current_plan: sub.name,
       change_type: isUpgrade(planId, sub) ? "upgrade" : Number(planId) === Number(sub.plan_id) ? "renewal" : "downgrade",
       trial_ends_at: sub.trial_ends_at,
@@ -1531,16 +1572,6 @@ export async function refreshBillingAccess(
       await expirePendingPlanChanges(c, sid);
       await activateAccountTrial(c, sid, await clock(c));
       await activatePaidCoverage(c, sid, await clock(c));
-      const sub = await subscription(c, sid),
-        time = await clock(c);
-      if (
-        endOf(sub) &&
-        endOf(sub)! <= time &&
-        !sub.cancel_at_period_end &&
-        sub.status !== "cancelled" &&
-        Number(sub.monthly_price) === 0
-      )
-        await prepareSubscriptionInvoice(c, sid, sub.plan_id, false);
       await reconcileBilling(c, sid);
       const [rows]: any = await c.execute(
         "SELECT status,suspension_reason FROM stores WHERE id=?",
@@ -1575,6 +1606,7 @@ export async function advanceBilling(onlyStoreId?: number) {
         const time = await clock(c);
         await activateAccountTrial(c, sid, time);
         await activatePaidCoverage(c, sid, time);
+        await reconcileBilling(c, sid);
         const sub = await subscription(c, sid),
           expiry = endOf(sub);
         const days = expiry
@@ -1592,6 +1624,7 @@ export async function advanceBilling(onlyStoreId?: number) {
           [sid],
         );
         for (const i of due) {
+          if (isExperiencePlan(sub.plan_id)) continue;
           if (i.purpose === "plan_change" && Number(i.paid) === 0) continue;
           // Send the nearest outstanding reminder only, never backfill all missed marks.
           const n = Number(i.days_until);

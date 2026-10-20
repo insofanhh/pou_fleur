@@ -61,6 +61,10 @@ const invoice = {
   status: "open",
   due_date: "2026-12-01",
   period_key: "2026-11",
+  plan_id: 1,
+  balance: 150000,
+  can_pay: true,
+  can_void: true,
 };
 const email = {
   configuration: { enabled: true, ready: true },
@@ -239,7 +243,8 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : [chromium, w
             customers: 1,
             version: 1,
           }));
-        else if (path === "/api/platform/invoices") data = [invoice];
+        else if (path === "/api/platform/invoices") data = {rows:[invoice],summary:{paid:0,outstanding:150000,overdue:0},plans:[{id:1,name:'Khởi đầu'}],total:1,page:1,page_size:20};
+        else if (path === "/api/platform/invoices/991") data = {invoice,payments:[]};
         else if (path === "/api/orders")
           data = [
             { ...order, status: "delivered", items: [] },
@@ -258,7 +263,7 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : [chromium, w
                 box = button.getBoundingClientRect();
               return !icon ||
                 icon.getAttribute("width") !== "15" ||
-                !button.textContent.trim() ||
+                (!button.textContent.trim() && !button.getAttribute('aria-label')) ||
                 style.color !== "rgb(23, 23, 23)" ||
                 box.height < (width <= 700 ? 44 : 32) - 1
                 ? [button.outerHTML]
@@ -362,19 +367,21 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : [chromium, w
         await page.goto(origin + "/platform/" + area);
         await inspect("platform/" + area);
         if (area === "invoices") {
-          const form = page.locator(".table-action-form").first();
+          await page.getByRole('button',{name:'Ghi nhận thanh toán HD-000991',exact:true}).click();
+          const form = page.getByRole('dialog').locator(".invoice-action-form");
           const before = writes.length;
-          await form.getByRole("button", { name: "Ghi nhận", exact: true }).click();
+          await expect(form).toBeVisible();
+          await form.getByRole("button", { name: "Xác nhận đã nhận tiền", exact: true }).click();
           assert.equal(
             writes.length,
             before,
             "Invalid invoice form must not submit",
           );
-          await form.getByLabel("Số tiền", { exact: true }).fill("50000");
+          await form.getByLabel("Số tiền nhận (VNĐ)", { exact: true }).fill("50000");
           await form
             .getByLabel("Mã giao dịch", { exact: true })
             .fill("QA-REF-991");
-          await clickAndRefresh(form.getByRole("button", { name: "Ghi nhận", exact: true }), "/api/platform/invoices");
+          await clickAndRefresh(form.getByRole("button", { name: "Xác nhận đã nhận tiền", exact: true }), "/api/platform/invoices");
           await expect
             .poll(
               () =>
@@ -383,11 +390,11 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : [chromium, w
                 )?.body.amount,
             )
             .toBe(50000);
-          await page.getByText("Hủy hóa đơn", { exact: true }).click();
+          await page.getByRole('button',{name:'Hủy HD-000991',exact:true}).click();
           await page
             .getByLabel("Lý do hủy hóa đơn", { exact: true })
             .fill("Kiểm tra giao diện");
-          await clickAndRefresh(page.getByRole("button", { name: "Xác nhận hủy", exact: true }), "/api/platform/invoices");
+          await clickAndRefresh(page.getByRole("button", { name: "Xác nhận hủy hóa đơn", exact: true }), "/api/platform/invoices");
           await expect
             .poll(() =>
               writes.some((w) => w.path === "/api/platform/invoices/991/void"),

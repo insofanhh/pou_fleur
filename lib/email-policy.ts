@@ -4,7 +4,7 @@ import { tenantId } from "./tenant";
 export const isPlatformEmail = (key: string) =>
   key.startsWith("store_") || key.startsWith("subscription_");
 export const defaultEmailLimit = (plan: number) =>
-  plan === 1 ? 100 : plan === 2 ? 1000 : 5000;
+  plan === 4 ? 50 : plan === 1 ? 100 : plan === 2 ? 1000 : 5000;
 // Calendar month in Vietnam. SMTP-uncertain submissions retain their slot so
 // retries cannot bypass the allowance after a lost DATA acknowledgment.
 export const emailMonthStart =

@@ -6,6 +6,7 @@ import { withSystem, withStore } from "../lib/tenant";
 import { passwordHash, digest } from "../lib/auth";
 import {
   activateApprovedStore,
+  captureRegistrationPlan,
   advanceBilling,
   prepareSubscriptionInvoice,
   recordInvoicePayment,
@@ -14,7 +15,7 @@ import {
   extendStoreTrial,
 } from "../lib/billing";
 import { createIntent, platformBank, processWebhook } from "../lib/sepay";
-import { processEmails } from "../lib/email";
+import { processEmails, enqueueStoreLifecycleEmail } from "../lib/email";
 import { quota } from "../lib/stores";
 
 assert(
@@ -120,7 +121,7 @@ async function main() {
         name: "Khởi đầu QA",
         monthly_price: price,
         trial_days: days,
-        limits,
+        limits: { ...limits, email_sends: 100 },
       });
     }
     async function create(
@@ -140,12 +141,17 @@ async function main() {
       await mutate("DELETE FROM login_attempts WHERE attempt_key=?", [
         digest("create-store:" + person.insertId),
       ]);
-      const s = await owner("stores", "POST", {
-        name: `Trial ${fixtures.length} ${key}`,
-        slug: `trial-${key}-${fixtures.length}`,
-        address: "123 Đường Hoa, Hà Nội",
-        phone: "0901234567",
-        plan_id: planId,
+      // Independent billing lifecycles deliberately share a QA owner. Build
+      // fixtures directly; public one-store registration is tested separately
+      // by test-experience and must not be bypassed in the application API.
+      const s = await tx(async c => {
+        const [r]: any = await c.execute("INSERT INTO stores(name,slug,owner_id,status,address,phone,settings,theme) VALUES(?,?,?,?,?,'0901234567','{\"open\":true}','{}')",[`Trial ${fixtures.length} ${key}`,`trial-${key}-${fixtures.length}`,person.insertId,auto?'approved':'pending','123 Đường Hoa, Hà Nội']);
+        await c.execute("INSERT INTO store_memberships(store_id,user_id,role) VALUES(?,?,'owner')",[r.insertId,person.insertId]);
+        await c.execute("INSERT INTO subscriptions(store_id,plan_id) VALUES(?,?)",[r.insertId,planId]);
+        await captureRegistrationPlan(c,r.insertId,planId);
+        if(auto) await activateApprovedStore(c,r.insertId);
+        await enqueueStoreLifecycleEmail(c,r.insertId,auto?'store_approved':'store_registration_pending');
+        return {id:r.insertId};
       });
       fixtures.push(s.id);
       if (approve && !auto) await approveStore(s.id);
@@ -282,11 +288,11 @@ async function main() {
       const noTrial = await create(0);
       b = await billing(noTrial);
       check(
-        b.subscription.status === "awaiting_payment" &&
+        b.subscription.status === "free" && b.subscription.plan_id === 4 &&
           !b.subscription.access_ends_at &&
           b.invoices.length === 1 &&
-          b.store.billing_suspended,
-        "Zero-day paid plan waits for payment without granting a month",
+          !b.store.billing_suspended,
+        "Unpaid zero-day paid plan falls back to Free while retaining its payment invoice",
       );
       await tx((c) =>
         recordInvoicePayment(
@@ -307,9 +313,9 @@ async function main() {
         [autoNoTrial],
       );
       check(
-        autoWaiting.status === "suspended" &&
-          autoWaiting.billing_suspended === 1,
-        "Autoapproved zero-day paid signup is restricted immediately before any billing-page visit",
+        autoWaiting.status === "approved" &&
+          autoWaiting.billing_suspended === 0,
+        "Autoapproved zero-day paid signup receives Free access while waiting for payment",
       );
       await owner(
         "workspace/billing/start",
@@ -417,18 +423,18 @@ async function main() {
         "At boundary, paid coverage becomes current without waiting for cron",
       );
 
+      await tx(c=>prepareSubscriptionInvoice(c,next,1));
       await expire(next);
       await advanceBilling(next);
       b = await billing(next);
       const late = b.invoices.find((x: any) => x.status === "open");
       check(
-        b.store.status === "suspended" &&
-          b.subscription.status === "restricted" &&
+        b.store.status === "approved" &&
+          b.subscription.status === "free" && b.subscription.plan_id === 4 &&
           !!late,
-        "Unpaid expired trial freezes store and retains billing access",
+        "Unpaid expired trial falls back to Free and retains its renewal invoice",
       );
-      await owner("workspace/settings", "PATCH", {}, next, 403);
-      check(true, "Frozen store cannot mutate operational settings");
+      check((await owner("workspace/settings", "GET", undefined, next)).id===next, "Free store retains access to operational settings");
       await tx((c) =>
         recordInvoicePayment(
           c,
@@ -439,8 +445,8 @@ async function main() {
         ),
       );
       check(
-        (await billing(next)).store.status === "suspended",
-        "Partial late receipt does not unfreeze store",
+        (await billing(next)).subscription.plan_id === 4,
+        "Partial late receipt keeps the Free plan until full payment",
       );
       await mutate(
         "UPDATE invoices SET starts_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 3 DAY),ends_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 27 DAY),due_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 3 DAY) WHERE id=?",
@@ -621,10 +627,6 @@ async function main() {
           (await platformBank(c))!,
         ),
       );
-      await mutate(
-        "UPDATE payment_intents SET expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 MINUTE) WHERE id=?",
-        [intent.id],
-      );
       const credentials = await admin("platform/sepay/credentials", "POST", {});
       const headers = new Headers({ "x-api-key": credentials.apiKey });
       const [time] = await query<any[]>(
@@ -639,9 +641,12 @@ async function main() {
         transactionDate: time.received,
       };
       await processWebhook(JSON.stringify(event), event, headers);
+      // An invoice with an existing partial receipt is protected from timeout.
+      // Zero-receipt expired QR rejection is covered by test-plan-changes.
+      await mutate("UPDATE payment_intents SET expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 MINUTE) WHERE id=?",[intent.id]);
       check(
-        (await billing(webhook)).store.status === "suspended",
-        "SePay partial receipt remains frozen even with expired QR",
+        (await billing(webhook)).subscription.plan_id === 4,
+        "SePay partial receipt retains Free access even with expired QR",
       );
       const full = {
         ...event,
@@ -680,11 +685,10 @@ async function main() {
       await expire(auto, 0);
       const listed = await owner("stores");
       check(
-        !listed.some((s: any) => s.id === auto),
-        "Marketplace hides expired trial at exact deadline before cron",
+        listed.some((s: any) => s.id === auto),
+        "Marketplace retains store with Free fallback at exact trial deadline before cron",
       );
-      await owner("workspace/settings", "PATCH", {}, auto, 403);
-      check(true, "API blocks expired trial at exact instant without cron");
+      check((await billing(auto)).subscription.plan_id===4, "API replaces expired trial with Free at exact instant without cron");
       const permanent = await create(3, true, false, 0);
       await expire(permanent);
       await advanceBilling(permanent);
@@ -692,9 +696,9 @@ async function main() {
       check(
         b.store.status === "approved" &&
           b.subscription.status === "free" &&
-          b.subscription.access_ends_at &&
+          b.subscription.plan_id === 4 && !b.subscription.access_ends_at &&
           !b.subscription.trial_ends_at,
-        "Price-zero package continues free monthly service after trial",
+        "Expired finite price-zero package falls back to indefinite Experience",
       );
       const freeTrial = await create(3, true, false, 0);
       b = await billing(freeTrial);
@@ -719,8 +723,8 @@ async function main() {
       await advanceBilling(freeTrial);
       b = await billing(freeTrial);
       check(
-        b.subscription.status === "cancelled" && b.store.status === "suspended",
-        "Stopping renewal voids free reserved coverage and ends access at trial expiry",
+        b.subscription.status === "free" && b.subscription.plan_id === 4 && b.store.status === "approved",
+        "Stopping renewal voids reserved coverage and falls back to Experience at expiry",
       );
       await mutate(
         "UPDATE subscriptions SET cancel_at_period_end=0 WHERE store_id=?",
@@ -728,8 +732,8 @@ async function main() {
       );
       await advanceBilling(freeTrial);
       check(
-        (await billing(freeTrial)).subscription.status === "cancelled",
-        "An already cancelled subscription never resumes through automatic free renewal",
+        (await billing(freeTrial)).subscription.plan_id === 4,
+        "Repeated workers keep indefinite Experience without resuming the cancelled paid plan",
       );
 
       const studio = await create(14, true, false, 199000, 2);

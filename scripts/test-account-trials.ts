@@ -112,7 +112,7 @@ async function main() {
       );
       return r.insertId;
     }
-    async function store(uid: number, pid = 1, activate = true) {
+    async function store(uid: number, pid = 4, activate = true) {
       const r = await mutate(
         "INSERT INTO stores(slug,name,owner_id,status,settings,theme) VALUES(?,?,?,?,'{}','{}')",
         [
@@ -157,63 +157,36 @@ async function main() {
     try {
       const studio = await plan("Studio trải nghiệm QA " + key, 3, 129000),
         atelier = await plan("Atelier trải nghiệm QA " + key, 5, 259000);
-      const owner = await person(),
-        s = await store(owner.id, 1, false);
+      const onboarding = await person(), onboardingStore = await store(onboarding.id, 1, false);
       const starterConfig = Number((await one("SELECT trial_days FROM plans WHERE id=1")).trial_days);
-      const held = await one(
-        "SELECT * FROM account_trial_claims WHERE user_id=? AND bucket='starter'",
-        [owner.id],
-      );
-      check(
-        held && !held.starts_at && !held.ends_at,
-        "Registration reserves starter slot without starting its clock",
-      );
-      const second = await store(owner.id, 1, false);
-      check(
-        (
-          await one(
-            "SELECT trial_days_granted FROM subscriptions WHERE store_id=?",
-            [second],
-          )
-        ).trial_days_granted === 0,
-        "Another store cannot reserve the same account slot",
-      );
-      await mutate("UPDATE stores SET status='approved' WHERE id=?", [s]);
-      await tx((c) => activateApprovedStore(c, s));
-      let sub = await one("SELECT * FROM subscriptions WHERE store_id=?", [s]);
-      const originalEnd = sub.trial_ends_at;
-      check(
-        sub.status === "trialing" && sub.active_trial_bucket === "starter",
-        "Approval starts reserved starter trial",
-      );
-      check(
-        Number(sub.trial_days_granted) === starterConfig,
-        "Starter onboarding trial uses the platform-configured duration",
-      );
-      await tx((c) => activateApprovedStore(c, s));
-      check(
-        (
-          await one(
-            "SELECT trial_ends_at FROM subscriptions WHERE store_id=?",
-            [s],
-          )
-        ).trial_ends_at === originalEnd,
-        "Repeated approval never resets trial",
-      );
-      await mutate("UPDATE stores SET status='approved' WHERE id=?", [second]);
-      await tx((c) => activateApprovedStore(c, second));
-      check(
-        (
-          await one("SELECT status FROM subscriptions WHERE store_id=?", [
-            second,
-          ])
-        ).status !== "trialing",
-        "Second store receives normal billing instead of duplicated trial",
-      );
-      check(
-        (await accountTrialAvailability(owner.id)).available === 1,
-        "Account exposes one remaining shared discovery slot",
-      );
+      const held = await one("SELECT * FROM account_trial_claims WHERE user_id=?",[onboarding.id]);
+      check(held?.bucket === "discovery" && !held.starts_at, "Paid registration reserves the single shared slot without starting its clock");
+      const secondPaid = await store(onboarding.id, 1, false);
+      check((await one("SELECT trial_days_granted FROM subscriptions WHERE store_id=?",[secondPaid])).trial_days_granted === 0, "Another registration cannot reserve a second paid trial");
+      await mutate("UPDATE stores SET status='approved' WHERE id=?",[onboardingStore]);
+      await tx(c=>activateApprovedStore(c,onboardingStore));
+      const started = await one("SELECT * FROM subscriptions WHERE store_id=?",[onboardingStore]);
+      check(started.status === "trialing" && started.trial_days_granted === starterConfig, "Approval starts paid trial for configured N days");
+      await tx(c=>activateApprovedStore(c,onboardingStore));
+      check((await one("SELECT trial_ends_at FROM subscriptions WHERE store_id=?",[onboardingStore])).trial_ends_at === started.trial_ends_at, "Reapproval preserves expiry");
+      await assert.rejects(()=>quote(onboardingStore,studio,onboarding.id),/đã dùng/);
+      check((await accountTrialAvailability(onboarding.id)).available === 0,"Starter consumes the same lifetime entitlement as Studio/Atelier");
+      const oldPendingOwner=await person(),oldPendingStore=await store(oldPendingOwner.id,1,false);
+      await mutate("UPDATE account_trial_claims SET bucket='starter' WHERE user_id=?",[oldPendingOwner.id]);
+      await mutate("UPDATE stores SET status='approved' WHERE id=?",[oldPendingStore]);
+      await tx(c=>activateApprovedStore(c,oldPendingStore));
+      const oldPending=await one("SELECT * FROM subscriptions WHERE store_id=?",[oldPendingStore]);
+      check(oldPending.status==='trialing'&&oldPending.active_trial_bucket==='starter'&&oldPending.trial_days_granted===starterConfig,"Pending legacy Starter reservation activates its original bucket and offer");
+      await assert.rejects(()=>quote(oldPendingStore,studio,oldPendingOwner.id),/đã dùng/);
+      check(true,"Legacy Starter alone consumes the sole new paid trial entitlement");
+      const owner = await person(), s = await store(owner.id), second = await store(owner.id);
+      let sub = await one("SELECT * FROM subscriptions WHERE store_id=?",[s]);
+      check(sub.plan_id === 4 && sub.status === "free" && !sub.access_ends_at && !sub.period_end, "Free registration activates indefinitely without a billing period");
+      check((await accountTrialAvailability(owner.id)).available === 1,"Free registration leaves the paid trial available");
+      await advanceBilling(s); await refreshBillingAccess(s);
+      check((await one("SELECT COUNT(*) n FROM invoices WHERE store_id=?",[s])).n === 0,"Free worker creates no renewal invoices or expiry reminders");
+      await assert.rejects(()=>tx(c=>prepareSubscriptionInvoice(c,s,4)),/không cần gia hạn/);
+      check(true,"Free cannot be repeatedly renewed to create zero invoices");
       const before = JSON.stringify(
         await query("SELECT * FROM account_trial_claims WHERE user_id=?", [
           owner.id,
@@ -221,11 +194,8 @@ async function main() {
       );
       const q = await quote(s, studio, owner.id),
         alternative = await quote(s, atelier, owner.id);
-      await assert.rejects(
-        () => quote(s, 1, owner.id),
-        /tự động theo số ngày admin cấu hình/,
-      );
-      check(true, "Starter trial cannot be selected again from workspace");
+      check((await quote(s,1,owner.id)).trial_days === starterConfig,"Starter is selectable when account has not used its paid trial");
+      await assert.rejects(()=>quote(s,4,owner.id),/miễn phí/);
       check(
         before ===
           JSON.stringify(
@@ -236,8 +206,8 @@ async function main() {
         "Trial preview does not consume a slot",
       );
       check(
-        q.starts_immediately && q.replaces_current_trial && q.starts_at < originalEnd && q.amount_due === 0 && q.trial_days === 3,
-        "Discovery preview replaces onboarding immediately with zero amount due",
+        q.starts_immediately && !q.replaces_current_trial && q.amount_due === 0 && q.trial_days === 3,
+        "Paid trial preview starts immediately from Free with zero amount due",
       );
       await assert.rejects(
         () => reserve(s, studio, owner.id, { ...q, token: "0".repeat(64) }),
@@ -340,14 +310,13 @@ async function main() {
       );
       check(
         claim.plan_id === studio &&
-          claim.starts_at < originalEnd &&
+          !!claim.starts_at &&
           !!claim.activated_at,
-        "Confirmation activates discovery immediately instead of waiting for Starter expiry",
+        "Confirmation activates the selected paid trial immediately from Free",
       );
       check(
-        (await one("SELECT plan_id,trial_ends_at FROM subscriptions WHERE store_id=?", [s])).plan_id === studio &&
-          (await one("SELECT ends_at FROM account_trial_claims WHERE user_id=? AND bucket='starter'", [owner.id])).ends_at === claim.starts_at,
-        "Subscription switches immediately and ends the consumed Starter entitlement",
+        (await one("SELECT plan_id,trial_ends_at FROM subscriptions WHERE store_id=?", [s])).plan_id === studio,
+        "Subscription switches from Free to the selected paid plan",
       );
       await assert.rejects(
         () => reserve(s, atelier, owner.id, alternative),
@@ -426,7 +395,7 @@ async function main() {
             "SELECT COUNT(*) n FROM email_outbox WHERE store_id=? AND template_key=?",
             [s, "subscription_trial_started"],
           )
-        ).n === 2,
+        ).n === 1,
         "Each started trial queues exactly one welcome email",
       );
       await mutate(
@@ -435,9 +404,9 @@ async function main() {
       );
       await refreshBillingAccess(s);
       check(
-        (await one("SELECT billing_suspended FROM stores WHERE id=?", [s]))
-          .billing_suspended === 1,
-        "Unpaid discovery expiry freezes operations",
+        (await one("SELECT plan_id FROM subscriptions WHERE store_id=?", [s])).plan_id === 4 &&
+          (await one("SELECT status FROM stores WHERE id=?", [s])).status === 'approved',
+        "Unpaid discovery expiry falls back to Experience without freezing operations",
       );
       check(
         (await accountTrialAvailability(owner.id)).available === 0,
@@ -542,9 +511,9 @@ async function main() {
       );
       await assert.rejects(
         () => quote(directStore, 1, directOwner.id),
-        /tự động theo số ngày admin cấu hình/,
+        /đã dùng/,
       );
-      check(true, "Starter onboarding trial is not selectable after registration");
+      check(true, "Starter cannot claim another paid trial after registration consumed one");
       const staleOwner = await person(),
         staleStore = await store(staleOwner.id),
         staleQuote = await quote(staleStore, atelier, staleOwner.id);
@@ -604,8 +573,8 @@ async function main() {
         "Trial selection requires explicit cancellation of the existing payment and QR",
       );
       const concurrent = await person(),
-        a = await store(concurrent.id, 1, false),
-        b = await store(concurrent.id, 1, false);
+        a = await store(concurrent.id, 4, false),
+        b = await store(concurrent.id, 4, false);
       await mutate("UPDATE stores SET status='approved' WHERE id IN (?,?)", [
         a,
         b,
@@ -629,11 +598,18 @@ async function main() {
         "Concurrent stores can reserve exactly one shared discovery slot",
       );
       async function legacyDiscovery(sid: number, uid: number, pid: number, start: string) {
-        const offer = await quote(sid, pid, uid);
+        const offer = await one("SELECT id plan_version_id,trial_days FROM plan_versions WHERE plan_id=? ORDER BY id DESC LIMIT 1",[pid]);
         await mutate("INSERT INTO account_trial_claims(user_id,bucket,store_id,plan_id,plan_version_id,trial_days,starts_at,ends_at) VALUES(?,'discovery',?,?,?,?,?,DATE_ADD(?,INTERVAL ? DAY))", [uid, sid, pid, offer.plan_version_id, offer.trial_days, start, start, offer.trial_days]);
         return offer;
       }
-      const legacyOwner = await person(), legacyStore = await store(legacyOwner.id);
+      async function legacyStoreFor(uid:number) {
+        const sid = await store(uid,1);
+        await mutate("UPDATE account_trial_claims SET bucket='starter' WHERE user_id=? AND bucket='discovery'",[uid]);
+        await mutate("UPDATE subscriptions SET active_trial_bucket='starter' WHERE store_id=?",[sid]);
+        await mutate("UPDATE email_outbox SET dedupe_key=REPLACE(dedupe_key,'-discovery','-starter') WHERE store_id=?",[sid]);
+        return sid;
+      }
+      const legacyOwner = await person(), legacyStore = await legacyStoreFor(legacyOwner.id);
       const legacySub = await one("SELECT * FROM subscriptions WHERE store_id=?", [legacyStore]);
       const legacyRenewal = await tx(c => prepareSubscriptionInvoice(c, legacyStore, 1));
       const legacyOffer = await legacyDiscovery(legacyStore, legacyOwner.id, studio, legacySub.trial_ends_at);
@@ -650,7 +626,7 @@ async function main() {
         (await one("SELECT COUNT(*) n FROM email_outbox WHERE store_id=? AND template_key='subscription_trial_started'", [legacyStore])).n === 2,
         "Repeated refresh does not restart repaired trial or duplicate started mail");
 
-      const prepaidOwner = await person(), prepaidStore = await store(prepaidOwner.id);
+      const prepaidOwner = await person(), prepaidStore = await legacyStoreFor(prepaidOwner.id);
       const prepaid = await tx(async c => {
         const i = await prepareSubscriptionInvoice(c, prepaidStore, 1);
         // QA catalogs may price Starter at zero. Create a cash-bearing renewal
@@ -669,7 +645,7 @@ async function main() {
         (await one("SELECT status FROM invoices WHERE id=?", [prepaid.id])).status === 'paid',
         "Legacy repair preserves a prepaid period after the onboarding trial");
 
-      const qrOwner = await person(), qrStore = await store(qrOwner.id);
+      const qrOwner = await person(), qrStore = await legacyStoreFor(qrOwner.id);
       const qrInvoice = await tx(c => prepareSubscriptionInvoice(c, qrStore, 1));
       if (Number(qrInvoice.amount) === 0) {
         await mutate("UPDATE invoices SET amount=1000,paid=0,status='open',applied_at=NULL,activated_at=NULL,effective_start_at=NULL,effective_end_at=NULL WHERE id=?", [qrInvoice.id]);
@@ -702,7 +678,7 @@ async function main() {
         offlineStore,
       ]);
       check(
-        sub.plan_id === 1 &&
+        sub.plan_id === 4 &&
           sub.status !== "trialing" &&
           !(
             await one(

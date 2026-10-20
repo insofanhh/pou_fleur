@@ -1,7 +1,15 @@
 "use client";
 import { formatDateTime } from "@/lib/date-time";
 import Select from "./ui-select";
-import { Eye, RotateCcw, Ban } from "lucide-react";
+import {
+  Eye,
+  RotateCcw,
+  Ban,
+  MailCheck,
+  MailWarning,
+  Plus,
+  PlugZap,
+} from "lucide-react";
 import { TableAction, TableActions } from "./table-actions";
 import { useState } from "react";
 import { api, useShop } from "./context";
@@ -79,7 +87,19 @@ export default function EmailWorkspace({
     setCampaign({ ...campaign, ...patch });
     setPreview(null);
   }
-  const previewValues = { ...demoEmailValues, ...(!platform && storeName ? { store_name: storeName } : {}) };
+  function addTemplate() {
+    setSelected({
+      name: "Mẫu CRM mới",
+      subject: "Chào {{customer_name}}",
+      body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleurious",
+      active: 1,
+      kind: "marketing",
+    });
+  }
+  const previewValues = {
+    ...demoEmailValues,
+    ...(!platform && storeName ? { store_name: storeName } : {}),
+  };
   const rendered = selected
     ? {
         subject: interpolateEmail(selected.subject, previewValues),
@@ -94,8 +114,27 @@ export default function EmailWorkspace({
       }
     : null;
   return (
-    <div className="email-workspace">
+    <div
+      className={
+        "email-workspace" + (platform ? " platform-email-workspace" : "")
+      }
+    >
       <section className="email-config">
+        {platform && (
+          <span
+            className={
+              "email-connection-icon " +
+              (cfg.enabled && cfg.ready ? "ready" : "paused")
+            }
+            aria-hidden="true"
+          >
+            {cfg.enabled && cfg.ready ? (
+              <MailCheck size={20} />
+            ) : (
+              <MailWarning size={20} />
+            )}
+          </span>
+        )}
         <div>
           <strong>
             {cfg.enabled && cfg.ready
@@ -130,25 +169,29 @@ export default function EmailWorkspace({
                 })
               }
             >
+              {platform && <PlugZap size={15} aria-hidden="true" />}
               Kiểm tra kết nối
             </button>
           )}
-          <button
-            className="button secondary"
-            disabled={busy}
-            onClick={() => void act(refresh)}
-          >
-            Làm mới
-          </button>
+          {!platform && (
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={() => void act(refresh)}
+            >
+              Làm mới
+            </button>
+          )}
         </div>
       </section>
       <div className="email-stats">
         {Object.entries(statusNames).map(([key, label]) => (
-          <div key={key}>
+          <div key={key} className={platform ? "stat-card" : undefined}>
+            {platform && <span>{label}</span>}
             <strong>
               {payload.stats.find((s: any) => s.status === key)?.count || 0}
             </strong>
-            <span>{label}</span>
+            {!platform && <span>{label}</span>}
           </div>
         ))}
       </div>
@@ -177,25 +220,22 @@ export default function EmailWorkspace({
       {tab === "templates" && (
         <div className="email-columns">
           <section className="email-panel">
-            <h2>{platform ? "Email hệ thống" : "Thư từ cửa hàng"}</h2>
+            <div className="email-panel-heading">
+              <h2>{platform ? "Email hệ thống" : "Thư từ cửa hàng"}</h2>
+              {platform && canEdit && (
+                <button className="button secondary" onClick={addTemplate}>
+                  <Plus size={15} aria-hidden="true" />
+                  Thêm mẫu CRM
+                </button>
+              )}
+            </div>
             <p>
               {platform
                 ? "Mẫu tài khoản, cửa hàng và thuê bao. Email đã xếp hàng giữ nội dung tại thời điểm tạo."
                 : "Sáu mẫu đơn hàng và chăm sóc có thể tùy chỉnh riêng; gửi bằng email hệ thống với tên cửa hàng."}
             </p>
-            {canEdit && (
-              <button
-                className="button secondary"
-                onClick={() =>
-                  setSelected({
-                    name: "Mẫu CRM mới",
-                    subject: "Chào {{customer_name}}",
-                    body: "Chào {{customer_name}},\n\n{{campaign_message}}\n\nThân mến,\nFleurious",
-                    active: 1,
-                    kind: "marketing",
-                  })
-                }
-              >
+            {!platform && canEdit && (
+              <button className="button secondary" onClick={addTemplate}>
                 Thêm mẫu CRM
               </button>
             )}
@@ -222,7 +262,10 @@ export default function EmailWorkspace({
           <section className="email-panel">
             {!selected ? (
               <div className="email-empty">
-                <h2>Một lời nhắn đúng lúc.</h2>
+                {platform && <MailCheck size={28} aria-hidden="true" />}
+                <h2>
+                  {platform ? "Chọn mẫu email" : "Một lời nhắn đúng lúc."}
+                </h2>
                 <p>Chọn mẫu để xem trước{canEdit ? " và chỉnh sửa" : ""}.</p>
               </div>
             ) : (
@@ -598,7 +641,9 @@ export default function EmailWorkspace({
                     <th>Khách</th>
                     <th>SMTP tiếp nhận</th>
                     <th>Chờ gửi</th>
-                    <th className="table-actions-heading" scope="col">Thao tác</th>
+                    <th className="table-actions-heading" scope="col">
+                      Thao tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -614,24 +659,27 @@ export default function EmailWorkspace({
                       <td>{c.sent_count}</td>
                       <td>{c.pending_count}</td>
                       <td>
-                        <TableActions><TableAction icon={Ban}
-                          disabled={busy || !c.pending_count}
-                          onClick={() =>
-                            void act(async () => {
-                              await api(
-                                base + "/cancel-campaign/" + c.id,
-                                "POST",
-                                {},
-                              );
-                              await refresh();
-                              toast(
-                                "Đã hủy các email chưa gửi của chương trình.",
-                              );
-                            })
-                          }
-                        >
-                          Hủy phần chưa gửi
-                        </TableAction></TableActions>
+                        <TableActions>
+                          <TableAction
+                            icon={Ban}
+                            disabled={busy || !c.pending_count}
+                            onClick={() =>
+                              void act(async () => {
+                                await api(
+                                  base + "/cancel-campaign/" + c.id,
+                                  "POST",
+                                  {},
+                                );
+                                await refresh();
+                                toast(
+                                  "Đã hủy các email chưa gửi của chương trình.",
+                                );
+                              })
+                            }
+                          >
+                            Hủy phần chưa gửi
+                          </TableAction>
+                        </TableActions>
                       </td>
                     </tr>
                   ))}
@@ -688,7 +736,9 @@ export default function EmailWorkspace({
                   <th>Kết quả</th>
                   <th>Số lần</th>
                   <th>Thời gian</th>
-                  <th className="table-actions-heading" scope="col">Thao tác</th>
+                  <th className="table-actions-heading" scope="col">
+                    Thao tác
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -722,36 +772,43 @@ export default function EmailWorkspace({
                       <td>{m.attempts}</td>
                       <td>{formatDateTime(m.sent_at || m.created_at)}</td>
                       <td>
-                        <TableActions><TableAction icon={Eye}
-                          disabled={busy}
-                          onClick={() =>
-                            void act(async () =>
-                              setMessagePreview(
-                                await api(
-                                  base + "/message/" + m.id,
-                                  "POST",
-                                  {},
-                                ),
-                              ),
-                            )
-                          }
-                        >
-                          Xem
-                        </TableAction>
-                        {m.status === "failed" && (
-                          <TableAction icon={RotateCcw}
-                            disabled={busy || !cfg.enabled || !cfg.ready}
+                        <TableActions>
+                          <TableAction
+                            icon={Eye}
+                            disabled={busy}
                             onClick={() =>
-                              void act(async () => {
-                                await api(base + "/retry/" + m.id, "POST", {});
-                                await refresh();
-                                toast("Đã đưa email về hàng đợi.");
-                              })
+                              void act(async () =>
+                                setMessagePreview(
+                                  await api(
+                                    base + "/message/" + m.id,
+                                    "POST",
+                                    {},
+                                  ),
+                                ),
+                              )
                             }
                           >
-                            Thử lại
+                            Xem
                           </TableAction>
-                        )}
+                          {m.status === "failed" && (
+                            <TableAction
+                              icon={RotateCcw}
+                              disabled={busy || !cfg.enabled || !cfg.ready}
+                              onClick={() =>
+                                void act(async () => {
+                                  await api(
+                                    base + "/retry/" + m.id,
+                                    "POST",
+                                    {},
+                                  );
+                                  await refresh();
+                                  toast("Đã đưa email về hàng đợi.");
+                                })
+                              }
+                            >
+                              Thử lại
+                            </TableAction>
+                          )}
                         </TableActions>
                       </td>
                     </tr>
