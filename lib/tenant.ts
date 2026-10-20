@@ -46,6 +46,7 @@ const tables = new Set([
   "order_drafts",
   "assets",
   "store_bank_accounts",
+  "store_sepay_integrations",
   "payment_intents",
   "ai_conversations",
   "ai_runs",

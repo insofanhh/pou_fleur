@@ -6,6 +6,7 @@ import { hanoiDateKey, formatDateTime, formatDate, parseDateTime } from "@/lib/d
 import { APP_TIME_ZONE_LABEL } from "@/lib/regional";
 import Select from "./ui-select";
 import StoreTeam from "./store-team";
+import StoreSepaySettings from "./store-sepay-settings";
 import StoreAnalyticsReport from "./store-analytics";
 import { Eye, Trash2, Pause, Play, QrCode, X } from "lucide-react";
 import { TableAction, TableActions } from "./table-actions";
@@ -1374,6 +1375,7 @@ function StoreSettings() {
           Nhận đơn mới
         </label>
         <div className="panel"><h3>Nhận chuyển khoản & mã QR</h3><p className="small">Thông tin này được dùng để tạo VietQR cho checkout và đơn thủ công.</p><div className="form-grid">{[["bank_code","Mã ngân hàng / BIN",data.bank?.bank_code||""],["bank_name","Tên ngân hàng",data.bank?.bank_name||""],["account_number","Số tài khoản",data.bank?.account_number||""],["account_holder","Chủ tài khoản",data.bank?.account_holder||""]].map(([name,label,value])=><label className="field" key={name}>{label}<input name={name} defaultValue={value}/></label>)}</div><label className="check-field"><input type="checkbox" name="bank_enabled" defaultChecked={!!data.bank?.enabled}/> Cho phép khách chuyển khoản</label><label className="check-field"><input type="checkbox" name="sepay_enabled" defaultChecked={!!data.bank?.sepay_enabled}/> Tự động đối soát qua SePay</label><label className="field">Trạng thái đơn sau khi nhận tiền<Select name="auto_confirm_status" defaultValue={data.bank?.auto_confirm_status||"confirmed"}><option value="confirmed">Đã xác nhận</option><option value="preparing">Đang chuẩn bị</option><option value="ready">Sẵn sàng giao</option></Select></label></div>
+        <StoreSepaySettings />
         <button className="button store-settings-save" disabled={busy}>
           Lưu cấu hình
         </button>

@@ -1,3 +1,4 @@
+import { migrateStoreSepay } from "./store-sepay-schema.mjs";
 import { migrateExperiencePlan } from "./experience-plan-schema.mjs";
 import { migratePlatformOverview } from "./platform-overview-schema.mjs";
 import { migratePlatformEmail } from "./platform-email-schema.mjs";
@@ -341,6 +342,7 @@ export async function migrateSaaS(c) {
   await migrateManualOrders(c);
   await migrateCOD(c);
   await migratePickup(c);
+  await migrateStoreSepay(c);
   await migrateProductTaxonomy(c);
   await migrateAI(c);
   await migrateExperiencePlan(c);

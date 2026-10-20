@@ -1,3 +1,4 @@
+import { storeSepayAPI } from "./store-sepay";
 import { EXPERIENCE_PLAN_ID, isExperiencePlan } from "./plan-policy";
 import { recordActivity } from "./activity";
 import { loadPlatformOverview } from "./platform-overview";
@@ -305,6 +306,7 @@ export async function saasAPI(
       throw new HttpError(404, "Cửa hàng chưa mở.");
     return { ...publicStore(s), bank: await activeBank(s.id) };
   }
+  if (key.startsWith("workspace/sepay/")) return storeSepayAPI(key.slice("workspace/sepay/".length), method, b, url);
   if (key === "workspace/settings") {
     await storeOwner();
     const s = await storeBy(tenantId());
