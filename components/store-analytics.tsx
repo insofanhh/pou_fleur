@@ -11,6 +11,7 @@ import {
   Download,
   RefreshCw,
   BarChart3,
+  Truck,
 } from "lucide-react";
 import { api } from "./context";
 import { money } from "./home";
@@ -585,52 +586,73 @@ function AnalyticsReport({ initial }: { initial: { from: string; to: string } })
               title="Thanh toán & công nợ"
               caption="Theo phương thức thanh toán của đơn · Số dư đã trừ tiền hoàn"
             >
-              <DataTable
-                headers={[
-                  "Phương thức",
-                  "Số đơn",
-                  "Đã thu ròng",
-                  "Còn phải thu",
-                  "Cần hoàn",
-                ]}
-                rows={data.payments.map((p) => [
-                  p.method === "bank"
-                    ? "Chuyển khoản"
-                    : p.method === "counter" ? "Tại quầy" : p.method === "cod"
-                      ? "Khi nhận hoa (COD)"
-                      : "Khác",
-                  p.orders_count,
-                  money(p.collected),
-                  money(p.outstanding),
-                  money(p.refund_due),
-                ])}
-              />
-              <div className="analytics-payment-counts">
-                <span>
-                  Chưa thanh toán <strong>{summary.unpaid_count}</strong>
-                </span>
-                <span>
-                  Thu một phần <strong>{summary.partial_count}</strong>
-                </span>
-                <span>
-                  Đã thanh toán <strong>{summary.paid_count}</strong>
-                </span>
+              <div className="analytics-payment-table">
+                <DataTable
+                  headers={[
+                    "Phương thức",
+                    "Số đơn",
+                    "Đã thu ròng",
+                    "Còn phải thu",
+                    "Cần hoàn",
+                  ]}
+                  rows={data.payments.map((p) => [
+                    p.method === "bank"
+                      ? "Chuyển khoản"
+                      : p.method === "counter" ? "Tại quầy" : p.method === "cod"
+                        ? "Khi nhận hoa (COD)"
+                        : "Khác",
+                    p.orders_count,
+                    money(p.collected),
+                    money(p.outstanding),
+                    money(p.refund_due),
+                  ])}
+                />
               </div>
-              <p className="analytics-footnote">
-                Bộ đếm không tính đơn hủy. Tiền cần hoàn gồm tiền còn giữ của
-                đơn hủy và tiền nhận vượt tổng đơn.
-              </p>
-              {data.pickup?.orders_count > 0 && <div className="pickup-location-card">
-                <h4>Khách lấy tại cửa hàng · Trong kỳ</h4>
-                <p>{data.pickup.orders_count} đơn · Doanh thu {money(data.pickup.revenue)}</p>
-                <p>Còn phải thu tại quầy: <strong>{money(data.pickup.outstanding)}</strong></p>
-              </div>}
-              <div className="cod-monitor">
-                <h4>Theo dõi COD</h4>
-                <p>Còn phải thu: <strong>{data.cod?.awaiting_count||0} đơn · {money(data.cod?.outstanding||0)}</strong></p>
-                <p>Đã giao chưa thu đủ: <strong>{data.cod?.delivered_count||0} đơn · {money(data.cod?.delivered_due||0)}</strong></p>
-                <p>Thực thu trong kỳ: <strong>{money(data.cod?.collected||0)}</strong></p>
-                <p className="analytics-footnote">Khoản cần thu là toàn bộ đơn COD hiện tại. Thực thu lọc theo ngày nhận tiền, gồm cả đơn tạo trước kỳ; không tính sửa ghi nhầm hoặc khấu trừ khoản hoàn.</p>
+              <div className="analytics-payment-footer">
+                <div className="analytics-payment-counts">
+                  <span>
+                    Chưa thanh toán <strong>{summary.unpaid_count}</strong>
+                  </span>
+                  <span>
+                    Thu một phần <strong>{summary.partial_count}</strong>
+                  </span>
+                  <span>
+                    Đã thanh toán <strong>{summary.paid_count}</strong>
+                  </span>
+                </div>
+                <p className="analytics-footnote">
+                  Bộ đếm không tính đơn hủy. Tiền cần hoàn gồm tiền còn giữ của
+                  đơn hủy và tiền nhận vượt tổng đơn.
+                </p>
+                {data.pickup?.orders_count > 0 && <div className="pickup-location-card">
+                  <h4>Khách lấy tại cửa hàng · Trong kỳ</h4>
+                  <p>{data.pickup.orders_count} đơn · Doanh thu {money(data.pickup.revenue)}</p>
+                  <p>Còn phải thu tại quầy: <strong>{money(data.pickup.outstanding)}</strong></p>
+                </div>}
+                <section className="analytics-cod" aria-label="Theo dõi COD">
+                  <div className="analytics-cod-heading">
+                    <h4><Truck size={16} aria-hidden="true" />Theo dõi COD</h4>
+                    <span>Khi nhận hoa</span>
+                  </div>
+                  <dl className="analytics-cod-metrics">
+                    <div>
+                      <dt>COD còn phải thu</dt>
+                      <dd>{money(data.cod?.outstanding || 0)}</dd>
+                      <dd className="analytics-cod-detail">{data.cod?.awaiting_count || 0} đơn · Hiện tại</dd>
+                    </div>
+                    <div className="analytics-cod-overdue">
+                      <dt>Đã giao chưa thu đủ</dt>
+                      <dd>{money(data.cod?.delivered_due || 0)}</dd>
+                      <dd className="analytics-cod-detail">{data.cod?.delivered_count || 0} đơn · Trong số còn phải thu</dd>
+                    </div>
+                    <div>
+                      <dt>Thực thu trong kỳ</dt>
+                      <dd>{money(data.cod?.collected || 0)}</dd>
+                      <dd className="analytics-cod-detail">Theo ngày nhận tiền</dd>
+                    </div>
+                  </dl>
+                  <p className="analytics-cod-note">Còn phải thu tính toàn bộ đơn COD hiện tại. Thực thu theo khoảng ngày báo cáo, gồm cả đơn tạo trước kỳ; không tính sửa ghi nhầm, chưa trừ tiền hoàn.</p>
+                </section>
               </div>
             </Panel>
             <Panel
