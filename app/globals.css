@@ -1839,7 +1839,7 @@ details p {
   gap: 5px;
   overflow-y: auto;
 }
-.admin-sidebar nav > a {
+.admin-sidebar nav a {
   padding: 12px 15px;
   display: flex;
   align-items: center;
@@ -1849,16 +1849,16 @@ details p {
   border-radius: 7px;
   position: relative;
 }
-.admin-sidebar nav > a.active {
+.admin-sidebar nav a.active {
   background: #202123;
   color: white;
 }
-.admin-sidebar nav > a:hover {
+.admin-sidebar nav a:hover {
   background: #f0f0f0;
   opacity: 1;
   color: #222;
 }
-.admin-sidebar nav > a.active:hover {
+.admin-sidebar nav a.active:hover {
   background: #333;
   color: white;
 }
@@ -2750,7 +2750,7 @@ td code {
     margin-left: 196px;
     width: calc(100% - 196px);
   }
-  .admin-sidebar nav > a {
+  .admin-sidebar nav a {
     font-size: 12px;
     padding: 11px;
   }

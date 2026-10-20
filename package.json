@@ -71,7 +71,9 @@
     "test:platform-invoices:ui": "node scripts/test-platform-invoices-ui.mjs",
     "test:ai:report:ui": "node scripts/test-ai-report-ui.mjs",
     "test:ai:report": "node --import tsx scripts/test-ai-report-data.ts",
-    "test:ai:composer:ui": "node scripts/test-ai-composer-ui.mjs"
+    "test:ai:composer:ui": "node scripts/test-ai-composer-ui.mjs",
+    "test:workspace-navigation": "node --import tsx scripts/test-billing-inprocess.ts workspace-navigation",
+    "test:workspace-navigation:ui": "node scripts/test-workspace-navigation-ui.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

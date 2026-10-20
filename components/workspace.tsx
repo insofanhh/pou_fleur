@@ -20,7 +20,7 @@ import { useOrderTransition } from "./order-transition";
 import { paymentMethods, orderChannel } from "@/lib/order-workflow";
 import { orderCapabilities } from "@/lib/order-capabilities";
 import OrderPaymentEditor from "./order-payment-editor";
-import BoardToolbar from "./board-toolbar";
+import BoardToolbar, { OrderDraftsLink } from "./board-toolbar";
 import WorkspaceAI from "./workspace-ai";
 import { aiAllowance } from "@/lib/ai-policy";
 const statuses = [
@@ -231,9 +231,7 @@ export function OrderBoard({ table = false }: { table?: boolean }) {
         onSource={value => { setSource(value); setPages({}); }}
         onRefresh={() => void refresh()}
       /> : <div className="board-toolbar">
-        <Link href="/admin/orders/new?drafts=1" className="text-link">
-          Đơn nháp
-        </Link>
+        <OrderDraftsLink />
         <input
           aria-label="Tìm đơn hàng"
           placeholder="Mã đơn, tên khách, số điện thoại…"

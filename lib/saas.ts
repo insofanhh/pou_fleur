@@ -11,7 +11,7 @@ import { hanoiDateKey, parseDateTime } from "./date-time";
 import { goongSearchLocation } from "./goong-config";
 import { platformEmails } from "./platform-email";
 import { manualOrdersAPI } from "./manual-orders";
-import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment, refreshBillingAccess } from "./billing";
+import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, sessionExpirySQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment, refreshBillingAccess } from "./billing";
 import { displayLabel } from "./display-labels";
 import { recordOrderPayment, changePaymentMethod, setOrderPaymentBalance } from "./order-payments";
 import { orderStates } from "./order-workflow";
@@ -500,6 +500,15 @@ export async function saasAPI(
     );
     await storeAudit(u.id, "membership", "users", String(target));
     return resultOK;
+  }
+  if (key === "workspace/navigation-summary" && method === "GET") {
+    await storeOwner();
+    // Menu reads must not reconcile subscriptions, expire QR sessions or send mail.
+    const [invoices, subscriptions] = await Promise.all([
+      query<any[]>(`SELECT COUNT(*) pending FROM invoices i WHERE i.store_id=? AND i.status='open' AND i.amount>i.paid AND (i.paid>0 OR ((COALESCE(i.purpose,'renewal')<>'plan_change' OR i.payment_deadline_at IS NULL OR i.payment_deadline_at>UTC_TIMESTAMP()) AND (${sessionExpirySQL("i")} IS NULL OR ${sessionExpirySQL("i")}>UTC_TIMESTAMP())))`, [tenantId()]),
+      query<any[]>(`SELECT GREATEST(0,CEIL(TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),${accessEndSQL("s")})/86400)) days_remaining FROM subscriptions s WHERE s.store_id=? AND s.plan_id<>? AND s.status IN ('active','trialing','past_due') AND ${accessEndSQL("s")}<=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 5 DAY) AND NOT EXISTS(SELECT 1 FROM invoices i WHERE i.store_id=s.store_id AND i.status='paid' AND i.activated_at IS NULL AND i.effective_start_at<=${accessEndSQL("s")} AND i.effective_end_at>${accessEndSQL("s")})`, [tenantId(), EXPERIENCE_PLAN_ID]),
+    ]);
+    return { billing: { pending_invoices: Number(invoices[0]?.pending || 0), days_remaining: subscriptions[0]?.days_remaining == null ? null : Number(subscriptions[0].days_remaining) } };
   }
   if (key === "workspace/billing" && method === "GET") {
     const owner = await storeOwner();

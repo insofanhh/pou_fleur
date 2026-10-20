@@ -35,6 +35,17 @@ try {
   const page = await ctx.newPage();
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(origin + "/platform/plans");
+  const planCards = page.locator('.platform-plan-card');
+  await expect(planCards).toHaveCount(4);
+  await expect(planCards.locator('h4')).toHaveText(['Trải nghiệm','Khởi đầu','Studio','Atelier']);
+  check(await planCards.evaluateAll(cards => cards.every(card => !card.open)), 'Plans start collapsed with Experience first');
+  await planCards.first().locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(planCards.first()).toHaveAttribute('open','');
+  await page.keyboard.press('Space');
+  await expect(planCards.first()).not.toHaveAttribute('open','');
+  check(true, 'Plan details support keyboard expand and collapse');
+  for (const card of await planCards.all()) await card.locator('summary').click();
   const aiInputs = page.locator('input[name$="-ai_messages"]');
   await expect(aiInputs).toHaveCount(4);
   await expect(page.locator('input[name="1-ai_messages"]')).toHaveValue("50");
@@ -42,11 +53,19 @@ try {
   await expect(page.locator('input[name="4-trial"]')).toHaveValue('0');
   check(true, "All four platform plans expose quotas; Free price/duration are locked");
   await page.locator('input[name="1-ai_messages"]').fill("73");
+  const starterCard = planCards.filter({has:page.locator('input[name="1-ai_messages"]')});
+  await starterCard.locator('summary').click();
   await page.getByRole("button", { name: "Lưu tất cả thay đổi", exact: true }).click();
   await expect.poll(() => writes.length).toBe(4);
   check(writes[0].value.limits.ai_messages === 73 && writes[1].value.limits.ai_messages === 300 && writes[2].value.limits.ai_messages === 1500, "One save sends the actual editable AI quota for every plan");
+  await starterCard.locator('summary').click();
+  await expect(page.locator('input[name="1-ai_messages"]')).toHaveValue('73');
+  check(true, 'Edits survive collapsing and saving all four plans');
   await page.locator('input[name="1-ai_messages"]').fill("-1");
+  await starterCard.locator('summary').click();
   await page.getByRole("button", { name: "Lưu tất cả thay đổi", exact: true }).click();
+  await expect(starterCard).toHaveAttribute('open','');
+  await expect(page.locator('input[name="1-ai_messages"]')).toBeFocused();
   check(writes.length === 4 && !await page.locator('input[name="1-ai_messages"]').evaluate(e => e.validity.valid), "Negative AI quota fails browser form validation");
   await page.locator('input[name="1-ai_messages"]').fill("0");
   await page.getByRole("button", { name: "Lưu tất cả thay đổi", exact: true }).click();
@@ -92,10 +111,21 @@ try {
     await page.goto(origin + route);
     const marker = route === "/platform/plans" ? '.platform-plan-card' : route === "/start" ? '.start-store-plan-card' : '.billing-usage-card';
     await expect(page.locator(marker).first()).toBeVisible();
-    for (const width of [1440,390,360]) {
+    for (const width of route === '/platform/plans' ? [1440,768,390,360,320] : [1440,390,360]) {
       await page.setViewportSize({ width, height: 900 });
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${route} AI quota layout fits ${width}px`);
+      if (route === '/platform/plans') {
+        const save = page.getByRole('button',{name:'Lưu tất cả thay đổi',exact:true});
+        check(await save.evaluate(button => {
+          const range = document.createRange(); range.selectNodeContents(button);
+          return range.getClientRects().length === 1 && getComputedStyle(button).whiteSpace === 'nowrap' && button.scrollWidth <= button.clientWidth;
+        }), `Save button text remains on one line at ${width}px`);
+        await planCards.first().locator('summary').click();
+        await expect(page.locator('input[name="4-products"]')).toBeVisible();
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Expanded Experience details fit ${width}px`);
+      }
       await page.screenshot({ path: `${output}/${route.split("/").filter(Boolean).join("-")}-${width}.png`, fullPage: true });
+      if (route === '/platform/plans') await planCards.first().locator('summary').click();
     }
   }
   freeBilling=true;

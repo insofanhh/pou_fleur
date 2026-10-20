@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 async function main() {
   assert(process.env.MYSQL_DATABASE === "fleur_saas_test" && process.env.MYSQL_PORT === "3310" && ["localhost", "127.0.0.1"].includes(process.env.MYSQL_HOST || "127.0.0.1"), "Isolated local QA database only");
   const suite = process.argv[2] || "experience";
-  assert(["experience", "plan-changes", "trial-billing", "account-trials", "platform-overview", "platform-invoices"].includes(suite));
+  assert(["experience", "plan-changes", "trial-billing", "account-trials", "platform-overview", "platform-invoices", "workspace-navigation"].includes(suite));
   (globalThis as any).AsyncLocalStorage = AsyncLocalStorage;
   process.env.TEST_ORIGIN = "http://127.0.0.1:3005";
   process.env.APP_ORIGIN = process.env.TEST_ORIGIN;
@@ -27,7 +27,8 @@ async function main() {
     for (const cookie of cookies) response.headers.append("set-cookie", cookie);
     return response;
   };
-  if (suite === "platform-invoices") await import("./test-platform-invoices");
+  if (suite === "workspace-navigation") await import("./test-workspace-navigation");
+  else if (suite === "platform-invoices") await import("./test-platform-invoices");
   else if (suite === "platform-overview") await import("./test-platform-overview");
   else if (suite === "experience") await import("./test-experience");
   else if (suite === "plan-changes") await import("./test-plan-changes");
