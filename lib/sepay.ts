@@ -1,3 +1,4 @@
+import { storeSepayCredentials, verifyStoreSepayKey } from "./store-sepay";
 import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool } from "./db";
 import { HttpError } from "./auth";
@@ -73,7 +74,7 @@ export function verifyWebhook(raw: string, headers: Headers, credentials?: Sepay
   const apiKey = credentials?.api_key;
   if (!credentials?.enabled && !process.env.SEPAY_WEBHOOK_SECRET && process.env.NODE_ENV === "production") throw new HttpError(503, "Webhook SePay chưa được tạo trong Platform.");
   const suppliedApiKey = headers.get("x-api-key") || headers.get("x-sepay-api-key") || headers.get("authorization")?.replace(/^(?:Bearer|Api-Key|Apikey)\s+/i, "");
-  if (apiKey && suppliedApiKey && suppliedApiKey === apiKey) return true;
+  if (apiKey && suppliedApiKey && Buffer.byteLength(suppliedApiKey) === Buffer.byteLength(apiKey) && timingSafeEqual(Buffer.from(suppliedApiKey), Buffer.from(apiKey))) return true;
   if (!secret) return false;
   const supplied = headers.get("x-sepay-signature") || headers.get("x-signature") || headers.get("authorization")?.replace(/^HMAC\s+/i, "") || "";
   const expected = createHmac("sha256", secret).update(raw).digest("hex");
@@ -111,34 +112,53 @@ export function parseWebhook(body: any) {
   return { eventId, receivedAt, amount: Math.round(amount), code, providerReference: String(body.referenceCode ?? body.transactionCode ?? eventId) };
 }
 
-export async function processWebhook(raw: string, body: any, headers: Headers) {
-  const credentials = await sepayCredentials();
-  if (!verifyWebhook(raw, headers, credentials)) throw new HttpError(401, "API key hoặc chữ ký SePay không hợp lệ.");
+export async function processWebhook(raw: string, body: any, headers: Headers, storeId?: number) {
+  const verified = storeId === undefined
+    ? verifyWebhook(raw, headers, await sepayCredentials())
+    : verifyStoreSepayKey(headers, await storeSepayCredentials(storeId));
+  if (!verified) throw new HttpError(401, "API key hoặc chữ ký SePay không hợp lệ.");
   const parsed = parseWebhook(body);
-  const hash = createHash("sha256").update(raw).digest("hex");
+  if (parsed.eventId.length > 100) throw new HttpError(400, "Mã giao dịch quá dài.");
+  // Namespace merchant events: a store cannot consume another store's retry ID.
+  const eventId = storeId === undefined ? parsed.eventId : `store:${storeId}:${parsed.eventId}`;
+  const hash = createHash("sha256").update(storeId === undefined ? raw : `store:${storeId}:` + raw).digest("hex");
   // Commit timeout cleanup separately: a rejected late transfer must not roll
   // back expiration. The ledger checks the same deadline again under its lock.
-  await withSystem(async () => {
+  if (storeId === undefined) await withSystem(async () => {
     const [rows]: any = await pool.execute("SELECT store_id FROM payment_intents WHERE reference_code=? AND kind='subscription'", [parsed.code]);
     if (rows[0]) await expirePlanChangeRequests(rows[0].store_id);
   });
   const c = await pool.getConnection();
+  let mayLog = false;
   try {
     await c.beginTransaction();
-    const [exists]: any = await c.execute("SELECT processed FROM sepay_webhook_events WHERE provider_event_id=? OR payload_hash=? FOR UPDATE", [parsed.eventId, hash]);
-    if (exists.length && exists[0].processed) { await c.commit(); return { success: true, ok: true, duplicate: true }; }
-    if (!exists.length) await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash) VALUES(?,?)", [parsed.eventId, hash]);
     const [lookup]: any = await c.execute("SELECT store_id FROM payment_intents WHERE reference_code=?", [parsed.code]);
     if (lookup[0]) await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [lookup[0].store_id]);
     const [intents]: any = await c.execute("SELECT * FROM payment_intents WHERE reference_code=? FOR UPDATE", [parsed.code]);
     const intent = intents[0];
     if (!intent) throw new HttpError(404, "Mã thanh toán không tồn tại.");
+    if (storeId !== undefined) {
+      if (Number(intent.store_id) !== storeId || intent.kind !== "order")
+        throw new HttpError(403, "Webhook cửa hàng chỉ được thanh toán đơn của chính cửa hàng.");
+      // Recheck under the store lock so rotation/disable and receipts serialize.
+      if (!verifyStoreSepayKey(headers, await storeSepayCredentials(storeId, c)))
+        throw new HttpError(401, "API key SePay đã thay đổi.");
+      const bank = await activeBank(storeId, c);
+      if (!bank?.sepay_enabled) throw new HttpError(409, "Cửa hàng chưa bật nhận chuyển khoản và đối soát SePay.");
+      if (!body.accountNumber) throw new HttpError(400, "Thiếu tài khoản nhận tiền.");
+    } else if (intent.kind === "order" && await storeSepayCredentials(intent.store_id, c)) {
+      throw new HttpError(403, "Đơn này sử dụng webhook và API key riêng của cửa hàng.");
+    }
+    mayLog = true;
     const qr = typeof intent.qr_payload === "string" ? JSON.parse(intent.qr_payload) : intent.qr_payload;
     if (body.accountNumber && String(body.accountNumber) !== String(qr.accountNumber)) throw new HttpError(409, "Tài khoản nhận tiền không khớp mã thanh toán.");
+    const [exists]: any = await c.execute("SELECT processed FROM sepay_webhook_events WHERE provider_event_id=? OR payload_hash=? FOR UPDATE", [eventId, hash]);
+    if (exists.length && exists[0].processed) { await c.commit(); return { success: true, ok: true, duplicate: true }; }
+    if (!exists.length) await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash) VALUES(?,?)", [eventId, hash]);
     if (!["pending", "paid"].includes(intent.status)) throw new HttpError(409, "Mã thanh toán đã bị hủy.");
     if (intent.status === "paid") {
       if (intent.kind === "subscription") throw new HttpError(409,"Mã này đã thanh toán. Giao dịch mới cần đối soát, không cộng thêm kỳ tự động.");
-      await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [parsed.eventId]); await c.commit(); return { success: true, ok: true, duplicate: true };
+      await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [eventId]); await c.commit(); return { success: true, ok: true, duplicate: true };
     }
     if (intent.kind === "order" && parseDateTime(intent.expires_at, "utc").getTime() < Date.now()) throw new HttpError(409, "Mã thanh toán đã hết hạn.");
     if (intent.kind === "order" && parsed.amount < intent.amount - intent.paid_amount) throw new HttpError(409, "Số tiền chuyển chưa đủ.");
@@ -153,8 +173,9 @@ export async function processWebhook(raw: string, body: any, headers: Headers) {
       const [invoices]: any = await c.execute("SELECT status FROM invoices WHERE id=?",[intent.invoice_id]);
       await c.execute("UPDATE payment_intents SET paid_amount=LEAST(amount,paid_amount+?),status=?,paid_at=IF(?='paid',UTC_TIMESTAMP(),paid_at),provider_reference=? WHERE id=?", [parsed.amount,invoices[0].status === 'paid' ? 'paid' : 'pending',invoices[0].status,parsed.providerReference,intent.id]);
     }
-    await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [parsed.eventId]);
+    await c.execute("UPDATE sepay_webhook_events SET processed=1,processed_at=NOW() WHERE provider_event_id=?", [eventId]);
+    if (storeId !== undefined) await c.execute("UPDATE store_sepay_integrations SET last_received_at=UTC_TIMESTAMP() WHERE store_id=?", [storeId]);
     await c.commit();
     return { success: true, ok: true, code: parsed.code };
-  } catch (e) { await c.rollback(); try { await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash,error_message) VALUES(?,?,?) ON DUPLICATE KEY UPDATE error_message=VALUES(error_message)", [parsed.eventId,hash,String((e as Error).message).slice(0,500)]); } catch {} throw e; } finally { c.release(); }
+  } catch (e) { await c.rollback(); try { if (mayLog) await c.execute("INSERT INTO sepay_webhook_events(provider_event_id,payload_hash,error_message) VALUES(?,?,?) ON DUPLICATE KEY UPDATE error_message=VALUES(error_message)", [eventId,hash,String((e as Error).message).slice(0,500)]); } catch {} throw e; } finally { c.release(); }
 }
