@@ -19,6 +19,10 @@ Khi chưa có scheduler, QR vẫn hết hiệu lực đúng thời hạn ở ser
 
 Không cần migration mới: dùng `payment_intents`, `orders`, `order_payments` và các bảng tồn kho/sự kiện hiện có.
 
+## Tương thích TiDB
+
+Truy vấn quét phiên hết hạn dùng giới hạn cố định `LIMIT 100` (worker toàn hệ thống: `LIMIT 200`). Không bind số JavaScript vào `LIMIT ?`: mysql2 gửi kiểu DOUBLE và TiDB trả `ER_WRONG_ARGUMENTS` (1210). Bước quét chạy trước khi tải danh sách đơn nên lỗi này có thể làm cả trang đơn/dashboard không tải được. Bản sửa chỉ đổi truy vấn, không thay schema hoặc sửa dữ liệu. Đã kiểm tra truy vấn sửa bằng prepared statement chỉ đọc trên TiDB production; kiểm thử nghiệp vụ QR/SePay vẫn chạy trên database QA riêng.
+
 ## Kiểm thử
 
 Chỉ chạy với MySQL QA `127.0.0.1:3310/fleur_saas_test`, tắt EMAIL_ENABLED/PUSH_ENABLED.
