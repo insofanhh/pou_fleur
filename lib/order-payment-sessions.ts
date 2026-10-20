@@ -172,10 +172,11 @@ export async function reconcileOrderSession(code: string, cancel = false) {
   }
 }
 
-export async function expireStoreOrderSessions(limit = 100) {
+export async function expireStoreOrderSessions() {
+  // mysql2 binds JS numbers as DOUBLE; TiDB rejects that type in LIMIT.
+  // Keep this internal batch bound literal, as in the cross-store worker.
   const [rows]: any = await pool.execute(
-    "SELECT reference_code FROM payment_intents WHERE kind='order' AND status='pending' AND expires_at<=UTC_TIMESTAMP() ORDER BY expires_at LIMIT ?",
-    [limit],
+    "SELECT reference_code FROM payment_intents WHERE kind='order' AND status='pending' AND expires_at<=UTC_TIMESTAMP() ORDER BY expires_at LIMIT 100",
   );
   for (const row of rows) await reconcileOrderSession(row.reference_code);
   return rows.length;
