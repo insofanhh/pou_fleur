@@ -555,7 +555,7 @@ try {
     page.once("dialog", (d) => d.accept());
     await page
       .locator(".manual-nav")
-      .getByRole("link", { name: "Đơn hàng", exact: true })
+      .getByRole("link", { name: "Danh sách đơn hàng", exact: true })
       .click();
   }
   const supportContext = await browser.newContext({

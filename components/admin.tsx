@@ -12,6 +12,7 @@ import WorkspaceView, { workspaceAreas } from "./workspace";
 
 import Link, { useLocalPath } from "./routing";
 import AdminNotifications from "./admin-notifications";
+import WorkspaceNavigation, { useBillingNavigationNotice, billingNoticeText } from "./workspace-navigation";
 import ProductMediaEditor from "./product-media-editor";
 import ProductTaxonomyManager, {
   ProductTaxonomyFields,
@@ -61,23 +62,23 @@ const WorkspaceAIWidget = dynamic(() => import("./workspace-ai-widget"), { ssr: 
 const nav = [
   ["overview", "Tổng quan", LayoutDashboard],
   ["analytics", "Phân tích dữ liệu", TrendingUp],
-  ["ai", "Trợ lý AI", Bot],
-  ["board", "Đơn hàng · Kanban", ClipboardList],
+  ["board", "Bảng xử lý đơn", ClipboardList],
   ["calendar", "Lịch giao & ghi chú", CalendarDays],
-  ["theme", "Giao diện cửa hàng", Layers],
-  ["settings", "Cấu hình cửa hàng", ShieldCheck],
-  ["billing", "Gói & hóa đơn", Wallet],
+  ["orders", "Danh sách đơn hàng", Package],
+  ["crm", "Khách hàng & CRM", ContactRound],
+  ["ai", "Trợ lý AI", Bot],
+  ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
   ["products", "Sản phẩm", Flower2],
   ["categories", "Danh mục", Layers],
-  ["orders", "Đơn hàng", Package],
   ["promotions", "Khuyến mãi", Tag],
-  ["events", "Sự kiện", CalendarDays],
-  ["posts", "Tin tức", Newspaper],
-  ["crm", "Khách hàng & CRM", ContactRound],
   ["emails", "Email & chương trình", Mail],
   ["automations", "Chăm sóc tự động", ContactRound],
-  ["inquiries", "Yêu cầu hỗ trợ", MessageSquare],
+  ["events", "Sự kiện", CalendarDays],
+  ["posts", "Tin tức", Newspaper],
+  ["theme", "Giao diện cửa hàng", Layers],
   ["users", "Người dùng & quyền", Users],
+  ["settings", "Cấu hình cửa hàng", ShieldCheck],
+  ["billing", "Gói & hóa đơn", Wallet],
   ["audit", "Nhật ký hoạt động", History],
 ] as const;
 const rights: Record<string, string[]> = {
@@ -234,12 +235,14 @@ export default function Admin({ data }: { data: Catalog }) {
     [statusFilter, setStatusFilter] = useState("");
   const sidebar = useDashboardSidebar();
   const { mobile, setMobile } = sidebar;
+  const billingNotice = useBillingNavigationNotice(`${data.store?.id}:${user?.id}`, ready && user?.role === "owner", area);
   const payload = loaded?.area === area ? loaded.payload : null;
   const requestId = useRef(0);
   const activeArea = useRef(area);
   activeArea.current = area;
   const router = useRouter();
-  const baseAllowed = user ? rights[user.role] || [] : [];
+  const roleAllowed = user ? rights[user.role] || [] : [];
+  const baseAllowed = nav.filter(([key]) => roleAllowed.includes(key)).map(([key]) => key) as string[];
   const allowed = baseAllowed.includes("orders")
     ? [...baseAllowed, "new-order"]
     : baseAllowed;
@@ -353,31 +356,7 @@ export default function Admin({ data }: { data: Catalog }) {
         <div className="workspace-label store-workspace-label">
           {data.store?.name ? `${data.store.name}'s workspace` : "Workspace"}
         </div>
-        <nav aria-label="Điều hướng workspace">
-          {nav
-            .filter((n) => allowed.includes(n[0]))
-            .map(([key, label, Icon], i) => (
-              <Link
-                href={"/admin/" + key}
-                scroll={false}
-                prefetch={true}
-                aria-current={area === key ? "page" : undefined}
-                aria-label={label}
-                title={sidebar.collapsed ? label : undefined}
-                onClick={() => setMobile(false)}
-                className={area === key ? "active" : ""}
-                key={key}
-              >
-                <Icon size={18} />
-                <span className="sidebar-nav-label">{label}</span>
-                {key === "orders" && payload?.stats?.pending_count > 0 && (
-                  <span className="nav-badge">
-                    {payload.stats.pending_count}
-                  </span>
-                )}
-              </Link>
-            ))}
-        </nav>
+        <WorkspaceNavigation items={nav} allowed={allowed} area={area} compact={sidebar.collapsed && !sidebar.narrow} closeMobile={() => setMobile(false)} pendingOrders={Number(payload?.stats?.pending_count || 0)} billingNotice={billingNotice} />
         <div className="sidebar-bottom">
           <div className="admin-user">
             <span className="avatar">{user.name.charAt(0)}</span>
@@ -422,6 +401,7 @@ export default function Admin({ data }: { data: Catalog }) {
           </div>
         </header>
         <main className="admin-content">
+          {area === "overview" && billingNoticeText(billingNotice) && <div className="panel workspace-billing-notice" role="status"><div><strong>Gói dịch vụ cần lưu ý</strong><p>{billingNoticeText(billingNotice)}</p></div><Link href="/admin/billing" className="button secondary">Xem gói & hóa đơn</Link></div>}
           {data.store?.status === "suspended" && area !== "billing" && (
             <div className="panel store-suspension-notice" role="alert">
               <div className="store-suspension-copy">

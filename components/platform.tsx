@@ -33,25 +33,32 @@ import {
   Mail,
   Search,
   Bot,
+  ChevronDown,
 } from "lucide-react";
 import { displayLabel as statusText, auditAction } from "@/lib/display-labels";
 
 function PlatformPlans({ plans, toast, refresh }: { plans: any[]; toast: (message: string) => void; refresh: () => Promise<void> }) {
   const [busy,setBusy] = useState(false);
-  return <form className="panel" onSubmit={async e => {
+  const orderedPlans = [...plans].sort((a, b) => Number(isExperiencePlan(b.id)) - Number(isExperiencePlan(a.id)) || Number(a.id) - Number(b.id));
+  return <form className="panel platform-plan-catalog" onInvalidCapture={e => {
+    const details = (e.target as HTMLInputElement).closest("details");
+    if (details) details.open = true;
+  }} onSubmit={async e => {
     e.preventDefault(); if(busy) return; const f = new FormData(e.currentTarget); setBusy(true);
     try {
       for (const p of plans) await api("platform/plans/"+p.id,"PATCH",{name:String(f.get(p.id+"-name")).trim(),monthly_price:Number(f.get(p.id+"-price")),trial_days:Number(f.get(p.id+"-trial")),limits:{products:Number(f.get(p.id+"-products")),staff:Number(f.get(p.id+"-staff")),storage_mb:Number(f.get(p.id+"-storage_mb")),email_sends:Number(f.get(p.id+"-email_sends")),ai_messages:Number(f.get(p.id+"-ai_messages"))}});
       toast("Đã lưu cấu hình. Cửa hàng đã đăng ký giữ ưu đãi được cấp."); await refresh();
     } catch(err) { toast((err as Error).message); } finally { setBusy(false); }
   }}>
-    <div className="section-heading"><div><h3>Danh mục gói dịch vụ</h3><p className="small">Trải nghiệm miễn phí không giới hạn ngày với hạn mức riêng. Khởi đầu, Studio và Atelier dùng chung 1 lượt dùng thử cho mỗi tài khoản. Cấu hình mới áp dụng cho lựa chọn mới, giữ nguyên quyền lợi đã cấp.</p></div><button className="button" disabled={busy}>{busy ? "Đang lưu…" : "Lưu tất cả thay đổi"}</button></div>
-    <div className="platform-plan-list">{plans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; return <article className="platform-plan-card" key={p.id}>
-      <div className="platform-plan-card-header"><div><h4>{p.name}</h4><p className="small">{p.pending_offers || 0} cửa hàng chờ duyệt · {p.trialing_stores || 0} đang dùng thử</p></div><span className="plan-price">{money(Number(p.monthly_price))}<small>{isExperiencePlan(p.id) ? "Không giới hạn ngày" : "/tháng"}</small></span></div>
+    <div className="section-heading platform-plan-catalog-heading"><div><h3>Danh mục gói dịch vụ</h3><p className="small">Trải nghiệm miễn phí không giới hạn ngày với hạn mức riêng. Khởi đầu, Studio và Atelier dùng chung 1 lượt dùng thử cho mỗi tài khoản. Cấu hình mới áp dụng cho lựa chọn mới, giữ nguyên quyền lợi đã cấp.</p></div><button className="button platform-plan-save" disabled={busy}>{busy ? "Đang lưu…" : "Lưu tất cả thay đổi"}</button></div>
+    <div className="platform-plan-list">{orderedPlans.map((p: any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; return <details className="platform-plan-card" key={p.id}>
+      <summary className="platform-plan-card-header" aria-label={"Chi tiết gói " + p.name}><div className="platform-plan-title"><h4>{p.name}</h4><p className="small">{p.pending_offers || 0} cửa hàng chờ duyệt · {p.trialing_stores || 0} đang dùng thử</p></div><span className="plan-price">{money(Number(p.monthly_price))}<small>{isExperiencePlan(p.id) ? "Không giới hạn ngày" : "/tháng"}</small></span><ChevronDown className="platform-plan-chevron" size={20} aria-hidden="true" /></summary>
+      <div className="platform-plan-body">
       <div className="platform-plan-fields"><label className="field">Tên gói<input required name={p.id+"-name"} defaultValue={p.name}/></label><label className="field">Giá / tháng<input required name={p.id+"-price"} readOnly={isExperiencePlan(p.id)} type="number" min="0" max="100000000" defaultValue={p.monthly_price}/></label><label className="field">Dùng thử (ngày)<input required name={p.id+"-trial"} readOnly={isExperiencePlan(p.id)} type="number" min="0" max="90" defaultValue={p.trial_days}/><small>{isExperiencePlan(p.id) ? "Miễn phí không giới hạn ngày, không cần dùng thử" : "1 lượt dùng thử chung cho các gói trả phí"}</small></label></div>
       <div className="platform-limit-box"><strong>Hạn mức sử dụng</strong><div className="platform-limit-grid">{[["products","Sản phẩm đang bán",100000],["staff","Nhân sự hoạt động",10000],["storage_mb","Dung lượng (MB)",1000000],["email_sends","Email cửa hàng / tháng",1000000],["ai_messages","Lượt AI / tháng",100000]].map(([key,label,max]) => <label className="field" key={key}>{label}<input required type="number" min={key === "ai_messages" ? 0 : 1} max={Number(max)} name={p.id+"-"+key} defaultValue={key === "ai_messages" ? aiAllowance(Number(p.id), limits) : (limits[key] ?? 1)}/></label>)}</div></div>
       <p className="small">Giá và quyền lợi đã cam kết được giữ theo phiên bản; cấu hình mới áp dụng khi đăng ký hoặc chọn gói cho kỳ tiếp theo. 0 ngày: không dùng thử. Giá 0 VNĐ: vẫn miễn phí sau thử.</p>
-    </article>; })}</div>
+      </div>
+    </details>; })}</div>
   </form>;
 }
 

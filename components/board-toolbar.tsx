@@ -46,6 +46,15 @@ const sourceOptions = [
   { value: "manual", label: "Thủ công" },
 ];
 
+export function OrderDraftsLink() {
+  return (
+    <Link href="/admin/orders/new?drafts=1" className="board-filter-drafts">
+      <FileText size={16} aria-hidden="true" />
+      Đơn nháp
+    </Link>
+  );
+}
+
 export default function BoardToolbar({
   search,
   date,
@@ -73,10 +82,7 @@ export default function BoardToolbar({
       role="group"
       aria-label="Bộ lọc đơn hàng"
     >
-      <Link href="/admin/orders/new?drafts=1" className="board-filter-drafts">
-        <FileText size={16} aria-hidden="true" />
-        Đơn nháp
-      </Link>
+      <OrderDraftsLink />
       <label className="board-filter-search">
         <span className="board-filter-label">Tìm đơn hàng</span>
         <span className="board-filter-search-control">
