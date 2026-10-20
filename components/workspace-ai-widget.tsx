@@ -68,7 +68,7 @@ export default function WorkspaceAIWidget() {
     {started && <section ref={panel} id={panelId} className="ai-quick-panel" role="dialog" aria-label="Chat nhanh với trợ lý AI" tabIndex={-1} hidden={!visible} style={viewport}
       onKeyDown={e => { if (e.key === "Escape" && !e.defaultPrevented) { e.stopPropagation(); minimize(); } }}>
       <header className="ai-quick-header">
-        <div><Bot size={22} /><div><strong>Trợ lý AI</strong><small>Hỗ trợ riêng cho cửa hàng</small></div></div>
+        <div><span className="ai-header-avatar"><Bot size={22} /></span><div><strong>Trợ lý AI</strong><small>Hỗ trợ riêng cho cửa hàng</small></div></div>
         <div><Link href={"/admin/ai" + (thread ? "?conversation=" + encodeURIComponent(thread) : "")} scroll={false} className="ai-quick-control" aria-label="Mở trang Trợ lý AI" aria-disabled={working} tabIndex={working ? -1 : undefined} onClick={e => { if (working) e.preventDefault(); }} title={working ? "Chờ phản hồi hoàn tất để mở rộng" : "Mở trang Trợ lý AI"}><Maximize2 size={18} /></Link>
           <button className="ai-quick-control" onClick={minimize} aria-label="Thu gọn hội thoại" title="Thu gọn hội thoại"><Minus size={20} /></button></div>
       </header>

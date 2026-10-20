@@ -78,7 +78,20 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : process.argv
     failAccess = false;
     await dialog.getByRole("button", { name: "Thử lại", exact: true }).click();
     await expect(prompt()).toBeVisible();
+    const historyToggle = () => dialog.getByRole("button", { name: /Hội thoại gần đây/ });
+    const newChat = () => dialog.getByRole("button", { name: "Hội thoại mới", exact: true });
+    await expect(newChat()).toHaveText("");
+    await expect(newChat()).toHaveAttribute("title", "Hội thoại mới");
+    check(true, "New conversation is an accessible plus icon without a full-width text button");
     await page.screenshot({ path: `${out}/${engine.name()}-welcome.png` });
+    await page.setViewportSize({ width: 320, height: 740 });
+    await expect(dialog.getByRole("button", { name: "Chăm sóc khách hàng", exact: true })).toBeVisible();
+    await page.screenshot({ path: `${out}/${engine.name()}-welcome-mobile.png` });
+    await dialog.getByRole("button", { name: "Lên đơn mới", exact: true }).click();
+    await expect(prompt()).toHaveValue("Hỗ trợ tôi lên một đơn mới");
+    await expect(prompt()).toBeFocused();
+    check(true, "Compact suggestions fill the original prompt and focus the composer on mobile");
+    await page.setViewportSize({ width: 1440, height: 1000 });
     check(!reads.includes("/api/workspace/ai/attention") && !reads.includes("/api/workspace/ai/reminders"), "Quick chat does not fetch unrelated dashboard data");
     await prompt().fill("Nội dung đang nhập");
     await prompt().press("Escape");
@@ -121,12 +134,15 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : process.argv
     await dialog.getByRole("button", { name: "Xác nhận", exact: true }).click();
     await expect(dialog.getByText("Đã thực hiện", { exact: true })).toBeVisible();
 
-    await dialog.locator(".ai-history-wrap>summary").click();
-    await dialog.getByRole("button", { name: "Hội thoại mới", exact: true }).click();
+    await historyToggle().click();
+    await expect(dialog.getByRole("complementary", { name: "Lịch sử hội thoại" })).toBeVisible();
+    await newChat().click();
+    await expect(historyToggle()).toHaveAttribute("aria-expanded", "false");
     await expect(dialog.getByText("Hôm nay bạn cần hỗ trợ gì?", { exact: true })).toBeVisible();
+    await historyToggle().click();
     await dialog.getByRole("button", { name: "Hội thoại QA", exact: true }).click();
     await expect(dialog.getByText("Đã thực hiện", { exact: true })).toBeVisible();
-    await dialog.locator(".ai-history-wrap>summary").click();
+    await expect(historyToggle()).toHaveAttribute("aria-expanded", "false");
     check(true, "New conversation and private history work inside quick panel");
     check(actions === 1, "Quick chat shares existing action confirmation flow");
 
@@ -159,6 +175,19 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : process.argv
       check(!navBox || box.y + box.height <= navBox.y, `${engine.name()}: chat clears mobile navigation at ${width}px`);
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${engine.name()}: no horizontal page overflow at ${width}px`);
       await page.screenshot({ path: `${out}/${engine.name()}-${width}.png` });
+      // A long list must stay bounded without pushing messages or the composer away.
+      for (let i = 0; i < 8; i++) conversations.set(`00000000-0000-4000-8000-00000000000${i}`, []);
+      await minimize();
+      await launcher.click();
+      await historyToggle().click();
+      const historyBox = await dialog.locator(".ai-history").boundingBox();
+      const messagesBox = await dialog.locator(".ai-messages").boundingBox();
+      const composeBox = await dialog.locator(".ai-compose").boundingBox();
+      const panelBox = await dialog.boundingBox();
+      check(historyBox.height <= 130 && messagesBox.height >= 90 && historyBox.y + historyBox.height <= messagesBox.y + 1, `${engine.name()}: expanded history leaves a clear message area at ${width}px`);
+      check(composeBox.y >= messagesBox.y + messagesBox.height - 1 && composeBox.y + composeBox.height <= panelBox.y + panelBox.height, `${engine.name()}: fixed composer follows messages without overlap at ${width}px`);
+      await page.screenshot({ path: `${out}/${engine.name()}-${width}-history.png` });
+      await historyToggle().click();
     }
     // Emulate the visualViewport dimensions dispatched by a mobile keyboard.
     await page.evaluate(() => {
