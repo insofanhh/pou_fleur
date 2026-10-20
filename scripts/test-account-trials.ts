@@ -24,6 +24,8 @@ assert(
 const origin = process.env.TEST_ORIGIN || "http://127.0.0.1:3005",
   key = randomUUID().slice(0, 8),
   password = "Account-Trials-QA-2026";
+const databaseOnly = process.argv.includes("--db-only");
+assert(!(databaseOnly && process.argv.includes("--ui")), "DB-only mode cannot run UI checks");
 let checks = 0;
 function check(value: unknown, label: string) {
   assert(value, label);
@@ -234,8 +236,8 @@ async function main() {
         "Trial preview does not consume a slot",
       );
       check(
-        q.starts_at === originalEnd && q.amount_due === 0 && q.trial_days === 3,
-        "Discovery trial follows current entitlement with zero amount due",
+        q.starts_immediately && q.replaces_current_trial && q.starts_at < originalEnd && q.amount_due === 0 && q.trial_days === 3,
+        "Discovery preview replaces onboarding immediately with zero amount due",
       );
       await assert.rejects(
         () => reserve(s, studio, owner.id, { ...q, token: "0".repeat(64) }),
@@ -246,8 +248,8 @@ async function main() {
         "Invalid confirmation leaves account entitlement untouched",
       );
       const api = client();
-      await api("auth/login", "POST", { email: owner.email, password });
-      const apiQuote = await api(
+      if (!databaseOnly) await api("auth/login", "POST", { email: owner.email, password });
+      const apiQuote = databaseOnly ? q : await api(
         "workspace/billing/preview",
         "POST",
         { plan_id: studio, trial: true },
@@ -304,7 +306,7 @@ async function main() {
             .click();
           await expect(dialog).toHaveCount(0);
           await expect(
-            page.getByText(/Đã đặt lịch dùng thử Studio/),
+            page.getByText("Đã chuyển gói và bắt đầu dùng thử."),
           ).toBeVisible();
           await expect(
             card.getByRole("button", { name: "Dùng thử 3 ngày", exact: true }),
@@ -314,12 +316,13 @@ async function main() {
           });
           check(
             !errors.length,
-            "Trial confirmation updates shared slot and schedule without browser errors",
+            "Trial confirmation immediately updates current plan without browser errors",
           );
         } finally {
           await browser.close();
         }
-      } else
+      } else if (databaseOnly) await reserve(s, studio, owner.id, apiQuote);
+      else
         await api(
           "workspace/billing/start",
           "POST",
@@ -337,18 +340,14 @@ async function main() {
       );
       check(
         claim.plan_id === studio &&
-          claim.starts_at === originalEnd &&
-          !claim.activated_at,
-        "Confirmation reserves discovery once without replacing current trial",
+          claim.starts_at < originalEnd &&
+          !!claim.activated_at,
+        "Confirmation activates discovery immediately instead of waiting for Starter expiry",
       );
       check(
-        (
-          await one(
-            "SELECT plan_id,trial_ends_at FROM subscriptions WHERE store_id=?",
-            [s],
-          )
-        ).trial_ends_at === originalEnd,
-        "Starter end is retained after discovery reservation",
+        (await one("SELECT plan_id,trial_ends_at FROM subscriptions WHERE store_id=?", [s])).plan_id === studio &&
+          (await one("SELECT ends_at FROM account_trial_claims WHERE user_id=? AND bucket='starter'", [owner.id])).ends_at === claim.starts_at,
+        "Subscription switches immediately and ends the consumed Starter entitlement",
       );
       await assert.rejects(
         () => reserve(s, atelier, owner.id, alternative),
@@ -386,7 +385,7 @@ async function main() {
         [s],
       );
       await mutate(
-        "UPDATE account_trial_claims SET starts_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 DAY),ends_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 4 DAY) WHERE user_id=? AND bucket='discovery'",
+        "UPDATE account_trial_claims SET starts_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 1 DAY),ends_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 4 DAY),activated_at=NULL WHERE user_id=? AND bucket='discovery'",
         [owner.id],
       );
       await advanceBilling(s);
@@ -467,6 +466,11 @@ async function main() {
         "New trial starts after every purchased period",
       );
       await reserve(paidStore, atelier, paidOwner.id, paidQuote);
+      check(
+        !(await one("SELECT activated_at FROM account_trial_claims WHERE user_id=? AND bucket='discovery'", [paidOwner.id])).activated_at &&
+          (await one("SELECT plan_id FROM subscriptions WHERE store_id=?", [paidStore])).plan_id === studio,
+        "Discovery never replaces purchased access before its end",
+      );
       check(
         (
           await one("SELECT status,paid FROM invoices WHERE id=?", [
@@ -624,6 +628,59 @@ async function main() {
           ).length === 1,
         "Concurrent stores can reserve exactly one shared discovery slot",
       );
+      async function legacyDiscovery(sid: number, uid: number, pid: number, start: string) {
+        const offer = await quote(sid, pid, uid);
+        await mutate("INSERT INTO account_trial_claims(user_id,bucket,store_id,plan_id,plan_version_id,trial_days,starts_at,ends_at) VALUES(?,'discovery',?,?,?,?,?,DATE_ADD(?,INTERVAL ? DAY))", [uid, sid, pid, offer.plan_version_id, offer.trial_days, start, start, offer.trial_days]);
+        return offer;
+      }
+      const legacyOwner = await person(), legacyStore = await store(legacyOwner.id);
+      const legacySub = await one("SELECT * FROM subscriptions WHERE store_id=?", [legacyStore]);
+      const legacyRenewal = await tx(c => prepareSubscriptionInvoice(c, legacyStore, 1));
+      const legacyOffer = await legacyDiscovery(legacyStore, legacyOwner.id, studio, legacySub.trial_ends_at);
+      await refreshBillingAccess(legacyStore);
+      const repaired = await one("SELECT * FROM account_trial_claims WHERE user_id=? AND bucket='discovery'", [legacyOwner.id]);
+      check(!!repaired.activated_at && repaired.starts_at < legacySub.trial_ends_at && (await one("SELECT plan_id FROM subscriptions WHERE store_id=?", [legacyStore])).plan_id === studio,
+        "Legacy discovery queued behind Starter is repaired and activated on access refresh");
+      check(new Date(repaired.ends_at + 'Z').getTime() - new Date(repaired.starts_at + 'Z').getTime() === legacyOffer.trial_days * 86400000,
+        "Legacy repair grants the snapshotted N days rather than current catalog or old start date");
+      check((await one("SELECT status FROM invoices WHERE id=?", [legacyRenewal.id])).status === 'void',
+        "Legacy repair voids the obsolete unpaid renewal");
+      await refreshBillingAccess(legacyStore);
+      check((await one("SELECT ends_at FROM account_trial_claims WHERE user_id=? AND bucket='discovery'", [legacyOwner.id])).ends_at === repaired.ends_at &&
+        (await one("SELECT COUNT(*) n FROM email_outbox WHERE store_id=? AND template_key='subscription_trial_started'", [legacyStore])).n === 2,
+        "Repeated refresh does not restart repaired trial or duplicate started mail");
+
+      const prepaidOwner = await person(), prepaidStore = await store(prepaidOwner.id);
+      const prepaid = await tx(async c => {
+        const i = await prepareSubscriptionInvoice(c, prepaidStore, 1);
+        // QA catalogs may price Starter at zero. Create a cash-bearing renewal
+        // fixture without changing the shared catalog used by other checks.
+        if (Number(i.amount) === 0) {
+          await c.execute("UPDATE invoices SET amount=1000,paid=0,status='open',applied_at=NULL,activated_at=NULL,effective_start_at=NULL,effective_end_at=NULL WHERE id=?", [i.id]);
+          i.amount = 1000;
+        }
+        await recordInvoicePayment(c, i.id, i.amount, `prepaid-starter-${key}`, prepaidOwner.id);
+        return i;
+      });
+      const prepaidPeriod = await one("SELECT * FROM invoices WHERE id=?", [prepaid.id]);
+      await legacyDiscovery(prepaidStore, prepaidOwner.id, atelier, prepaidPeriod.effective_end_at);
+      await refreshBillingAccess(prepaidStore);
+      check(!(await one("SELECT activated_at FROM account_trial_claims WHERE user_id=? AND bucket='discovery'", [prepaidOwner.id])).activated_at &&
+        (await one("SELECT status FROM invoices WHERE id=?", [prepaid.id])).status === 'paid',
+        "Legacy repair preserves a prepaid period after the onboarding trial");
+
+      const qrOwner = await person(), qrStore = await store(qrOwner.id);
+      const qrInvoice = await tx(c => prepareSubscriptionInvoice(c, qrStore, 1));
+      if (Number(qrInvoice.amount) === 0) {
+        await mutate("UPDATE invoices SET amount=1000,paid=0,status='open',applied_at=NULL,activated_at=NULL,effective_start_at=NULL,effective_end_at=NULL WHERE id=?", [qrInvoice.id]);
+        qrInvoice.amount = 1000;
+      }
+      await mutate("INSERT INTO payment_intents(store_id,invoice_id,kind,reference_code,amount,expires_at,qr_payload) VALUES(?,?,'subscription',?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE),'{}')", [qrStore, qrInvoice.id, `legacy-qr-${key}`, qrInvoice.amount]);
+      await legacyDiscovery(qrStore, qrOwner.id, atelier, (await one("SELECT trial_ends_at FROM subscriptions WHERE store_id=?", [qrStore])).trial_ends_at);
+      await refreshBillingAccess(qrStore);
+      check(!(await one("SELECT activated_at FROM account_trial_claims WHERE user_id=? AND bucket='discovery'", [qrOwner.id])).activated_at &&
+        (await one("SELECT status FROM payment_intents WHERE invoice_id=?", [qrInvoice.id])).status === 'pending',
+        "Legacy repair does not invalidate a pending payment QR");
       const offline = await person(),
         offlineStore = await store(offline.id);
       await reserve(
@@ -633,11 +690,11 @@ async function main() {
         await quote(offlineStore, studio, offline.id),
       );
       await mutate(
-        "UPDATE account_trial_claims SET starts_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY),ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 2 DAY) WHERE user_id=? AND bucket='discovery'",
+        "UPDATE account_trial_claims SET starts_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY),ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 2 DAY),activated_at=NULL WHERE user_id=? AND bucket='discovery'",
         [offline.id],
       );
       await mutate(
-        "UPDATE subscriptions SET access_started_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 20 DAY),access_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY),trial_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY) WHERE store_id=?",
+        "UPDATE subscriptions SET plan_id=1,access_started_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 20 DAY),access_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY),trial_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 DAY) WHERE store_id=?",
         [offlineStore],
       );
       await refreshBillingAccess(offlineStore);

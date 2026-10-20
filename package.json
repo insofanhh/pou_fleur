@@ -48,7 +48,16 @@
     "test:regional:ui": "node scripts/test-regional-ui.mjs",
     "test:manual-orders": "node scripts/test-manual-orders.mjs && node scripts/test-manual-orders-ui.mjs",
     "db:manual-orders": "node --env-file=.env.local scripts/migrate-local-manual-orders.mjs",
-    "db:manual-orders:tidb": "node --env-file=.env.tidb.local scripts/migrate-manual-orders.mjs"
+    "db:manual-orders:tidb": "node --env-file=.env.tidb.local scripts/migrate-manual-orders.mjs",
+    "db:ai": "node --env-file=.env.local scripts/migrate-ai.mjs",
+    "db:ai:tidb": "node --env-file=.env.tidb.local scripts/migrate-ai.mjs",
+    "test:ai": "node --import tsx scripts/test-ai-unit.ts",
+    "test:ai:widget": "node scripts/test-ai-widget-ui.mjs",
+    "test:ai:plans:ui": "node scripts/test-ai-plans-ui.mjs",
+    "test:ai:inprocess": "node --import tsx scripts/test-ai-inprocess.ts",
+    "test:ai:migration": "node scripts/test-starter-ai-migration.mjs",
+    "db:ai:starter": "node --env-file=.env.local scripts/migrate-starter-ai.mjs",
+    "test:ai:integration": "node --import tsx scripts/test-ai-integration.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

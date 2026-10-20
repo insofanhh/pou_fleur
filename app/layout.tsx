@@ -8,6 +8,7 @@ import "./store-team.css";
 import "./brand.css";
 import "./dashboard-sidebar.css";
 import "./analytics.css";
+import "./workspace-ai.css";
 import { Provider } from "@/components/context";
 import StoreShell from "@/components/store-shell";
 import SectionReveal from "@/components/section-reveal";

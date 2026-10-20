@@ -1,5 +1,6 @@
 import { hanoiDateKey } from "./date-time";
 import { z } from "zod";
+import { aiPlanAllowed } from "./ai-policy";
 import { randomBytes } from "node:crypto";
 import { activeBank, createIntent } from "./sepay";
 import { cookies } from "next/headers";
@@ -218,7 +219,7 @@ async function contact(c: PoolConnection, b: Input) {
   });
   return r.insertId as number;
 }
-async function finalize(raw: any, actor: Actor) {
+async function finalize(raw: any, actor: Actor, aiSource = false, transaction?: import("mysql2/promise").PoolConnection, aiGhost?: Awaited<ReturnType<typeof ghostContext>>) {
   const request = manualInput
     .extend({
       idempotencyKey: z.string().uuid(),
@@ -231,13 +232,13 @@ async function finalize(raw: any, actor: Actor) {
   checkCapabilities(b, actor);
   requireInput(b);
   const hash = digest(JSON.stringify(request));
-  const ghost = await ghostContext();
+  const ghost = transaction ? aiGhost : await ghostContext();
   const jar = await cookies();
   const ghostCookie = jar.get("fleur_ghost")?.value;
   const sessionCookie = jar.get("fleur_session")?.value;
-  const c = await pool.getConnection();
+  const c = transaction || await pool.getConnection();
   try {
-    await c.beginTransaction();
+    if (!transaction) await c.beginTransaction();
     const [stores]: any = await c.execute(
       "SELECT * FROM stores WHERE id=? FOR UPDATE",
       [tenantId()],
@@ -251,6 +252,12 @@ async function finalize(raw: any, actor: Actor) {
       throw new HttpError(403, "Quyền cửa hàng đã thay đổi.");
     const current = { ...actor, role: members[0].role };
     checkCapabilities(b, current);
+    if (aiSource) {
+      const [entitlements]: any = await c.execute("SELECT plan_id,status FROM subscriptions WHERE store_id=? FOR UPDATE", [tenantId()]);
+      const [configs]: any = await c.execute("SELECT setting_value FROM platform_settings WHERE setting_key='deepseek_ai'");
+      if (!aiPlanAllowed(Number(entitlements[0]?.plan_id)) || !["active", "free", "trialing"].includes(entitlements[0]?.status) || !configs[0] || !JSON.parse(configs[0].setting_value).enabled)
+        throw new HttpError(403, "Quyền sử dụng AI đã thay đổi. Vui lòng kiểm tra gói và cấu hình.");
+    }
     const [old]: any = await c.execute(
       "SELECT id,reference,total,manual_payload_hash,created_by FROM orders WHERE idempotency_key=?",
       [request.idempotencyKey],
@@ -258,7 +265,7 @@ async function finalize(raw: any, actor: Actor) {
     if (old.length) {
       if (old[0].created_by !== actor.id || old[0].manual_payload_hash !== hash)
         throw new HttpError(409, "Khóa yêu cầu đã dùng cho nội dung khác.");
-      await c.commit();
+      if (!transaction) await c.commit();
       return {
         id: old[0].id,
         reference: old[0].reference,
@@ -413,6 +420,7 @@ async function finalize(raw: any, actor: Actor) {
       [orderId, actor.id, b.initialStatus],
     );
     await audit(c, actor, "manual:create", "orders", orderId);
+    if (aiSource) await audit(c, actor, "ai:order", "orders", orderId);
     if (request.draftId)
       await c.execute(
         "UPDATE order_drafts SET status='converted',converted_order_id=?,updated_by=?,version=version+1 WHERE id=?",
@@ -432,14 +440,19 @@ async function finalize(raw: any, actor: Actor) {
       if (!valid.length)
         throw new HttpError(403, "Phiên Ghost đã hết hạn hoặc bị thu hồi.");
     }
-    await c.commit();
+    if (!transaction) await c.commit();
     return { id: orderId, reference, total: q.total, payment };
   } catch (e) {
-    await c.rollback();
+    if (!transaction) await c.rollback();
     throw e;
   } finally {
-    c.release();
+    if (!transaction) c.release();
   }
+}
+// Only called by the server confirmation gateway; never exposed as an AI tool.
+export async function finalizeAIOrder(raw: unknown, actor: Actor, transaction: import("mysql2/promise").PoolConnection, ghost: Awaited<ReturnType<typeof ghostContext>>) {
+  if (process.env.MANUAL_ORDERS_ENABLED === "false") throw new HttpError(403, "Tạo đơn thủ công đang tạm tắt.");
+  return finalize(raw, actor, true, transaction, ghost);
 }
 export async function manualOrdersAPI(
   path: string[],

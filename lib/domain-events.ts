@@ -92,7 +92,7 @@ export async function processDomainEvents(deadline = Date.now() + 15000) {
                     typeof e.subscription === "string"
                       ? JSON.parse(e.subscription)
                       : e.subscription,
-                    JSON.stringify({ title: p.title, body: p.body, url: href }),
+                    JSON.stringify({ title: p.pushTitle || p.title, body: p.pushBody || p.body, url: href }),
                     { TTL: 3600, timeout: 3000 },
                   );
                 } catch (error: any) {

@@ -38,6 +38,7 @@ try {
     "categories",
     "products",
     "users",
+    "store_registration_claims",
     "sessions",
     "promotions",
     "orders",

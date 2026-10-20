@@ -47,6 +47,13 @@ const tables = new Set([
   "assets",
   "store_bank_accounts",
   "payment_intents",
+  "ai_conversations",
+  "ai_runs",
+  "ai_messages",
+  "ai_tool_calls",
+  "ai_action_drafts",
+  "workspace_reminders",
+  "ai_issue_reports",
 ]);
 const parser = new sqlParser.Parser();
 const condition = (table: string, id: number) => ({

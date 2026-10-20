@@ -46,6 +46,9 @@ import { changeOrder, calculate } from "./commerce";
 import { endpointHash } from "./domain-events";
 import { activeBank, platformBank, createIntent, vietQrUrl } from "./sepay";
 import { enqueueStoreLifecycleEmail } from "./email";
+import { publicAIConfig, saveAIConfig, testAIConnection } from "./ai-config";
+import { workspaceAIAPI } from "./ai";
+import { aiMonth, aiAllowance } from "./ai-policy";
 
 const id = z.coerce.number().int().positive();
 const day = z
@@ -122,7 +125,7 @@ export async function saasAPI(
     const user = await currentUser();
     const trials = user ? await accountTrialAvailability(user.id) : null;
     const plans = await query<any[]>("SELECT p.id,p.name,p.monthly_price,p.limits,p.trial_days,(SELECT MAX(id) FROM plan_versions v WHERE v.plan_id=p.id) offer_version_id FROM plans p WHERE p.active=1 ORDER BY p.id");
-    return plans.map(p=>({...p, limits: (() => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; return limits; })(),
+    return plans.map(p=>({...p, limits: (() => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; limits.ai_messages = aiAllowance(Number(p.id), limits); return limits; })(),
       // Starter is automatically granted during first-store registration;
       // only the shared discovery entitlement is selectable from here.
       starter_onboarding_trial: Number(p.id) === 1,
@@ -131,6 +134,7 @@ export async function saasAPI(
     }));
   }
   if (path[0] === "workspace") {
+    if (path[1] === "ai") return workspaceAIAPI(path.slice(2), method, b, url);
     const manual = await manualOrdersAPI(path.slice(1), method, b, url);
     if (manual !== undefined) return manual;
   }
@@ -517,6 +521,7 @@ export async function saasAPI(
         staff: Number(usage?.staff || 0),
         storage_mb: Number(usage?.storage_bytes || 0) / 1048576,
         email_sends: emailUsage.used,
+        ai_messages: Number((await query<any[]>("SELECT COUNT(*) used FROM ai_runs WHERE month_key=? AND (status='succeeded' OR (status='running' AND lease_until>UTC_TIMESTAMP()))", [aiMonth()]))[0]?.used || 0),
       },
     };
   }
@@ -1333,7 +1338,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
     }
     if (key === "plans" && method === "GET") {
       const rows = await query<any[]>("SELECT p.id,p.name,p.monthly_price,p.limits,p.active,p.trial_days,(SELECT COUNT(*) FROM subscriptions sub JOIN stores s ON s.id=sub.store_id WHERE sub.plan_id=p.id AND s.status='pending' AND sub.billing_policy=1) pending_offers,(SELECT COUNT(*) FROM subscriptions sub WHERE sub.plan_id=p.id AND sub.status='trialing') trialing_stores FROM plans p");
-      return rows.map((p:any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; return { ...p, limits }; });
+      return rows.map((p:any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; limits.ai_messages = aiAllowance(Number(p.id), limits); return { ...p, limits }; });
     }
     if (path[0] === "plans" && path[1] && method === "PATCH") {
       const v = z
@@ -1345,6 +1350,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
             staff: z.number().int().min(1).max(10000),
             storage_mb: z.number().int().min(1).max(1000000),
             email_sends: z.number().int().min(1).max(1000000),
+            ai_messages: z.number().int().min(0).max(100000).optional(),
           }),
           trial_days: z.number().int().min(0).max(90).default(14),
         })
@@ -1353,11 +1359,12 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       const c = await pool.getConnection();
       try {
         await c.beginTransaction();
-        const [rows]: any = await c.execute("SELECT id FROM plans WHERE id=? FOR UPDATE",[planId]);
+        const [rows]: any = await c.execute("SELECT id,limits FROM plans WHERE id=? FOR UPDATE",[planId]);
         if (!rows.length) throw new HttpError(404,"Gói dịch vụ không tồn tại.");
         const trialDays = v.trial_days;
-        await c.execute("UPDATE plans SET name=?,monthly_price=?,limits=?,trial_days=? WHERE id=?", [v.name,v.monthly_price,JSON.stringify(v.limits),trialDays,planId]);
-        await c.execute("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,trial_days,effective_at,actor_id) VALUES(?,?,?,?,?,UTC_TIMESTAMP(),?)",[planId,v.name, v.monthly_price,JSON.stringify(v.limits),trialDays,actor.id]);
+        const limits = { ...v.limits, ai_messages: v.limits.ai_messages ?? aiAllowance(planId, jsonValue(rows[0].limits)) };
+        await c.execute("UPDATE plans SET name=?,monthly_price=?,limits=?,trial_days=? WHERE id=?", [v.name,v.monthly_price,JSON.stringify(limits),trialDays,planId]);
+        await c.execute("INSERT INTO plan_versions(plan_id,name,monthly_price,limits,trial_days,effective_at,actor_id) VALUES(?,?,?,?,?,UTC_TIMESTAMP(),?)",[planId,v.name, v.monthly_price,JSON.stringify(limits),trialDays,actor.id]);
         await c.commit();
       } catch(e) { await c.rollback(); throw e; } finally { c.release(); }
       return resultOK;
@@ -1373,7 +1380,20 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
         storeApprovalRequired: await storeApprovalRequired(),
         billingBank: await platformBank(undefined, true),
         paymentIssues: await query("SELECT provider_event_id,error_message,received_at FROM sepay_webhook_events WHERE processed=0 AND error_message IS NOT NULL ORDER BY id DESC LIMIT 30"),
+        deepseek: await publicAIConfig(),
       };
+    if (key === "ai" && method === "GET") return publicAIConfig();
+    if (key === "ai" && method === "PATCH") return saveAIConfig(b, actor.id);
+    if (key === "ai/test" && method === "POST") return testAIConnection();
+    if (key === "ai/issues" && method === "GET") return query("SELECT r.*,s.name store_name,u.name user_name FROM ai_issue_reports r JOIN stores s ON s.id=r.store_id JOIN users u ON u.id=r.user_id ORDER BY r.created_at DESC LIMIT 100");
+    if (path[0] === "ai" && path[1] === "issues" && path.length === 3 && method === "PATCH") {
+      const issueId = z.uuid().parse(path[2]);
+      const v = z.object({ status: z.enum(["new", "reviewing", "resolved"]) }).strict().parse(b);
+      const r = await mutate("UPDATE ai_issue_reports SET status=? WHERE id=?", [v.status, issueId]);
+      if (!r.affectedRows) throw new HttpError(404, "Không tìm thấy báo lỗi.");
+      await mutate("INSERT INTO platform_audit_logs(actor_id,action,metadata) VALUES(?,'ai:issue-status',?)", [actor.id, JSON.stringify({ id: issueId, status: v.status })]);
+      return resultOK;
+    }
     throw new HttpError(404, "Không tìm thấy chức năng nền tảng.");
   });
 }

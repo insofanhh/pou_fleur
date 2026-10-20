@@ -4,6 +4,7 @@ import { migrateProductTaxonomy } from "./product-taxonomy-schema.mjs";
 import defaults from "../lib/email-defaults.json" with { type: "json" };
 import { migrateManualOrders } from "./manual-orders-schema.mjs";
 import { migrateSuppressionKey } from "./suppression-key-schema.mjs";
+import { migrateAI } from "./ai-schema.mjs";
 
 export const tenantTables = [
   "categories",
@@ -277,9 +278,9 @@ export async function migrateSaaS(c) {
       "ALTER TABLE domain_outbox ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     );
   for (const [id, name, price, limits] of [
-    [1, "Khởi đầu", 0, { products: 30, staff: 3, storage_mb: 100, email_sends: 100 }],
-    [2, "Studio", 299000, { products: 300, staff: 10, storage_mb: 1000, email_sends: 1000 }],
-    [3, "Atelier", 599000, { products: 1000, staff: 30, storage_mb: 5000, email_sends: 5000 }],
+    [1, "Khởi đầu", 0, { products: 30, staff: 3, storage_mb: 100, email_sends: 100, ai_messages: 50 }],
+    [2, "Studio", 299000, { products: 300, staff: 10, storage_mb: 1000, email_sends: 1000, ai_messages: 300 }],
+    [3, "Atelier", 599000, { products: 1000, staff: 30, storage_mb: 5000, email_sends: 5000, ai_messages: 1500 }],
   ])
     await c.execute("INSERT IGNORE INTO plans(id,name,monthly_price,limits,active,trial_days) VALUES(?,?,?,?,1,14)", [
       id,
@@ -335,6 +336,7 @@ export async function migrateSaaS(c) {
   );
   await migrateManualOrders(c);
   await migrateProductTaxonomy(c);
+  await migrateAI(c);
 }
 export async function seedStoreTemplates(c, storeId, storeName = "Fleurious") {
   for (const t of defaults.filter(t=>t.key.startsWith("order_")||t.key.startsWith("crm_")))
