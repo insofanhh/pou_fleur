@@ -45,7 +45,7 @@
 .workspace-nav-group-items .sidebar-nav-label { flex: 1; min-width: 0; }
 .workspace-navigation .workspace-billing-badge { flex-shrink: 0; background: #fff0d5; color: #8b5100; font-weight: 600; }
 .workspace-navigation a.active .workspace-billing-badge { background: #f8c46a; color: #352000; }
-.workspace-billing-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: #ead9b8; background: #fffaf0; }
+.workspace-billing-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; border-color: #ead9b8; background: #fffaf0; }
 .workspace-billing-notice > div { min-width: 0; }
 .workspace-billing-notice p { margin: 6px 0 0; font-size: 13px; }
 .workspace-billing-notice .button { flex-shrink: 0; white-space: nowrap; }
