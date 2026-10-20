@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export type AIMessage = { role: "system" | "user" | "assistant" | "tool"; content: string | null; tool_call_id?: string; tool_calls?: AIToolCall[] };
+export type AIContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+export type AIMessage = { role: "system" | "user" | "assistant" | "tool"; content: string | AIContentPart[] | null; tool_call_id?: string; tool_calls?: AIToolCall[] };
 export type AIToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 export type AITool = { type: "function"; function: { name: string; description: string; parameters: any } };
 export class AIProviderError extends Error {

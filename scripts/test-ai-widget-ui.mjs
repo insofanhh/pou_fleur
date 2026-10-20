@@ -22,6 +22,10 @@ for (const engine of process.argv.includes("--webkit") ? [webkit] : process.argv
     const reads = [], writes = [], errors = [], tenantHeaders = [], conversations = new Map();
     await context.route("**/api/**", async route => {
       const req = route.request(), path = new URL(req.url()).pathname, method = req.method();
+      if (path === "/api/activity" && method === "POST") {
+        await route.fulfill({ status: 200, json: { ok: true } });
+        return;
+      }
       if (path.startsWith("/api/workspace/ai")) {
         tenantHeaders.push(req.headers()["x-fleur-store"] === new URL(req.frame().url()).pathname.split("/")[2]);
       }

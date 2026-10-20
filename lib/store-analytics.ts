@@ -88,11 +88,12 @@ export async function loadStoreAnalytics(
   to: string,
   storeId: number,
   read: AnalyticsReader,
+  options: { comparePrevious?: boolean } = {},
 ) {
   const period = analyticsPeriod(from, to);
   const [rows, products, categories, deliveries, segments, funnel] =
     await Promise.all([
-      read(analyticsQueries.orders, [period.previousFrom, to]),
+      read(analyticsQueries.orders, [options.comparePrevious === false ? from : period.previousFrom, to]),
       read(analyticsQueries.products, [from, to]),
       read(analyticsQueries.categories, [from, to]),
       read(analyticsQueries.deliveries, [from, to]),

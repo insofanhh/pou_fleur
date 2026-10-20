@@ -50,6 +50,7 @@ for (const engine of [chromium, webkit]) {
       const req = route.request(),
         url = new URL(req.url()),
         path = url.pathname;
+      if (path === "/api/activity") return route.fulfill({ json: { ok: true } });
       if (req.method() !== "GET") writes.push(path);
       let data = [];
       if (path === "/api/auth/me")
@@ -227,6 +228,15 @@ for (const engine of [chromium, webkit]) {
       "Chưa phát sinh",
     );
     assert((await page.locator(".analytics-empty").count()) >= 4);
+    empty = false;
+    await page.goto(origin + "/workspace/1/analytics?from=2026-10-14&to=2026-10-20");
+    await expect(page.locator(".analytics-context")).toContainText("14/10/2026 – 20/10/2026");
+    await expect(page.getByLabel("Từ ngày", { exact: true })).toHaveValue("2026-10-14");
+    await expect(page.getByLabel("Đến ngày", { exact: true })).toHaveValue("2026-10-20");
+    await page.evaluate(() => window.history.pushState(null, "", "?from=2026-10-01&to=2026-10-03"));
+    await expect(page.locator(".analytics-context")).toContainText("01/10/2026 – 03/10/2026");
+    await page.goto(origin + "/workspace/1/analytics?from=2026-02-30&to=2026-10-20");
+    await expect(page.locator(".analytics-context")).toContainText("20/09/2026 – 19/10/2026");
     assert.deepEqual(errors, []);
     assert.deepEqual(
       writes,

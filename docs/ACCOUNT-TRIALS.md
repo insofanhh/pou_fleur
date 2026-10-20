@@ -1,3 +1,5 @@
+> Tài liệu lịch sử. Chính sách hai nhóm lượt dưới đây đã được thay thế bởi [Trải nghiệm Free và một lượt paid trial](EXPERIENCE-PLAN.md) ngày 20/10/2026. Chỉ dùng để đối chiếu quyền cũ đã cấp.
+
 # Chính sách dùng thử theo tài khoản
 
 Chính sách cập nhật ngày 20/10/2026. Gói Khởi đầu là quyền onboarding cố định

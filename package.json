@@ -57,7 +57,21 @@
     "test:ai:inprocess": "node --import tsx scripts/test-ai-inprocess.ts",
     "test:ai:migration": "node scripts/test-starter-ai-migration.mjs",
     "db:ai:starter": "node --env-file=.env.local scripts/migrate-starter-ai.mjs",
-    "test:ai:integration": "node --import tsx scripts/test-ai-integration.ts"
+    "test:ai:integration": "node --import tsx scripts/test-ai-integration.ts",
+    "db:experience": "node --env-file=.env.local scripts/migrate-experience-plan.mjs",
+    "db:experience:tidb": "node --env-file=.env.tidb.local scripts/migrate-experience-plan.mjs",
+    "test:experience": "node --import tsx scripts/test-billing-inprocess.ts experience",
+    "test:experience:migration": "node scripts/test-experience-migration.mjs",
+    "test:billing:inprocess": "node --import tsx scripts/test-billing-inprocess.ts",
+    "db:platform-overview": "node --env-file=.env.local scripts/migrate-platform-overview.mjs",
+    "db:platform-overview:tidb": "node --env-file=.env.tidb.local scripts/migrate-platform-overview.mjs",
+    "test:platform-overview": "node --import tsx scripts/test-billing-inprocess.ts platform-overview",
+    "test:platform-overview:ui": "node scripts/test-platform-overview-ui.mjs",
+    "test:platform-invoices": "node --import tsx scripts/test-billing-inprocess.ts platform-invoices",
+    "test:platform-invoices:ui": "node scripts/test-platform-invoices-ui.mjs",
+    "test:ai:report:ui": "node scripts/test-ai-report-ui.mjs",
+    "test:ai:report": "node --import tsx scripts/test-ai-report-data.ts",
+    "test:ai:composer:ui": "node scripts/test-ai-composer-ui.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

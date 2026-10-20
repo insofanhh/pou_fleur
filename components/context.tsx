@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
@@ -58,6 +59,22 @@ export function Provider({ children }: { children: ReactNode }) {
     [ghost, setGhost] = useState<any>(null),
     [ready, setReady] = useState(false),
     [message, setMessage] = useState("");
+  const activitySent=useRef(0);
+  useEffect(()=>{
+    if(!ready||!user||ghost) return;
+    const workspace=pathname.match(/^\/workspace\/(\d+)(?:\/|$)/);
+    const store=workspace?user.memberships?.find(m=>Number(m.store_id)===Number(workspace[1])):pathname.startsWith('/admin')?user.memberships?.find(m=>m.slug==='fleur'):null;
+    const send=(force=false)=>{
+      if(document.visibilityState!=='visible'||(!force&&Date.now()-activitySent.current<60000)) return;
+      activitySent.current=Date.now();
+      void api('activity','POST',store?{store_id:Number(store.store_id)}:{}).catch(()=>{});
+    };
+    send(true);
+    const interact=()=>send();
+    window.addEventListener('pointerdown',interact,{passive:true});
+    window.addEventListener('keydown',interact);
+    return ()=>{window.removeEventListener('pointerdown',interact);window.removeEventListener('keydown',interact);};
+  },[pathname,ready,user?.id,!!ghost]);
   useEffect(() => {
     let active = true;
     setReady(false);

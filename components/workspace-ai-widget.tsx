@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Maximize2, Minus, MessageCircle } from "lucide-react";
+import { Bot, Maximize2, Minus } from "lucide-react";
 import { useLocalPath } from "./routing";
 import Link from "./routing";
 
@@ -62,7 +62,7 @@ export default function WorkspaceAIWidget() {
   return createPortal(<div className="ai-widget" hidden={fullPage}>
     <button ref={launcher} className="ai-launcher" aria-label={open ? "Thu gọn trợ lý AI" : "Mở chat nhanh với trợ lý AI"} aria-expanded={open} aria-controls={panelId}
       onClick={() => { if (open) minimize(); else { setStarted(true); setOpen(true); } }}>
-      {open ? <Minus size={23} /> : <MessageCircle size={25} />}<span>Trợ lý AI</span>
+      {open ? <Minus size={23} /> : <Bot size={25} />}<span>Trợ lý AI</span>
       {unread && <span className="ai-unread" role="status" aria-label="Trợ lý AI có phản hồi mới" />}
     </button>
     {started && <section ref={panel} id={panelId} className="ai-quick-panel" role="dialog" aria-label="Chat nhanh với trợ lý AI" tabIndex={-1} hidden={!visible} style={viewport}

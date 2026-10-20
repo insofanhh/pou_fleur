@@ -58,6 +58,15 @@ async function main() { return withSystem(async () => {
     await owner("platform/ai", "PATCH", { enabled: false }, sid, 403);
     check((await owner("workspace/ai", "GET", undefined, sid)).allowed, "Studio can use AI");
     check((await other("workspace/ai", "GET", undefined, sid2)).allowed, "Atelier can use AI");
+    const freeStore = await store(u.id, 4);
+    const freeAccess = await owner("workspace/ai", "GET", undefined, freeStore);
+    check(freeAccess.allowed && freeAccess.operational && freeAccess.limit === 10, "Indefinite Free has its own 10-turn AI entitlement");
+    const freeThread = randomUUID();
+    for (let n = 0; n < freeAccess.limit; n++) await chat(owner, freeStore, "Free quota QA", freeThread);
+    await chat(owner, freeStore, "Free quota exhausted", freeThread, randomUUID(), 429);
+    check((await owner("workspace/billing", "GET", undefined, freeStore)).usage.ai_messages === 10, "Free AI exhaustion and billing counter agree");
+    await owner("workspace/ai/conversations/" + freeThread, "GET", undefined, freeStore);
+    check((await owner("workspace/ai", "GET", undefined, sid)).used === 0, "Free usage is store isolated; exhausted Free retains history");
     await stranger("workspace/ai", "GET", undefined, sid, 401);
     await editor("workspace/ai", "GET", undefined, sid, 403);
     await other("workspace/ai", "GET", undefined, sid, 403);
@@ -130,6 +139,31 @@ async function main() { return withSystem(async () => {
     await other("workspace/ai/conversations/" + thread, "GET", undefined, sid2, 404);
     await support("workspace/ai/conversations/" + thread, "GET", undefined, sid, 404);
     check(true, "Conversation is private to store, user and role");
+    const reportStart = hanoiDateKey(Date.now() - 6 * 86400000), reportEnd = hanoiDateKey(), priorDay = hanoiDateKey(Date.now() - 7 * 86400000);
+    for (const [index, day, total] of [[1, reportStart, 120000], [2, reportEnd, 300000], [3, priorDay, 9900000]] as const) {
+      await mutate("INSERT INTO orders(store_id,reference,customer_name,email,phone,address,recipient_name,recipient_phone,delivery_date,delivery_slot,payment_method,status,payment_status,subtotal,total,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,'bank','delivered','paid',?,?,?,?)", [sid2, `RPT-${suffix}-${index}`, "Report QA", "qa@example.test", "0900000000", "Hà Nội", "Report QA", "0900000000", day, "08:00-10:00", total, total, randomUUID(), day + " 12:00:00"]);
+    }
+    const simpleReport = (await chat(other, sid2, "Báo cáo hoạt động trong 7 ngày gần nhất")).messages.at(-1).cards[0];
+    check(simpleReport.data.period.from === reportStart && simpleReport.data.period.to === reportEnd && simpleReport.data.period.days === 7, "Backend corrects a provider's off-by-one start to exactly 7 Hanoi days");
+    check(!simpleReport.data.previous && !simpleReport.data.period.previousFrom && simpleReport.data.summary.orders_count === 2 && simpleReport.data.summary.revenue === 420000, "Unrequested comparison is stripped; prior 9.9m and its order are excluded from current report");
+    const comparedReport = (await chat(other, sid2, "Báo cáo hoạt động trong 7 ngày gần nhất, so sánh với kỳ trước")).messages.at(-1).cards[0];
+    check(comparedReport.data.previous.orders_count === 1 && comparedReport.data.previous.revenue === 9900000 && comparedReport.data.summary.revenue === 420000, "Explicit comparison preserves two independent periods and amounts");
+    check((await owner("workspace/ai/chat", "POST", { message: "Đọc ảnh", conversationId: randomUUID(), requestId: randomUUID(), images: [{ name: "unsafe.svg", dataUrl: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" }] }, sid, 400)).error, "API rejects active/invalid image formats before reserving a turn");
+    const image = { name: "Ảnh QA.png", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aU1sAAAAASUVORK5CYII=" };
+    const imageThread = randomUUID(), imageRequest = randomUUID(), imageBody = { message: "Đọc ảnh QA", conversationId: imageThread, requestId: imageRequest, images: [image] };
+    const imageUsed = (await other("workspace/ai", "GET", undefined, sid2)).used;
+    const imageResponse = await other("workspace/ai/chat", "POST", imageBody, sid2);
+    check(imageResponse.messages.at(-1).content.includes("đã nhận ảnh") && imageResponse.messages[0].cards[0].data.dataUrl === image.dataUrl, "Real API passes multipart image content to mock DeepSeek and persists private image card");
+    check((await other("workspace/ai/chat", "POST", imageBody, sid2)).duplicate && (await other("workspace/ai", "GET", undefined, sid2)).used === imageUsed + 1, "Image retry consumes exactly one AI turn");
+    await owner("workspace/ai/conversations/" + imageThread, "GET", undefined, sid, 404);
+    await other("workspace/ai/chat", "POST", { ...imageBody, images: [{ ...image, name: "changed.png" }] }, sid2, 409);
+    const imageFollowup = await chat(other, sid2, "QA_IMAGE_HISTORY", imageThread);
+    check(imageFollowup.messages.at(-1).content.includes("ảnh trong lịch sử"), "Follow-up keeps the original image in the provider context");
+    await other("workspace/ai/chat", "POST", { message: "too big", conversationId: randomUUID(), requestId: randomUUID(), images: [{ name: "large.png", dataUrl: "data:image/png;base64," + "A".repeat(760000) }] }, sid2, 413);
+    await admin("platform/ai", "PATCH", { enabled: true, model: "deepseek-v4-pro", maxOutputTokens: 1400 });
+    check(!(await other("workspace/ai", "GET", undefined, sid2)).imageInput, "Unsupported model advertises no image capability");
+    await other("workspace/ai/chat", "POST", { ...imageBody, requestId: randomUUID(), conversationId: randomUUID() }, sid2, 400);
+    await admin("platform/ai", "PATCH", { enabled: true, model: "deepseek-flash", maxOutputTokens: 1400 });
     const usage = (await owner("workspace/ai", "GET", undefined, sid)).used;
     const fail = await chat(owner, sid, "QA_ERROR", randomUUID(), randomUUID(), 503);
     await chat(owner, sid, "QA_BAD", randomUUID(), randomUUID(), 502);

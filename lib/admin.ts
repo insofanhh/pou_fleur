@@ -227,7 +227,7 @@ export async function adminWrite(
           : null;
         if (!existing?.active) {
           const [p] = await query<any[]>(
-            "SELECT p.limits FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.store_id=?",
+            "SELECT COALESCE(v.limits,p.limits) limits FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id LEFT JOIN plan_versions v ON v.id=sub.plan_version_id WHERE sub.store_id=?",
             [tenantId()],
           );
           const [count] = await query<any[]>(

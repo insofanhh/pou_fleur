@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 // Plan IDs are stable product identities; display names are editable.
-export const aiPlanAllowed = (planId: number) => [1, 2, 3].includes(Number(planId));
-export const defaultAIAllowance = (planId: number) => Number(planId) === 1 ? 50 : Number(planId) === 2 ? 300 : Number(planId) === 3 ? 1500 : 0;
+export const aiPlanAllowed = (planId: number) => [1, 2, 3, 4].includes(Number(planId));
+export const defaultAIAllowance = (planId: number) => Number(planId) === 4 ? 10 : Number(planId) === 1 ? 50 : Number(planId) === 2 ? 300 : Number(planId) === 3 ? 1500 : 0;
 // Missing legacy quotas get the tier default. An explicit zero disables new
 // requests; malformed persisted values fail closed rather than granting quota.
 export function aiAllowance(planId: number, limits: { ai_messages?: unknown } | null | undefined) {

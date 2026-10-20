@@ -1,6 +1,9 @@
 .storefront {
   background: var(--store-background, #fff);
 }
+.store-settings-save {
+  margin-top: 20px;
+}
 .storefront .button:not(.secondary):not(.light):not(.outline) {
   background: var(--store-accent, #171717);
 }
@@ -60,7 +63,7 @@
 .location-search button {
   background: #f1f1f1;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--button-radius);
   padding: 12px;
   display: flex;
 }
@@ -99,11 +102,11 @@
   display: flex;
   padding: 4px;
   background: #f1f1f1;
-  border-radius: 30px;
+  border-radius: calc(var(--button-radius) + 4px);
 }
 .segmented button {
   padding: 10px 20px;
-  border-radius: 24px;
+  border-radius: var(--button-radius);
   border: 0;
   background: transparent;
   white-space: nowrap;
@@ -205,7 +208,7 @@
 }
 .map-store-pin {
   border: 1px solid #ccc;
-  border-radius: 30px;
+  border-radius: var(--button-radius);
   background: white;
   padding: 9px 14px;
   font-size: 12px;
@@ -922,6 +925,42 @@
   gap: 24px;
   align-items: start;
 }
+.calendar-workspace .board-toolbar {
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.calendar-workspace .board-toolbar > .button,
+.calendar-workspace .calendar-detail form > .button {
+  min-height: var(--control-height, 40px);
+  padding: 8px 13px;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.calendar-workspace .segmented {
+  padding: 3px;
+  margin: 0;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: calc(var(--button-radius) + 3px);
+}
+.calendar-workspace .segmented button {
+  min-height: calc(var(--control-height, 40px) - 6px);
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.calendar-workspace .board-toolbar > p {
+  margin: 0;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .calendar-workspace .board-toolbar { gap: 10px; }
+  .calendar-workspace .segmented { flex: 0 0 100%; }
+  .calendar-workspace .segmented button { flex: 1; padding-inline: 8px; }
+  .calendar-workspace .board-toolbar > .date-control { flex: 1 1 150px; }
+  .calendar-workspace .board-toolbar > p { flex-basis: 100%; }
+}
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1536,7 +1575,7 @@
   border-radius: 0;
 }
 .storefront.theme-modern .category-pills a {
-  border-radius: 4px;
+  border-radius: var(--button-radius);
 }
 .status-ready {
   background: #ececec;
@@ -2549,4 +2588,127 @@ body:has(.manual-orders) .ghost-banner {
   body:has(.ghost-banner) .manual-actions {
     position: static;
   }
+}
+
+.platform-invoices{min-width:0;display:grid;gap:20px}
+.platform-invoices>*{min-width:0}
+.invoice-sync .spin{animation:invoice-spin 1s linear infinite}
+@keyframes invoice-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.invoice-sync .spin{animation:none}}
+.platform-invoices .analytics-context{margin:0}
+.invoice-sync{padding:22px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.invoice-sync h3,.invoice-detail h3{font-size:15px;margin:0 0 9px;font-weight:550}
+.invoice-sync p{font-size:12px;line-height:1.7;color:#888;margin:0;max-width:650px}
+.invoice-sync .button{flex-shrink:0;font-size:12px;gap:8px}
+.invoice-filters form{padding:0 24px 24px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:16px}
+.invoice-filters label,.invoice-action-form label{display:grid;gap:8px;min-width:0;font-size:12px;color:#777}
+.invoice-filters .invoice-search{grid-column:span 2}
+.invoice-filters .button-row{gap:10px;flex-wrap:wrap}
+.invoice-filters .button{font-size:12px;gap:8px}
+.platform-invoices .stat-card>strong{font-size:clamp(20px,2vw,29px);white-space:normal;overflow-wrap:anywhere}
+.invoice-table td small,.invoice-detail small{display:block;font-size:11px;line-height:1.7;color:#888;margin-top:5px}
+.invoice-table td:first-child{min-width:180px;max-width:240px;white-space:normal;overflow-wrap:anywhere}
+.invoice-table td:nth-child(2){min-width:210px}
+.invoice-table .table-actions{flex-wrap:nowrap;gap:4px}
+.invoice-balance{color:#9b6429}
+.invoice-plan,.invoice-status{display:inline-flex;align-items:center;padding:5px 9px;line-height:1.4;font-size:11px;border:1px solid transparent;white-space:nowrap}
+.invoice-plan-1{color:#315d86;background:#edf4fb;border-color:#d8e7f5}
+.invoice-plan-2{color:#6b4a91;background:#f3eef9;border-color:#e7ddf3}
+.invoice-plan-3{color:#885e24;background:#fcf3e5;border-color:#f0dfbf}
+.invoice-plan-4,.invoice-status-free{color:#356959;background:#ecf6f0;border-color:#d5e9dd}
+.invoice-plan-other,.invoice-status-void,.invoice-status-unknown{color:#636873;background:#f0f1f3;border-color:#e1e3e7}
+.invoice-status-open{color:#315d86;background:#edf4fb;border-color:#d8e7f5}
+.invoice-status-partially_paid{color:#92661f;background:#fff5df;border-color:#f4e4ba}
+.invoice-status-overdue{color:#a4453c;background:#fceeea;border-color:#f0d5ce}
+.invoice-status-paid{color:#32714d;background:#eaf6ee;border-color:#cfe8d8}
+.invoice-status-payment_timeout{color:#966137;background:#fbf0e7;border-color:#eedac9}
+.invoice-detail{display:grid;gap:20px;min-width:0}
+.invoice-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.invoice-detail-heading p{font-size:12px;color:#888;margin:0;overflow-wrap:anywhere}
+.invoice-detail-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;background:#f8f9fa;padding:16px;border-radius:10px;border:1px solid #eee}
+.invoice-detail-totals strong{display:block;font-size:17px;overflow-wrap:anywhere;margin-top:8px}
+.invoice-detail section{min-width:0;border-top:1px solid #eee;padding-top:18px}
+.invoice-detail section>p{font-size:13px;line-height:1.7;margin:8px 0}
+.invoice-detail td,.invoice-detail th{padding:12px;font-size:11px}
+.invoice-action-form{display:grid;gap:16px;padding:18px;border:1px solid #eee;border-radius:10px}
+.invoice-dialog-modes{flex-wrap:wrap;gap:10px}
+.invoice-dialog-modes .button,.invoice-action-form .button{font-size:12px}
+@media(max-width:1000px){.invoice-sync{align-items:flex-start;flex-direction:column}.invoice-filters form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.invoice-sync{padding:18px 16px}.invoice-sync .button{max-width:100%;white-space:normal}.invoice-filters .panel-heading{padding:18px 16px}.invoice-filters form{padding:0 16px 18px;gap:14px}.invoice-filters .invoice-search,.invoice-filters form>label:nth-child(2),.invoice-filters form>label:nth-child(3),.invoice-filters form>label:nth-child(6){grid-column:1/-1}.invoice-filters .button-row{grid-column:1/-1}.platform-invoices .stat-card{padding:16px}.invoice-detail-totals{grid-template-columns:1fr}.invoice-detail-totals>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.invoice-detail-totals strong{font-size:15px;margin:0}.invoice-dialog-modes .button{flex:1;padding:10px}.invoice-table td:first-child{min-width:160px}}
+.platform-sticky-table th:first-child,.platform-sticky-table td:first-child{position:sticky;left:0;z-index:1;min-width:160px;max-width:220px;white-space:normal;overflow-wrap:anywhere;box-shadow:1px 0 #eee}
+.platform-sticky-table td:first-child{background:#fff}
+.start-store-free-choice{margin-top:20px;padding:16px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line,#e5e2dc)}
+.start-store-free-choice .text-link{background:none;border:0;padding:0;cursor:pointer;font:inherit;display:inline-flex;align-items:center;gap:8px;text-align:left}
+.start-store-free-choice p{flex-basis:100%;margin:0;line-height:1.7}
+.platform-overview{min-width:0}.platform-overview .analytics-results>section{margin-bottom:22px}.platform-overview .dashboard-grid>*{min-width:0}.platform-overview table small{display:block;color:#888;margin-top:5px;font-size:11px;line-height:1.6}.platform-overview .stat-card>strong{font-size:clamp(20px,2vw,29px);overflow-wrap:anywhere;white-space:normal}.platform-report-filters{display:flex;align-items:end;flex-wrap:wrap;gap:12px;padding:0 24px 20px}.platform-report-filters label{display:grid;gap:7px;flex:1;min-width:160px;font-size:12px;color:#777}.platform-report-filters .button{min-height:38px;font-size:12px;padding:10px 16px}.platform-report-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;font-size:12px;color:#888}.platform-report-pagination .button{font-size:12px;padding:8px 13px}.platform-chart-scroll{overflow-x:auto;padding:5px 24px 0}.platform-chart-plot{display:flex;height:190px;align-items:stretch;gap:5px;border-bottom:1px solid #eee}.platform-chart-bar{position:relative;flex:1;min-width:6px;display:flex;align-items:end;justify-content:center;padding:0 0 22px;border:0;background:transparent;cursor:pointer}.platform-chart-bar>span{display:block;width:100%;background:#363a3b;border-radius:3px 3px 0 0;max-height:168px;min-height:2px}.platform-chart-bar[aria-pressed=true]>span,.platform-chart-bar:hover>span{background:#598478}.platform-chart-bar small{position:absolute;bottom:3px;font-size:10px;color:#999}.platform-chart-caption{padding:12px 24px 18px;margin:0;font-size:12px;line-height:1.7;color:#888}.platform-alert-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:0 24px 24px}.platform-alert{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid #eee;border-radius:8px;padding:15px;font-size:12px;color:#777}.platform-alert>div{display:grid;gap:8px}.platform-alert strong{font-size:21px;color:#333}.platform-alert.has-alert{background:#fdf9f2;border-color:#efe4cf}.platform-quota{min-width:110px}.platform-quota strong{font-size:12px;white-space:nowrap}.platform-quota .usage-track{margin-top:7px}.platform-quota.near .usage-track span{background:#ad842d}.platform-quota.full .usage-track span,.platform-quota.over .usage-track span{background:#b25445}.platform-quota.over strong,.platform-usage-warning{color:#a34b40!important}.platform-metric-notes{margin:0;padding:0 25px 25px 40px;color:#888;font-size:12px;line-height:1.9}.platform-metric-notes li+li{margin-top:10px}
+@media(max-width:900px){.platform-overview .dashboard-grid{grid-template-columns:1fr}.platform-alert-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.platform-overview .panel-heading{padding:18px 16px;align-items:flex-start;flex-wrap:wrap}.platform-overview .panel-heading>div{min-width:0}.platform-overview .panel-heading .custom-select{max-width:100%}.platform-alert-grid{grid-template-columns:1fr;padding:0 16px 16px}.platform-report-filters{padding:0 16px 16px}.platform-report-filters label{min-width:0;flex-basis:100%}.platform-report-pagination{padding:14px 16px;flex-wrap:wrap}.platform-overview .stat-card{padding:16px}.platform-chart-scroll{padding:5px 16px 0}.platform-chart-caption{padding:12px 16px}.platform-overview .table-scroll{max-width:100%}}
+@media(max-width:640px){.start-store-free-choice .text-link{font-size:14px}}
+
+/* Platform email management follows the dashboard panel and metric layout. */
+.platform-email-workspace { min-width: 0; gap: 20px; }
+.platform-email-workspace > * { min-width: 0; }
+.platform-email-workspace .email-config {
+  padding: 20px 24px;
+  gap: 16px;
+  border-color: #e8e9eb;
+  border-radius: 11px;
+}
+.platform-email-workspace .email-config > div:first-of-type { flex: 1 1 240px; min-width: 0; }
+.platform-email-workspace .email-config strong { font-size: 14px; font-weight: 550; }
+.platform-email-workspace .email-config p { font-size: 12px; margin-top: 6px; }
+.platform-email-workspace .email-config .email-actions { margin: 0; flex-shrink: 0; }
+.email-connection-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0; }
+.email-connection-icon.ready { background: #ecf6f0; color: #356959; }
+.email-connection-icon.paused { background: #fff5df; color: #92661f; }
+.platform-email-workspace .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 14px; min-height: 38px; font-size: 12px; border-radius: var(--button-radius); }
+.platform-email-workspace .email-stats { gap: 12px; }
+.platform-email-workspace .email-stats > .stat-card { padding: 18px; border-color: #e8e9eb; border-radius: 11px; gap: 12px; align-content: start; }
+.platform-email-workspace .email-stats strong { margin: 0; font-size: 26px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
+.platform-email-workspace .email-stats span { line-height: 1.5; }
+.platform-email-workspace .email-tabs { gap: 4px; padding: 5px; border: 1px solid #e8e9eb; border-radius: 9px; background: #fff; width: fit-content; max-width: 100%; }
+.platform-email-workspace .email-tabs button { background: transparent; border: 0; border-radius: 6px; padding: 10px 14px; font-size: 12px; line-height: 1.5; }
+.platform-email-workspace .email-tabs button[aria-selected="true"] { background: #1d1d1f; color: #fff; }
+.platform-email-workspace .email-columns { grid-template-columns: minmax(260px, 1fr) minmax(0, 1.7fr); gap: 20px; }
+.platform-email-workspace .email-panel { padding: 22px 24px; border-color: #e8e9eb; border-radius: 11px; }
+.platform-email-workspace .email-panel h2 { font-size: 15px; font-weight: 550; letter-spacing: -0.3px; margin-bottom: 10px; }
+.platform-email-workspace .email-panel h3 { font-size: 14px; }
+.platform-email-workspace .email-panel p { font-size: 12px; overflow-wrap: anywhere; }
+.platform-email-workspace .email-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.platform-email-workspace .email-panel-heading h2 { margin: 0; }
+.platform-email-workspace .email-panel-heading .button { padding: 8px 10px; min-height: 34px; }
+.platform-email-workspace .email-template-list { margin-top: 16px; gap: 6px; }
+.platform-email-workspace .email-template-list button { padding: 13px 14px; border-radius: 8px; gap: 6px; overflow-wrap: anywhere; }
+.platform-email-workspace .email-template-list strong { font-size: 12px; font-weight: 550; }
+.platform-email-workspace .email-template-list small { font-size: 11px; line-height: 1.5; }
+.platform-email-workspace .email-empty { padding: 48px 12px; color: #999; }
+.platform-email-workspace .email-empty > svg { margin-bottom: 16px; }
+.platform-email-workspace .email-empty h2 { color: #333; }
+.platform-email-workspace .email-panel .field { margin: 14px 0; }
+.platform-email-workspace .email-panel .email-actions { gap: 10px; }
+.platform-email-workspace .email-panel .email-actions h2 { margin-bottom: 0; }
+.platform-email-workspace .email-table-scroll { max-width: 100%; }
+.platform-email-workspace .email-table-scroll th { font-size: 11px; background: #fafafa; color: #777; font-weight: 500; }
+.platform-email-workspace .email-table-scroll td { font-size: 12px; }
+.platform-email-workspace .email-preview { border-radius: 8px; }
+.platform-email-workspace button:focus-visible { outline: 2px solid #598478; outline-offset: 3px; }
+@media (max-width: 1200px) {
+  .platform-email-workspace .email-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1000px) {
+  .platform-email-workspace .email-config { flex-direction: row; align-items: flex-start; flex-wrap: wrap; }
+  .platform-email-workspace .email-columns { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .platform-email-workspace { gap: 16px; }
+  .platform-email-workspace .email-config, .platform-email-workspace .email-panel { padding: 18px 16px; }
+  .platform-email-workspace .email-config { display: grid; grid-template-columns: 42px minmax(0, 1fr); }
+  .platform-email-workspace .email-config .email-actions { grid-column: 2; margin: 0; max-width: 100%; }
+  .platform-email-workspace .email-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .platform-email-workspace .email-stats > .stat-card { padding: 16px; }
+  .platform-email-workspace .email-tabs { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .platform-email-workspace .email-tabs button { padding: 9px 6px; font-size: 11px; }
+  .platform-email-workspace .email-panel .email-actions { align-items: stretch; }
+  .platform-email-workspace .email-panel .email-actions > h2 { flex-basis: 100%; }
+  .platform-email-workspace .email-panel .email-actions > .custom-select { min-width: 0; max-width: 100%; flex: 1; }
 }

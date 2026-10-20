@@ -6,7 +6,8 @@ import { HttpError } from "./auth";
 import { aiArea, requireAI } from "./ai-access";
 import { noteInput, reminderInput, issueInput, validDay, redactAISecrets } from "./ai-policy";
 import { manualInput, manualOrdersAPI } from "./manual-orders";
-import { loadStoreAnalytics, analyticsPeriod } from "./store-analytics";
+import { analyticsPeriod } from "./store-analytics";
+import { loadAIReport, requestsReportComparison, resolveAIReportRange } from "./ai-report-data";
 import { hanoiDateKey } from "./date-time";
 import { orderPaymentStatusSQL } from "./order-payment-state";
 import { jsonValue, storeBy } from "./stores";
@@ -29,7 +30,7 @@ const schemas = {
   search_products: search, search_customers: search,
   list_orders: range.extend({ q: z.string().max(100).default(""), status: z.enum(["pending", "confirmed", "preparing", "ready", "shipping", "delivered", "cancelled"]).optional() }).strict(),
   get_order: z.object({ id: z.number().int().positive() }).strict(),
-  get_calendar: range, get_store_metrics: range,
+  get_calendar: range, get_store_metrics: range.extend({ comparePrevious: z.boolean().default(false) }).strict(),
   get_attention: empty, get_customer_opportunities: empty,
   search_address: search, resolve_address: z.object({ placeId: z.string().min(1).max(300) }).strict(),
   get_order_options: empty, prepare_order: orderFields,
@@ -42,7 +43,7 @@ const definitions: [keyof typeof schemas, string, string][] = [
   ["list_orders", "Tra đơn theo NGÀY GIAO (tối đa 62 ngày), trạng thái và tên/mã đơn. Tối đa 20 kết quả, xem trang gốc nếu nhiều hơn.", "orders"],
   ["get_order", "Xem chi tiết một đơn thực tế theo ID đã biết.", "orders"],
   ["get_calendar", "Lịch giao và note theo ngày Hà Nội, tối đa 62 ngày.", "orders"],
-  ["get_store_metrics", "Báo cáo cùng nguồn analytics: nhóm đơn tạo trong kỳ, trạng thái/số dư hiện tại. Không phải dòng tiền theo ngày thu. So sánh kỳ trước cùng độ dài.", "overview"],
+  ["get_store_metrics", "Báo cáo nhóm đơn tạo trong đúng kỳ from–to (gồm cả hai ngày), trạng thái/số dư hiện tại. Không phải dòng tiền theo ngày thu. comparePrevious mặc định false; chỉ bật khi người dùng yêu cầu so sánh kỳ trước cùng độ dài.", "overview"],
   ["get_attention", "Đơn chưa phân công, trễ khung giao, công nợ và sự cố gửi mail có dữ liệu thật. Chỉ đề xuất, chưa thay đổi đơn.", "orders"],
   ["get_customer_opportunities", "Cơ hội CRM theo dữ kiện: VIP/trung thành/lâu chưa quay lại, yêu cầu chưa giải quyết. Không dự đoán xác suất mua; không gửi tiếp thị.", "crm"],
   ["search_address", "Gợi ý địa chỉ bằng Goong. Hỏi người dùng chọn khi có nhiều địa chỉ.", "orders"],
@@ -96,7 +97,7 @@ async function prepare(kind: string, payload: any, preview: any, ctx: { actor: a
   cards.push({ type: kind, title: preview.title, data: preview, actionId: id, status: "pending" });
   return { actionId: id, preview, state: "Chờ người dùng bấm nút xác nhận trên card. Chưa thực hiện hành động." };
 }
-export async function executeAITool(name: string, args: unknown, ctx: { actor: any; conversationId: string; runId: string }, cards: AICard[]): Promise<any> {
+export async function executeAITool(name: string, args: unknown, ctx: { actor: any; conversationId: string; runId: string; requestText?: string; reportToday?: string }, cards: AICard[]): Promise<any> {
   const def = definitions.find(d => d[0] === name);
   if (!def) throw new HttpError(400, "Chức năng AI không được hỗ trợ.");
   const current = await requireAI(); // Recheck membership and entitlement for every tool.
@@ -127,10 +128,11 @@ export async function executeAITool(name: string, args: unknown, ctx: { actor: a
     return source("Lịch giao và ghi chú", `/workspace/${tenantId()}/calendar`, { from: v.from, to: v.to, orders: await query("SELECT id,reference,customer_name,delivery_date,delivery_slot,status FROM orders WHERE delivery_date BETWEEN ? AND ? AND status<>'cancelled' ORDER BY delivery_date,delivery_slot LIMIT 50", [v.from, v.to]), notes: await query("SELECT title,content,day,color FROM calendar_notes WHERE day BETWEEN ? AND ? ORDER BY day LIMIT 30", [v.from, v.to]) });
   }
   if (name === "get_store_metrics") {
-    period(v, 93);
-    const data = await loadStoreAnalytics(v.from, v.to, tenantId(), query);
-    const { summary, previous, products, sources, period: p, deliveries } = data;
-    return source("Phân tích hoạt động", `/workspace/${tenantId()}/analytics?from=${v.from}&to=${v.to}`, { period: p, summary, previous, products, sources, deliveries, definition: "Nhóm đơn tạo trong kỳ, trạng thái/số dư hiện tại. Revenue là tổng đơn đã giao gồm phí và giảm giá; collected là tiền thu ròng của nhóm đơn. Không phải dòng tiền theo ngày thu, chưa có dữ liệu lợi nhuận." });
+    const dates = resolveAIReportRange(ctx.requestText || "", v, ctx.reportToday);
+    period(dates, 93);
+    const compare = v.comparePrevious && (ctx.requestText === undefined || requestsReportComparison(ctx.requestText));
+    const data = await loadAIReport(dates.from, dates.to, tenantId(), query, compare);
+    return source("Phân tích hoạt động", `/workspace/${tenantId()}/analytics?from=${dates.from}&to=${dates.to}`, data);
   }
   if (name === "get_attention") return source("Việc cần chú ý", `/workspace/${tenantId()}/board`, await workspaceAttention(current.actor));
   if (name === "get_customer_opportunities") {
@@ -181,5 +183,5 @@ export async function executeAITool(name: string, args: unknown, ctx: { actor: a
     const p = { ...v, title: redactAISecrets(v.title), content: redactAISecrets(v.content) };
     return prepare("issue", p, { ...p, note: "Gửi báo lỗi đến admin platform; chưa có thay đổi hệ thống." }, ctx, cards);
   }
-  return { help: "Tra cứu và lên đơn theo quyền hiện tại. Chốt đơn/note/nhắc việc phải bấm xác nhận. Thu/hoàn tiền, hủy/khôi phục, đổi trạng thái hoặc phương thức thanh toán thực hiện trong chi tiết đơn. Chat không tự gửi chiến dịch. Số tiền theo VNĐ, ngày theo Hà Nội. Gói Khởi đầu/Studio/Atelier; hết quota vẫn xem được dữ liệu và nhắc việc đã lưu." };
+  return { help: "Tra cứu và lên đơn theo quyền hiện tại. Chốt đơn/note/nhắc việc phải bấm xác nhận. Thu/hoàn tiền, hủy/khôi phục, đổi trạng thái hoặc phương thức thanh toán thực hiện trong chi tiết đơn. Chat không tự gửi chiến dịch. Số tiền theo VNĐ, ngày theo Hà Nội. Gói Trải nghiệm/Khởi đầu/Studio/Atelier; hết quota vẫn xem được dữ liệu và nhắc việc đã lưu." };
 }

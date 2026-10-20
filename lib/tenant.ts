@@ -54,6 +54,7 @@ const tables = new Set([
   "ai_action_drafts",
   "workspace_reminders",
   "ai_issue_reports",
+  "workspace_activity",
 ]);
 const parser = new sqlParser.Parser();
 const condition = (table: string, id: number) => ({

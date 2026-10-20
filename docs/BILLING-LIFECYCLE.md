@@ -1,5 +1,7 @@
 # Gói dịch vụ, dùng thử, hóa đơn và đóng băng
 
+> Chính sách hiện hành: [EXPERIENCE-PLAN.md](EXPERIENCE-PLAN.md). Hết quyền paid/trial chưa trả đủ hoặc ngừng gia hạn rồi hết kỳ sẽ tự chuyển Trải nghiệm, không đóng băng vì billing. Các mô tả đóng băng/hết thử và gia hạn gói 0 đồng bên dưới là hành vi cũ; khóa thủ công vẫn được giữ.
+
 ## Kỳ dùng thử trước kỳ tháng
 
 - Đăng ký mới chụp phiên bản gói, giá tháng đầu, hạn mức và số ngày thử. Cửa hàng chờ duyệt không bị trừ ngày. Khi được duyệt/tự duyệt mới bắt đầu N ngày, mỗi ngày 24 giờ.
@@ -79,3 +81,5 @@ Kết quả local ngày 19/10/2026: 33 kiểm tra trial theo tài khoản (có U
 # Cập nhật số lượt dùng thử
 
 Từ 19/10/2026 áp dụng [chính sách onboarding và discovery theo tài khoản](ACCOUNT-TRIALS.md): Khởi đầu tự động theo số ngày admin cấu hình cho cửa hàng đầu tiên, cộng một lượt dùng chung cho các gói khác. Các quy tắc snapshot, hóa đơn, nhắc hạn và đối soát trong tài liệu này vẫn được giữ.
+
+Chính sách hiện hành từ 20/10/2026: [Trải nghiệm Free và một lượt paid trial](EXPERIENCE-PLAN.md) thay thế tự cấp Khởi đầu. Các kết quả và chính sách hai nhóm lượt ở trên là lịch sử; giữ nguyên quyền cũ đã cấp.

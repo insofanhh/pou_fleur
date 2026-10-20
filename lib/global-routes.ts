@@ -22,6 +22,7 @@ export function isGlobalAPI(parts: string[], method: string): boolean {
   if (parts[0] === "platform") return true;
   const methods: Record<string, string[]> = {
     "auth/me": ["GET"],
+    "activity": ["POST"],
     "auth/login": ["POST"],
     "auth/register": ["POST"],
     "auth/logout": ["POST"],

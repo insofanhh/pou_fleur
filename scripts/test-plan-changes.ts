@@ -149,8 +149,9 @@ async function main() { return withSystem(async()=>{
 
     const reservedTrial=await store(free);
     await mutate("UPDATE account_trial_claims SET bucket='starter' WHERE store_id=?",[reservedTrial]);
-    const trialQuote=await owner('workspace/billing/preview','POST',{plan_id:studio,trial:true},reservedTrial);
-    await owner('workspace/billing/start','POST',{plan_id:studio,trial:true,quote_token:trialQuote.token,quote_expires_at:trialQuote.expires_at},reservedTrial);
+    // Preserve a discovery reservation already granted under the old two-slot
+    // policy; new accounts cannot request this second trial anymore.
+    await mutate("INSERT INTO account_trial_claims(user_id,bucket,store_id,plan_id,plan_version_id,trial_days,starts_at,ends_at) SELECT ?,'discovery',?,v.plan_id,v.id,v.trial_days,sub.trial_ends_at,DATE_ADD(sub.trial_ends_at,INTERVAL v.trial_days DAY) FROM subscriptions sub JOIN plan_versions v ON v.id=(SELECT MAX(id) FROM plan_versions WHERE plan_id=?) WHERE sub.store_id=?",[person.insertId,reservedTrial,studio,reservedTrial]);
     const reservedBefore=await one("SELECT * FROM account_trial_claims WHERE store_id=? AND activated_at IS NULL",[reservedTrial]);
     const afterReservation=await confirm(reservedTrial,await preview(reservedTrial,atelier));
     await pay(afterReservation.invoiceId,259000,'upgrade-before-reserved-trial');
@@ -303,7 +304,7 @@ async function main() { return withSystem(async()=>{
     await mutate("UPDATE subscriptions SET access_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND),trial_ends_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND) WHERE store_id=?",[boundary]);
     await refreshBillingAccess(boundary);
     data=await billing(boundary);
-    check(data.subscription.plan_id===free && data.subscription.status==='free' && data.store.status==='approved',"Expired change cannot prevent original free package from renewing at its boundary");
+    check(data.subscription.plan_id===4 && data.subscription.status==='free' && !data.subscription.expires_at && data.store.status==='approved',"Expired change falls back to indefinite Experience instead of renewing expired service");
     const paused=await store(studio);
     await owner("workspace/billing/cancel","POST",{cancel:true},paused);
     const pausedReq=await confirm(paused,await preview(paused,atelier));

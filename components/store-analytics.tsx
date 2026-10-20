@@ -1,7 +1,8 @@
 "use client";
 import DateInput from "./date-input";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Wallet,
   Banknote,
@@ -117,7 +118,19 @@ const chartNames: Record<ChartMetric, string> = {
 };
 
 export default function StoreAnalyticsReport() {
-  const [period, setPeriod] = useState(() => dateWindow(30));
+  return <Suspense fallback={<p role="status">Đang tải báo cáo…</p>}><AnalyticsFromURL /></Suspense>;
+}
+function AnalyticsFromURL() {
+  const params = useSearchParams();
+  const from = params.get("from"), to = params.get("to");
+  let initial = dateWindow(30);
+  if (from && to) {
+    try { analyticsPeriod(from, to); initial = { from, to }; } catch { /* Ignore invalid links; the normal filter remains available. */ }
+  }
+  return <AnalyticsReport key={`${from}:${to}`} initial={initial} />;
+}
+function AnalyticsReport({ initial }: { initial: { from: string; to: string } }) {
+  const [period, setPeriod] = useState(initial);
   const [draft, setDraft] = useState(period);
   const [data, setData] = useState<StoreAnalytics | null>(null);
   const [busy, setBusy] = useState(true),

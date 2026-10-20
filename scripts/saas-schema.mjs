@@ -1,3 +1,5 @@
+import { migrateExperiencePlan } from "./experience-plan-schema.mjs";
+import { migratePlatformOverview } from "./platform-overview-schema.mjs";
 import { migratePlatformEmail } from "./platform-email-schema.mjs";
 import { migrateStoreRegistration } from "./store-registration-schema.mjs";
 import { migrateProductTaxonomy } from "./product-taxonomy-schema.mjs";
@@ -337,6 +339,8 @@ export async function migrateSaaS(c) {
   await migrateManualOrders(c);
   await migrateProductTaxonomy(c);
   await migrateAI(c);
+  await migrateExperiencePlan(c);
+  await migratePlatformOverview(c);
 }
 export async function seedStoreTemplates(c, storeId, storeName = "Fleurious") {
   for (const t of defaults.filter(t=>t.key.startsWith("order_")||t.key.startsWith("crm_")))

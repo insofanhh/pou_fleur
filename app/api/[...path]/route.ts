@@ -56,10 +56,14 @@ async function handle(
       const allowed = process.env.APP_ORIGIN || req.nextUrl.origin;
       if (origin !== allowed)
         throw new HttpError(403, "Nguồn yêu cầu không hợp lệ.");
-      if (Number(req.headers.get("content-length") || 0) > 100000)
+      const maxBody = key === "workspace/ai/chat" ? 750000 : 100000;
+      if (Number(req.headers.get("content-length") || 0) > maxBody)
+        throw new HttpError(413, "Dữ liệu quá lớn.");
+      const raw = await req.text();
+      if (Buffer.byteLength(raw, "utf8") > maxBody)
         throw new HttpError(413, "Dữ liệu quá lớn.");
       try {
-        body = await req.json();
+        body = JSON.parse(raw);
       } catch {
         throw new HttpError(400, "Dữ liệu không hợp lệ.");
       }
@@ -73,7 +77,7 @@ async function handle(
       digest(req.headers.get("x-forwarded-for")?.split(",")[0] || "local"),
     );
     if (result !== undefined) {
-      if (method !== "GET" && !(path[0] === "platform" && path[1] === "emails" && !["campaigns", "retry"].includes(path[2])))
+      if (method !== "GET" && key !== "activity" && !(path[0] === "platform" && path[1] === "emails" && !["campaigns", "retry"].includes(path[2])))
         after(async () => {
           const deadline=Date.now()+45000;
           await processIdentityMail();

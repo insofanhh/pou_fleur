@@ -20,6 +20,7 @@
   --paper: #fff;
   --soft: #f6f6f6;
   --radius: 16px;
+  --button-radius: 7px;
 }
 * {
   box-sizing: border-box;
@@ -292,7 +293,7 @@ p {
 }
 .button {
   border: 1px solid #181818;
-  border-radius: 30px;
+  border-radius: var(--button-radius);
   padding: 15px 24px;
   background: #181818;
   color: white;
@@ -427,7 +428,7 @@ h2 {
 .category-pills a,
 .category-pills button {
   border: 1px solid #e5e5e5;
-  border-radius: 30px;
+  border-radius: var(--button-radius);
   padding: 10px 21px;
   background: white;
   font-size: 13px;
@@ -965,7 +966,7 @@ select {
   display: flex;
   align-items: center;
   border: 1px solid #ddd;
-  border-radius: 30px;
+  border-radius: var(--button-radius);
   justify-content: space-between;
   min-width: 100px;
   padding: 6px;
@@ -984,7 +985,7 @@ select {
 }
 .wish-button {
   border: 1px solid #ddd;
-  border-radius: 50%;
+  border-radius: var(--button-radius);
   height: 51px;
   width: 51px;
   background: white;
@@ -1991,7 +1992,7 @@ details p {
   margin: 0;
 }
 .admin-heading .button {
-  border-radius: 7px;
+  border-radius: var(--button-radius);
   font-size: 12px;
   padding: 11px 15px;
   gap: 8px;
@@ -2479,7 +2480,7 @@ td code {
 .button-row .button {
   padding: 12px 18px;
   font-size: 12px;
-  border-radius: 7px;
+  border-radius: var(--button-radius);
   gap: 9px;
 }
 .order-detail > h3 {
@@ -2493,7 +2494,7 @@ td code {
   font-size: 12px;
 }
 .compact {
-  border-radius: 7px;
+  border-radius: var(--button-radius);
   padding: 10px 14px;
   font-size: 12px;
   gap: 8px;
@@ -3274,7 +3275,7 @@ td code {
 }
 .email-tabs button {
   padding: 12px 20px;
-  border-radius: 24px;
+  border-radius: var(--button-radius);
   background: #eaeaea;
 }
 .email-tabs button[aria-selected="true"] {
@@ -3541,7 +3542,7 @@ td code {
   position: relative;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--button-radius);
   background: #f6f6f6;
 }
 .notification-bell:hover {
@@ -3968,7 +3969,7 @@ td code {
   width: 42px;
   height: 42px;
   border: 1px solid #ffffff80;
-  border-radius: 50%;
+  border-radius: var(--button-radius);
   color: var(--ink);
   background: #fffffff0;
   display: grid;

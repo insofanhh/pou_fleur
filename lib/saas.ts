@@ -1,3 +1,8 @@
+import { EXPERIENCE_PLAN_ID, isExperiencePlan } from "./plan-policy";
+import { recordActivity } from "./activity";
+import { loadPlatformOverview } from "./platform-overview";
+import { loadPlatformInvoices, platformInvoiceDetail } from "./platform-invoices";
+import { defaultEmailLimit } from "./email-policy";
 import { emailAllowance } from "./email-policy";
 import { normalizeStorePhone, reserveStoreRegistration, storeRegistrationAvailability } from "./store-registration";
 import { analyticsPeriod, loadStoreAnalytics } from "./store-analytics";
@@ -6,7 +11,7 @@ import { hanoiDateKey, parseDateTime } from "./date-time";
 import { goongSearchLocation } from "./goong-config";
 import { platformEmails } from "./platform-email";
 import { manualOrdersAPI } from "./manual-orders";
-import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, trialBucket, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment } from "./billing";
+import { activateApprovedStore, advanceBilling, prepareSubscriptionInvoice, recordInvoicePayment, reconcileBilling, captureRegistrationPlan, extendStoreTrial, accessEndSQL, previewSubscriptionChange, subscriptionChangeToken, expirePlanChangeRequests, accountTrialAvailability, previewAccountTrial, reserveAccountTrial, cancelSubscriptionPayment, refreshBillingAccess } from "./billing";
 import { displayLabel } from "./display-labels";
 import { recordOrderPayment, changePaymentMethod, setOrderPaymentBalance } from "./order-payments";
 import { orderStates } from "./order-workflow";
@@ -121,16 +126,15 @@ export async function saasAPI(
   fingerprint = "local",
 ): Promise<any | undefined> {
   const key = path.join("/");
+  if (key === "activity" && method === "POST") return recordActivity(b);
   if (key === "billing/plans" && method === "GET") {
     const user = await currentUser();
     const trials = user ? await accountTrialAvailability(user.id) : null;
     const plans = await query<any[]>("SELECT p.id,p.name,p.monthly_price,p.limits,p.trial_days,(SELECT MAX(id) FROM plan_versions v WHERE v.plan_id=p.id) offer_version_id FROM plans p WHERE p.active=1 ORDER BY p.id");
-    return plans.map(p=>({...p, limits: (() => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; limits.ai_messages = aiAllowance(Number(p.id), limits); return limits; })(),
-      // Starter is automatically granted during first-store registration;
-      // only the shared discovery entitlement is selectable from here.
-      starter_onboarding_trial: Number(p.id) === 1,
-      registration_trial_available: Number(p.trial_days)>0 && !trials?.claims.some((t:any)=>t.bucket===trialBucket(p.id)),
-      trial_available: Number(p.id) !== 1 && Number(p.trial_days)>0 && !trials?.claims.some((t:any)=>t.bucket===trialBucket(p.id)),
+    return plans.map(p=>({...p, limits: (() => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = defaultEmailLimit(Number(p.id)); limits.ai_messages = aiAllowance(Number(p.id), limits); return limits; })(),
+      is_free: isExperiencePlan(p.id),
+      registration_trial_available: !isExperiencePlan(p.id) && Number(p.trial_days)>0 && (!trials || trials.available > 0),
+      trial_available: !isExperiencePlan(p.id) && Number(p.trial_days)>0 && (!trials || trials.available > 0),
     }));
   }
   if (path[0] === "workspace") {
@@ -167,9 +171,17 @@ export async function saasAPI(
       .max(100)
       .parse(url.searchParams.get("q") || "");
     const rows = await query<any[]>(
-      `SELECT * FROM stores WHERE status='approved' AND EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.store_id=stores.id AND (${accessEndSQL()}>UTC_TIMESTAMP() OR EXISTS(SELECT 1 FROM invoices i WHERE i.store_id=stores.id AND i.status='paid' AND i.effective_start_at<=UTC_TIMESTAMP() AND i.effective_end_at>UTC_TIMESTAMP()) OR EXISTS(SELECT 1 FROM account_trial_claims t WHERE t.store_id=stores.id AND t.starts_at<=UTC_TIMESTAMP() AND t.ends_at>UTC_TIMESTAMP()))) AND name LIKE ? ORDER BY id DESC LIMIT 100`,
+      `SELECT s.*,(${accessEndSQL()}<=UTC_TIMESTAMP() OR sub.status='awaiting_payment') needs_billing_refresh FROM stores s JOIN subscriptions sub ON sub.store_id=s.id WHERE (s.status='approved' OR (s.status='suspended' AND s.billing_suspended=1)) AND sub.status<>'pending_activation' AND s.name LIKE ? ORDER BY s.id DESC LIMIT 100`,
       ["%" + q + "%"],
     );
+    // Expiry now changes the tier rather than removing the store. Reconcile
+    // only expired/previously billing-frozen candidates, never manual freezes.
+    for (const s of rows) if (s.needs_billing_refresh || s.billing_suspended) {
+      const billing = await refreshBillingAccess(s.id);
+      s.status = billing.status;
+      s.billing_suspended = false;
+      s.suspension_reason = billing.suspension_reason;
+    }
     const lat = Number(url.searchParams.get("lat")),
       lng = Number(url.searchParams.get("lng"));
     const located =
@@ -177,7 +189,7 @@ export async function saasAPI(
       url.searchParams.has("lng") &&
       Math.abs(lat) <= 90 &&
       Math.abs(lng) <= 180;
-    return rows
+    return rows.filter(s=>s.status==='approved')
       .map((s) => ({
         ...publicStore({
           ...s,
@@ -218,7 +230,7 @@ export async function saasAPI(
         lat: z.number().min(-90).max(90).nullable().optional(),
         lng: z.number().min(-180).max(180).nullable().optional(),
         phone: z.string().trim().max(30).refine(value => !!normalizeStorePhone(value), "Số điện thoại không hợp lệ."),
-        plan_id: id.default(1),
+        plan_id: id.default(EXPERIENCE_PLAN_ID),
         offer_version_id: id.optional(),
       })
       .parse(b);
@@ -247,8 +259,8 @@ export async function saasAPI(
         [r.insertId, u.id],
       );
       await c.execute(
-        "INSERT INTO subscriptions(store_id,plan_id,status) VALUES(?,1,'free')",
-        [r.insertId],
+        "INSERT INTO subscriptions(store_id,plan_id,status) VALUES(?,?,'pending_activation')",
+        [r.insertId, v.plan_id],
       );
       await captureRegistrationPlan(c, r.insertId, v.plan_id, v.offer_version_id);
       await withStore(r.insertId, async () => {
@@ -532,6 +544,8 @@ export async function saasAPI(
     try {
       await c.beginTransaction();
       await c.execute("SELECT id FROM stores WHERE id=? FOR UPDATE", [sid]);
+      const [current]: any = await c.execute("SELECT plan_id FROM subscriptions WHERE store_id=? FOR UPDATE", [sid]);
+      if (isExperiencePlan(current[0]?.plan_id)) throw new HttpError(409,"Gói Trải nghiệm miễn phí không giới hạn ngày, không có gia hạn cần dừng.");
       if (cancel) {
         const [paidFuture]: any = await c.execute("SELECT id FROM invoices WHERE store_id=? AND status='paid' AND activated_at IS NULL AND amount>0 AND effective_start_at>UTC_TIMESTAMP() LIMIT 1",[sid]);
         if (paidFuture.length) throw new HttpError(409,"Kỳ tiếp theo đã thanh toán. Vui lòng liên hệ platform để xử lý trước khi ngừng gia hạn.");
@@ -1066,18 +1080,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
       await setStoreApprovalRequired(required, actor.id);
       return { ok: true, storeApprovalRequired: required };
     }
-    if (key === "overview" && method === "GET")
-      return {
-        stats: (
-          await query<any[]>(
-            "SELECT (SELECT COUNT(*) FROM stores) stores,(SELECT COUNT(*) FROM stores WHERE status='pending') pending,(SELECT COUNT(*) FROM users) users,(SELECT COUNT(*) FROM orders) orders_count,(SELECT COALESCE(SUM(total),0) FROM orders WHERE status='delivered') gmv,(SELECT COALESCE(SUM(amount),0) FROM billing_payments) collected,(SELECT COUNT(*) FROM subscriptions WHERE status IN ('active','free','trialing')) subscriptions",
-          )
-        )[0],
-        revenue: await query(
-          "SELECT DATE(created_at) day,COUNT(*) orders_count,SUM(IF(status='delivered',total,0)) gmv FROM orders GROUP BY DATE(created_at) ORDER BY day DESC LIMIT 30",
-        ),
-        plans: await query("SELECT * FROM plans"),
-      };
+    if (key === "overview" && method === "GET") return loadPlatformOverview(url);
     if (path[0] === "emails") return platformEmails(path.slice(1), method, b, actor.id);
     if (key === "stores" && method === "GET")
       return query(
@@ -1101,7 +1104,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
             await query<any[]>("SELECT sub.*,v.name plan_name,v.monthly_price,v.limits,cl.trial_days original_trial_days,cl.started_at original_trial_start,cl.ends_at granted_trial_end FROM subscriptions sub LEFT JOIN plan_versions v ON v.id=sub.plan_version_id LEFT JOIN trial_claims cl ON cl.store_id=sub.store_id WHERE sub.store_id=?", [sid])
           )[0],
           invoices: await query(
-            "SELECT * FROM invoices WHERE store_id=? ORDER BY id DESC",
+            "SELECT i.*,v.plan_id FROM invoices i LEFT JOIN plan_versions v ON v.id=i.plan_version_id WHERE i.store_id=? ORDER BY i.id DESC",
             [sid],
           ),
           audit: await query(
@@ -1231,6 +1234,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
           [v.plan_id],
         );
         if (!p) throw new HttpError(400, "Gói dịch vụ không tồn tại.");
+        if (isExperiencePlan(v.plan_id)) throw new HttpError(409,"Chuyển về Gói Trải nghiệm qua Gói & hóa đơn của cửa hàng để bảo toàn kỳ đã thanh toán.");
         const c = await pool.getConnection();
         try {
           await c.beginTransaction();
@@ -1254,13 +1258,18 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
     }
     if (key === "invoices" && method === "GET") {
       await expirePlanChangeRequests();
+      if (url.searchParams.get("view") === "list") return loadPlatformInvoices(url);
       return query(
-        "SELECT i.*,s.name store_name FROM invoices i JOIN stores s ON s.id=i.store_id ORDER BY id DESC LIMIT 500",
+        "SELECT i.*,s.name store_name,v.plan_id FROM invoices i JOIN stores s ON s.id=i.store_id LEFT JOIN plan_versions v ON v.id=i.plan_version_id ORDER BY i.id DESC LIMIT 500",
       );
     }
     if (key === "invoices/generate" && method === "POST") {
       await advanceBilling();
       return resultOK;
+    }
+    if (path[0] === "invoices" && path.length === 2 && method === "GET") {
+      await expirePlanChangeRequests();
+      return platformInvoiceDetail(id.parse(path[1]));
     }
     if (
       path[0] === "invoices" &&
@@ -1281,6 +1290,8 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
         );
         const i = rows[0];
         if (!i) throw new HttpError(404, "Không có hóa đơn.");
+        if (!["open", "void"].includes(i.status))
+          throw new HttpError(409, "Chỉ có thể hủy hóa đơn đang chờ thanh toán.");
         if (i.paid > 0)
           throw new HttpError(409, "Hóa đơn đã thu tiền không thể hủy.");
         if (i.status !== "void") {
@@ -1338,7 +1349,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
     }
     if (key === "plans" && method === "GET") {
       const rows = await query<any[]>("SELECT p.id,p.name,p.monthly_price,p.limits,p.active,p.trial_days,(SELECT COUNT(*) FROM subscriptions sub JOIN stores s ON s.id=sub.store_id WHERE sub.plan_id=p.id AND s.status='pending' AND sub.billing_policy=1) pending_offers,(SELECT COUNT(*) FROM subscriptions sub WHERE sub.plan_id=p.id AND sub.status='trialing') trialing_stores FROM plans p");
-      return rows.map((p:any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = Number(p.id) === 1 ? 100 : Number(p.id) === 2 ? 1000 : 5000; limits.ai_messages = aiAllowance(Number(p.id), limits); return { ...p, limits }; });
+      return rows.map((p:any) => { const limits = typeof p.limits === "string" ? JSON.parse(p.limits) : p.limits || {}; if (!Number.isFinite(Number(limits.email_sends))) limits.email_sends = defaultEmailLimit(Number(p.id)); limits.ai_messages = aiAllowance(Number(p.id), limits); return { ...p, limits }; });
     }
     if (path[0] === "plans" && path[1] && method === "PATCH") {
       const v = z
@@ -1356,6 +1367,7 @@ async function platformAPI(path: string[], method: string, b: any, url: URL) {
         })
         .parse(b);
       const planId = id.parse(path[1]);
+      if (isExperiencePlan(planId) && (v.monthly_price !== 0 || v.trial_days !== 0)) throw new HttpError(400,"Gói Trải nghiệm luôn miễn phí không giới hạn ngày; chỉ điều chỉnh tên và hạn mức.");
       const c = await pool.getConnection();
       try {
         await c.beginTransaction();
